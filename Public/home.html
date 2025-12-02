@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>D-Box - Home</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="allow-scroll home-body">
+
+  <header class="site-header">
+    <div class="nav-inner">
+      <div class="logo">D-Box</div>
+
+      <nav class="main-nav">
+        <ul>
+          <li class="has-dropdown">About
+            <ul class="dropdown">
+              <li>Motivation</li>
+              <li>Tech Stack</li>
+              <li>Future Scope</li>
+              <li>Contact Us</li>
+              <li>User Guide</li>
+            </ul>
+          </li>
+          <li class="has-dropdown">Resources
+            <ul class="dropdown">
+              <li>AI</li>
+              <li>Software Development</li>
+              <li>Collaborative tools</li>
+              <li>Security</li>
+            </ul>
+          </li>
+          <li class="has-dropdown">Solutions
+            <ul class="dropdown">
+              <li>D-Box Web</li>
+              <li>D-Box App</li>
+            </ul>
+          </li>
+          <li class="has-dropdown"><input type="search" placeholder="Search D-box" aria-label="Search D-box">          
+          </li>
+          <li class="has-dropdown">Profile
+               <ul class="dropdown">
+               <li>User Profile</li>
+              <li>User logs</li>
+              <li>User Data</li>
+              <li>User Groups</li>
+              <li>Help/Support</li>
+              <li>Log out</li>
+           </ul>
+          </li>
+        </ul>
+      </nav>
+      </div>
+    </div>
+  </header>
+
+  <main class="home-main">
+    <section class="hero">
+      <h1 class="headline">Let's Get Started</h1>
+      <a class="btn create-box" style ="text-decoration: none" href="createbox.html">Create Box</a>
+      <a class="btn view exiting-box" style ="text-decoration: none" href="createbox.html">View Exiting Box</a>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="cube"></div>
+      <div class="footer-divider"></div>
+      <div class="footer-typing">
+        <span class="typing-text" id="footerTyping">D-Box</span>
+      </div>
+    </div>
+  </footer>
+
+ <script>
+   // Footer typing: expands D -> Distributed then back to D-Box and loops
+    (function () {
+      const el = document.getElementById('footerTyping');
+      const base = 'D-Box';
+      const expanded = 'Distributed';
+      const baseRest = base.slice(1); // '-Box'
+      let phase = 'showBase';
+      let k = 1; // current length of expanded prefix (starts at 1 -> 'D')
+      const speed = 120;
+
+      function tick() {
+        if (phase === 'showBase') {
+          el.textContent = base;
+          // pause then start expanding
+          phase = 'expandingPause';
+          setTimeout(tick, 800);
+          return;
+        }
+
+        if (phase === 'expandingPause') {
+          phase = 'expanding';
+          k = 1;
+        }
+
+        if (phase === 'expanding') {
+          k = Math.min(expanded.length, k + 1);
+          el.textContent = expanded.substring(0, k) + baseRest;
+          if (k >= expanded.length) {
+            phase = 'expandedPause';
+            setTimeout(tick, 1000);
+            return;
+          }
+          setTimeout(tick, speed);
+          return;
+        }
+
+        if (phase === 'expandedPause') {
+          phase = 'shrinking';
+          k = expanded.length;
+        }
+
+        if (phase === 'shrinking') {
+          k = Math.max(1, k - 1);
+          if (k === 1) {
+            el.textContent = base;
+            phase = 'showBase';
+            setTimeout(tick, 800);
+            return;
+          }
+          el.textContent = expanded.substring(0, k) + baseRest;
+          setTimeout(tick, speed);
+          return;
+        }
+      }
+
+      // start the loop
+      tick();
+    })();
+
+</script>
+
+</body>
+</html>

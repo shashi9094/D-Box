@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Create D-Box</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container create D-Box">
+    <h1 class="title">Create your <span class="gradient-text">D-Box</span></h1>
+
+    <div class="Box-card">
+      <form id="createBoxForm">
+        <label for="gname">Enter Box Name</label>
+        <input type="text" id="text" name="text" required>
+
+        <label for="user_paragraph">Enter Box Description</label><br>
+        <textarea id="user_paragraph" name="user_paragraph" rows="10" cols="50"></textarea><br><br>
+        <!-- <input type="submit" value="Submit"> -->
+
+        <label for="icapacity">Initial Box Capacity</label>
+        <input type="icapacity" id="icapacity" name="icapacity" required>
+
+        <button type="submit" class="btn primary">Create Box</button>
+      </form>
+
+      <p class="muted">Doubtful? <a href="createbox.html">Clear form</a></p>
+    </div>
+  </div>
+
+  <script>
+    // Simple client-side demo: prevent real submission and redirect to home (home.html)
+    document.getElementById('createBoxForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      // In a real app you'd validate and send credentials to server here.
+      window.location.href = 'yourBoxes.html';
+    });
+  </script>
+</body>
+</html>

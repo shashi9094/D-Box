@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>D-Box</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <h1 class="title">Welcome to <span class="gradient-text">D-Box</span></h1>
+
+    <div class="center-content">
+      <div class="cube"></div>
+      <div class="divider"></div>
+      <div class="typing-text" id="typing"></div>
+    </div>
+
+    <a href="login.html" class="btn" style ="text-decoration: none">Get Started</a>
+  </div>
+
+  <script>
+    // Typing animation (fixed: prevents trailing/leftover letters)
+    const words = ["Learn", "Collaborate", "Manage"];
+    let i = 0; // index of current word
+    let j = 0; // number of characters currently shown
+    let isDeleting = false;
+    const speed = 150;
+    const typingEl = document.getElementById("typing");
+
+    function type() {
+      const currentWord = words[i];
+
+      if (isDeleting) {
+        // move one step back, then update display
+        j = Math.max(0, j - 1);
+        typingEl.textContent = currentWord.substring(0, j);
+
+        if (j === 0) {
+          // finished deleting — move to next word
+          isDeleting = false;
+          i = (i + 1) % words.length;
+          // small pause before typing next word
+          setTimeout(type, speed);
+          return;
+        }
+      } else {
+        // move one step forward, then update display
+        j = Math.min(currentWord.length, j + 1);
+        typingEl.textContent = currentWord.substring(0, j);
+
+        if (j === currentWord.length) {
+          // finished typing — pause, then start deleting
+          isDeleting = true;
+          setTimeout(type, 1000);
+          return;
+        }
+      }
+
+      setTimeout(type, isDeleting ? Math.round(speed / 2) : speed);
+    }
+
+    // start the loop
+    type();
+  </script>
+</body>
+</html>

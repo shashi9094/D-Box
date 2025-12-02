@@ -1,0 +1,500 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
+
+body {
+  margin: 0;
+  height: 100vh;
+  background: radial-gradient(circle at top, #0a0a0f, #000);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-family: 'Poppins', sans-serif;
+  color: #fff;
+  overflow: hidden;
+}
+
+/* allow pages that need scrolling to opt-in */
+body.allow-scroll {
+  height: auto; /* allow document to grow */
+  min-height: 100vh;
+  overflow-y: auto;
+}
+
+.container {
+  text-align: center;
+}
+
+.title {
+  font-size: 2.5rem;
+  margin-bottom: 40px;
+  letter-spacing: 1px;
+}
+
+.gradient-text {
+  background: linear-gradient(90deg, #00e6ff, #7b2ff7);
+  background-clip: text; /* standard property for wider compatibility */
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: shine 3s infinite alternate;
+}
+
+.center-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 30px;
+  margin-bottom: 40px;
+}
+
+.cube {
+  width: 90px;
+  height: 80px;
+  position: relative;
+  transform: rotateX(45deg) rotateY(45deg);
+  background: linear-gradient(135deg, #00e6ff, #7b2ff7);
+  box-shadow: 0 0 30px rgba(123,47,247,0.5);
+  border-radius: 10px;
+  animation: float 3s ease-in-out infinite;
+}
+
+.divider {
+  width: 3px;
+  height: 80px;
+  background: linear-gradient(180deg, #00e6ff, #7b2ff7);
+  border-radius: 2px;
+}
+
+.typing-text {
+  display: inline-block;
+  font-size: 1.8rem;
+  min-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  display: inline-block; /* allow pseudo-element caret to sit after text */
+  vertical-align: middle;
+  position: relative; /* container for the caret */
+  padding-right: 4px; /* small gap so caret doesn't overlap text */
+  animation: slideIn 0.15s ease-out forwards;
+  
+}
+
+/* moving blinking caret that follows the typed text */
+.typing-text::after {
+  content: "";
+  position: absolute; /* stays just after the visible text */
+  top: 0.12em;
+  width: 2px;
+  height: 1.1em;
+  background: #2fc8f7;
+  animation: blink 1s steps(1) infinite;
+}
+
+
+
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+ @keyframes blink {
+    0%, 50%, 100% { opacity: 1; }
+    25%, 75% { opacity: 0; }
+  }
+
+
+.btn {
+  padding: 14px 40px;
+  font-size: 1.2rem;
+  border: 1px solid #24a7ff;
+  border-radius: 30px;
+  cursor: pointer;
+  background: linear-gradient(90deg, #dc0d9e, #7b2ff7);
+  color: #fff;
+  font-weight: 600;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  animation: shine 3s infinite alternate;
+}
+
+.btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 20px rgba(123,47,247,0.6);
+}
+
+/* Animations */
+@keyframes shine {
+  from { filter: brightness(1); }
+  to { filter: brightness(1.5); }
+}
+
+@keyframes float {
+  0%, 100% { transform: rotateX(45deg) rotateY(45deg) translateY(0); }
+  50% { transform: rotateX(45deg) rotateY(45deg) translateY(-10px); }
+}
+
+/* Login page styles */
+.login-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+}
+
+.login-card {
+  background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02));
+  border: 1px solid rgba(128, 82, 255, 0.906);
+  padding: 28px;
+  border-radius: 12px;
+  width: 600px;
+  box-shadow: 0 8px 30px rgba(208, 16, 242, 0);
+}
+
+.login-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.login-card label {
+  font-size: 0.9rem;
+  text-align: left;
+  color: #cfeeff;
+}
+
+.login-card input[type="email"],
+.login-card input[type="password"] {
+  padding: 10px 12px;
+  font-size: 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(196, 28, 238, 0.459);
+  background: rgba(131, 17, 231, 0.055);
+  color: #ffffff;
+  outline: none;
+}
+
+.login-card input:focus {
+  box-shadow: 0 0 12px rgba(47,200,247,0.12);
+  border-color: rgba(15, 140, 242, 0.906);
+}
+
+/* select and text inputs for signup */
+.login-card input[type="text"],
+.login-card select,
+.login-card input[type="date"] {
+  padding: 10px 12px;
+  font-size: 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(196, 28, 238, 0.459);
+  background: rgba(131, 17, 231, 0.055);
+  color: #35d1f0;
+  outline: none;
+}
+
+.login-card select:focus,
+.login-card input[type="text"]:focus,
+.login-card input[type="date"]:focus {
+  box-shadow: 0 0 12px rgba(47,200,247,0.12);
+  border-color: rgba(47,200,247,0.4);
+  background-color: #0a0a0f;
+}
+
+.btn.primary {
+  background: linear-gradient(90deg, #ff00d9, #7b2ff7);
+}
+
+.muted {
+  margin-top: 12px;
+  font-size: 0.9rem;
+  color: rgba(255,255,255,0.7);
+  text-align: center;
+}
+
+.muted a { color: #00e6ff; text-decoration: none; }
+
+.createBoxForm{
+  display: flex;
+  /* flex-direction: column; */
+  /* justify-content: center;
+  align-items: center;
+  gap: 12px; */
+  display: flex;
+}
+
+/* Home page / navbar styles */
+.site-header {
+  width: 100%;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  padding: 20px 0; /* Add this line */
+  /* The background and backdrop-filter can remain to give a glassy effect behind the navbar */
+  background: linear-gradient(180deg, rgba(81, 18, 227, 0.806), rgba(10,10,15,0.4));
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid rgba(127,82,255,0.06);
+  transform: translateZ(0); /* Fixes some rendering issues on certain browsers */
+  
+}
+
+.nav-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px 28px; /* Adjusted padding for a better look */
+  
+  /* --- Add these new styles for the rounded effect --- */
+  background: rgba(143, 22, 236, 0.438); /* Semi-transparent background */
+  border-radius: 40px; /* This makes it rounded */
+  border: 1px solid rgba(127, 82, 255, 0.2); /* Subtle glowing border */
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3); /* Soft shadow for depth */
+}
+
+.logo, .footer-logo {
+  font-weight: 700;
+  font-size: 1.2rem;
+  color: #fff;
+  box-shadow: rgb(0, 198, 255) -3px 1px 3px 4px;
+  border: 1px solid #0a0a0f;
+  border-radius: 11px;
+  }
+
+.main-nav ul {
+  list-style: none;
+  display: flex;
+  justify-content: space-evenly; /* Equal spacing */
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+}
+.main-nav li {
+  position: relative;
+  padding: 8px 14px;
+  color: #cfeeff;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+
+/* Generic dropdown styles for any .has-dropdown */
+.has-dropdown { position: relative; }
+.has-dropdown > .dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 10, 40, 0.95);
+  border: 1px solid rgba(123,47,247,0.2);
+  border-radius: 8px;
+  padding: 6px 0;
+  min-width: 210px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+  z-index: 120;
+  text-align: left;
+}
+.has-dropdown > .dropdown li { padding: 8px 12px; color: #dbefff; white-space: nowrap;}
+.has-dropdown:hover > .dropdown { display: block;}
+/* .has-dropdown:hover > .dropdown li { background-color: purple;} */
+/* Dropdown item base */
+.dropdown li {
+  padding: 10px 14px;
+  color: #dbefff;
+  transition: background-color 0.3s ease;
+}
+/* Change to light purple on hover */
+.dropdown li:hover {
+  background-color: rgba(155, 89, 182, 0.35); /* Light purple tone */
+}
+
+
+/* profile dropdown opens to the right */
+.profile .dropdown { right: 0; left: auto; }
+
+.nav-right { display: flex; align-items: center; gap: 12px; }
+.search input { padding: 8px 12px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.02); color: #fff; outline: none; }
+.search input::placeholder { color: rgba(255,255,255,0.45); }
+/* Make sure search input fits neatly in navbar */
+.main-nav input[type="search"] {
+  padding: 8px 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(9, 228, 221, 0.915);
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+  outline: none;
+  box-shadow: rgb(0, 198, 255) 1px 0px 8px 0px;
+  
+  
+}
+.main-nav input[type="search"]::placeholder {
+  color: rgba(255,255,255,0.4);
+}
+
+
+.profile { position: relative; }
+.profile .dropdown { right: 0; left: auto; }
+.profile .profile-label { padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.02); }
+.profile .dropdown li { white-space: nowrap; }
+
+.home-main { display: flex; align-items: center; justify-content: center; padding: 80px 20px; }
+.home-body { /* applied on body for home page */
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* ensure main area fills available space so hero can center vertically */
+.home-body .home-main {
+  flex: 1 1 auto;
+}
+.hero { text-align: center; display: flex; flex-direction: column; gap: 18px; align-items: center; }
+.headline { font-size: 3rem; margin: 0; }
+.btn.create-box { padding: 14px 36px; font-size: 1.1rem; border-radius: 40px; }
+
+.site-footer { position: fixed; bottom: 18px; left: 0; right: 0; display: flex; justify-content: center; pointer-events: none; }
+
+.footer-inner { pointer-events: auto; display:flex; gap: 16px; align-items: center; background: rgba(255,255,255,0.02); padding: 8px 16px; border-radius: 30px; border: 1px solid rgba(127,82,255,0.06); box-shadow: rgb(0, 198, 255) -3px 5px 3px 5px;}
+ 
+
+.footer-divider { width: 3px; height: 60px; background: linear-gradient(180deg, #00e6ff, #7b2ff7); border-radius: 1px; }
+.footer-typing { font-size: 1rem; color: #fff; 
+  position: relative;
+  font-family: "Poppins", sans-serif;
+  white-space: nowrap; 
+}
+
+/* responsive tweaks */
+@media (max-width: 800px) {
+  .main-nav ul { display: none; }
+  .nav-inner { padding: 12px; }
+  .headline { font-size: 2rem; }
+}
+
+
+/* ////////////////Create your D-Box  ************CSS//////////////////////*/
+
+
+
+
+
+/* Smooth background animation */
+@keyframes gradientMove {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* ===== Container ===== */
+.container {
+  max-width: 450px;
+  width: 100%;
+}
+
+/* Title */
+.title {
+  text-align: center;
+  font-size: 2rem;
+  margin-bottom: 25px;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+.gradient-text {
+  background: linear-gradient(90deg, #00d9ff, #7b2ff7, #ff007a);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ===== Glass Card ===== */
+.Box-card {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 30px;
+  border-radius: 20px;
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+}
+
+/* ===== Form Elements ===== */
+label {
+  margin-top: 15px;
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #dcdcdc;
+}
+
+input,
+textarea {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 12px;
+  margin-top: 8px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  color: #fff;
+  outline: none;
+  transition: 0.3s ease;
+}
+
+input:focus,
+textarea:focus {
+  border-color: #00d9ff;
+  background: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 0 8px rgba(0, 217, 255, 0.5);
+}
+
+/* ===== Button ===== */
+.btn.primary {
+  margin-top: 20px;
+  width: 100%;
+  background: linear-gradient(90deg, #ff00d9, #7b2ff7);
+  border: 1px solid rgba(9, 228, 221, 0.915);
+  padding: 14px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #fff;
+  border-radius: 30px;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.btn.primary:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 18px rgba(0, 217, 255, 0.4);
+}
+
+/* ===== Muted Text ===== */
+.muted {
+  text-align: center;
+  margin-top: 15px;
+  font-size: 0.9rem;
+  opacity: 0.7;
+}
+
+.muted a {
+  color: #00d9ff;
+  text-decoration: none;
+}
+
+.muted a:hover {
+  text-decoration: underline;
+}
+
+/* Decrease textarea size for Box Description */
+#createBoxForm textarea {
+  height: 100px;      /* decrease height */
+  max-width: 100%;    /* keep it responsive */
+  font-size: 0.9rem;  /* matches your input styling */
+  resize: vertical;   /* allow user to resize vertically if needed */
+}
+

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign up - D-Box</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="allow-scroll">
+  <div class="container login-container">
+    <h1 class="title">Signing up to <span class="gradient-text">D-Box</span></h1>
+
+    <div class="login-card">
+      <form id="signupForm">
+        <label for="fullName">Full name</label>
+        <input type="text" id="fullName" name="fullName" required>
+
+        <label for="dob">Date of birth</label>
+        <input type="date" id="dob" name="dob" required>
+
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" required>
+
+        <label for="country">Country</label>
+        <select id="country" name="country" required>
+          <!-- Top 20 countries + Other -->
+          <option value="">Select country</option>
+          <option>India</option>
+          <option>United States</option>
+          <option>China</option>
+          <option>Japan</option>
+          <option>Germany</option>
+          <option>United Kingdom</option>
+          <option>France</option>
+          <option>Italy</option>
+          <option>Canada</option>
+          <option>Brazil</option>
+          <option>Russia</option>
+          <option>South Korea</option>
+          <option>Australia</option>
+          <option>Spain</option>
+          <option>Mexico</option>
+          <option>Indonesia</option>
+          <option>Turkey</option>
+          <option>Netherlands</option>
+          <option>Saudi Arabia</option>
+          <option>Switzerland</option>
+          <option>Other</option>
+        </select>
+
+        <label for="capacity">User capacity</label>
+        <select id="capacity" name="capacity" required>
+          <option value="">--Select--</option>
+          <option>Solo</option>
+          <option>Informal groups</option>
+          <option>Formal groups</option>
+        </select>
+
+        <label for="purpose">Purpose of use</label>
+        <select id="purpose" name="purpose" required>
+          <option value="">--Select--</option>
+          <option>Personal - Notes/Data Management</option>
+          <option>Maintaining Research groups</option>
+          <option>Maintaining Professor-Student groups</option>
+          <option>Maintaining Professional groups</option>
+          <option>Other</option>
+        </select>
+
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" minlength="6" required>
+
+        <label for="confirmPassword">Confirm password</label>
+        <input type="password" id="confirmPassword" name="confirmPassword" minlength="6" required>
+
+        <button type="submit" class="btn primary">Create account</button>
+      </form>
+
+      <p class="muted">Already have an account? <a href="login.html">Sign in</a></p>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('signupForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      const pw = document.getElementById('password').value;
+      const cpw = document.getElementById('confirmPassword').value;
+      if (pw !== cpw) {
+        alert('Passwords do not match');
+        return;
+      }
+      // In a real app you'd send data to server here.
+      window.location.href = 'home.html';
+    });
+  </script>
+</body>
+</html>
