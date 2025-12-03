@@ -407,12 +407,6 @@ body.allow-scroll {
   letter-spacing: 1px;
 }
 
-.gradient-text {
-  background: linear-gradient(90deg, #00d9ff, #7b2ff7, #ff007a);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
 /* ===== Glass Card ===== */
 .Box-card {
   background: rgba(255, 255, 255, 0.08);
@@ -496,5 +490,158 @@ textarea:focus {
   max-width: 100%;    /* keep it responsive */
   font-size: 0.9rem;  /* matches your input styling */
   resize: vertical;   /* allow user to resize vertically if needed */
+}
+
+
+ /* ********************************************************************************************** */
+/*Existing styles for the Exist Box - modified to fit in one line */
+
+ /* ********************************************************************************************** */
+
+
+
+/* ========== MAIN LAYOUT ========== */
+.main-layout {
+  display: flex;
+  height: 100vh;
+  font-family: 'Poppins', sans-serif;
+  background: #0c0c14;
+  color: #fff;
+  overflow: hidden;
+}
+
+/* ========== SIDEBAR (WIDER + FULL + PREMIUM) ========== */
+.sidebar {
+  width: 400px;              /* ⭐ wider sidebar */
+  min-width: 350px;
+  background: linear-gradient(180deg, #110b2b, #0a071a);
+  border-right: 2px solid rgba(138, 54, 255, 0.3);
+  backdrop-filter: blur(20px);
+  padding: 30px 25px;         /* ⭐ bigger internal spacing */
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 35px;
+
+}
+
+/* Sidebar Title */
+.sidebar h3 {
+  font-size: 2.4rem;          /* ⭐ bigger title */
+  font-weight: 700;
+  letter-spacing: 1px;
+  background: linear-gradient(90deg, #00d9ff, #7b2ff7, #ff007a);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  border: 1px solid black;
+  width: fit-content;
+  box-shadow: rgb(0, 198, 255) -3px 1px 3px 4px;
+  border-radius: 440px;
+}
+
+
+/* Menu List */
+.sidebar ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.sidebar ul li {
+  padding: 14px 18px;         /* ⭐ bigger list items */
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 1.1rem;          /* ⭐ bigger readable text */
+  color: #d7eaff;
+  font-weight: 500;
+  transition: all 0.25s ease;
+
+  
+}
+
+
+.sidebar ul li:hover {
+  background: rgba(138, 54, 255, 0.35);
+  border: 1px solid #24a7ff;
+}
+
+
+
+/* ========== RIGHT SIDE CONTENT ========== */
+.exist-box-container {
+  flex: 1;
+  padding: 40px 45px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  width: 65rem;
+}
+
+/* Page Heading */
+.section-title {
+  font-size: 2.2rem;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+/* ========== BOX CARD LIST ========== */
+.box-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Single Box Card */
+.exist-box-card {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 20px 28px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+  transition: 0.3s ease;
+  cursor: pointer;
+}
+
+.exist-box-card:hover {
+  transform: translateX(10px);
+  box-shadow: 0 12px 28px rgba(0, 217, 255, 0.4);
+}
+
+/* Lines inside card */
+.box-content .line {
+  font-size: 1.05rem;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.15);
+}
+
+.box-content .line:last-child {
+  border-bottom: none;
+}
+
+/* ========== FLOATING ADD BUTTON ========== */
+.add-box-btn {
+  position: fixed;
+  bottom: 35px;
+  right: 35px;
+  width: 60px;
+  height: 60px;
+  border: 1px solid #24a7ff;
+  border-radius: 50%;
+  background: linear-gradient(120deg, #ff00d9, #7b2ff7);
+  font-size: 32px;
+  color: white;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+  transition: 0.25s ease;
+}
+.add-box-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 8px 25px rgba(123,47,247,0.6);
+  border: 1px solid rgba(9, 228, 221, 0.915);
 }
 

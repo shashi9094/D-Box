@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Exist Box</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="existing.css">
+</head>
+
+<body>
+
+<div class="main-layout">
+
+    <!-- LEFT SIDEBAR -->
+    <div class="sidebar">
+        <h3>D-Box</h3>
+        <ul>
+            <li>Dashboard</li>
+            <li>New Box</li>
+            <li class="active">Existing</li>
+            <li>Settings</li>
+        </ul>
+    </div>
+
+    <!-- RIGHT CONTENT -->
+    <div class="exist-box-container">
+        <!-- <h2 class="section-title">Old Boxes</h2> -->
+
+        <div class="box-list">
+
+            <div class="exist-box-card">
+                <div class="box-content">
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Add User Button -->
+        <button class="add-box-btn">+</button>
+
+    </div>
+</div>
+<script>
+
+let boxes = JSON.parse(localStorage.getItem("boxes")) || [];
+
+// save to local storage
+function save() {
+    localStorage.setItem("boxes", JSON.stringify(boxes));
+}
+
+// unique id generator
+function uid() {
+    return Date.now().toString(36) + Math.random().toString(36).substr(2,5);
+}
+
+// Render all boxes
+function render() {
+    const list = document.querySelector(".box-list");
+    list.innerHTML = "";
+
+    boxes.forEach(box => {
+        // CARD
+        const card = document.createElement("div");
+        card.className = "exist-box-card";
+
+        // HEADER
+        const header = document.createElement("div");
+        header.className = "box-header";
+        header.innerHTML = `
+            <span class="box-title">${box.title}</span>
+            <div class="actions">
+                <button onclick="editBox('${box.id}')">✏️</button>
+                <button onclick="deleteBox('${box.id}')">🗑</button>
+            </div>
+        `;
+        card.appendChild(header);
+
+        // ITEMS
+        const content = document.createElement("div");
+        content.className = "box-content";
+
+        box.items.forEach(item => {
+            const row = document.createElement("div");
+            row.className = "item-line";
+            row.innerHTML = `
+                <span>${item.text}</span>
+                <button onclick="deleteItem('${box.id}', '${item.id}')">×</button>
+            `;
+            content.appendChild(row);
+        });
+
+        card.appendChild(content);
+
+        // ADD ITEM BUTTON
+        const addItemBtn = document.createElement("button");
+        addItemBtn.className = "add-item-btn";
+        addItemBtn.textContent = "+ Add Item";
+        addItemBtn.onclick = () => addItem(box.id);
+
+        card.appendChild(addItemBtn);
+
+        list.appendChild(card);
+    });
+}
+
+// Add new box
+function addBox() {
+    window.location.href = "createbox.html";
+    boxes.push({
+        id: uid(),
+        title: title.trim(),
+        items: []
+    });
+
+    save();
+    render();
+}
+
+// Edit box title
+function editBox(id) {
+    let box = boxes.find(b => b.id === id);
+    let newTitle = prompt("Edit Box Name:", box.title);
+    if (!newTitle) return;
+
+    box.title = newTitle.trim();
+    save();
+    render();
+}
+
+// Delete box
+function deleteBox(id) {
+    boxes = boxes.filter(b => b.id !== id);
+    save();
+    render();
+}
+
+// Add item inside box
+function addItem(boxId) {
+    let box = boxes.find(b => b.id === boxId);
+    let text = prompt("Enter item:");
+    if (!text) return;
+
+    box.items.push({
+        id: uid(),
+        text: text.trim()
+    });
+
+    save();
+    render();
+}
+
+// Delete item
+function deleteItem(boxId, itemId) {
+    let box = boxes.find(b => b.id === boxId);
+    box.items = box.items.filter(item => item.id !== itemId);
+    save();
+    render();
+}
+
+document.querySelector(".add-box-btn").onclick = addBox;
+
+render();
+
+</script>
+
+</body>
+</html>
