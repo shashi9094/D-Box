@@ -11,7 +11,8 @@
     <h1 class="title">Signing in to <span class="gradient-text">D-Box</span></h1>
 
     <div class="login-card">
-      <form id="loginForm">
+      <!-- Fixed: Real Backend Login Route -->
+      <form id="loginForm" action="/api/auth/login" method="POST">
         <label for="email">Email</label>
         <input type="email" id="email" name="email" required>
 
@@ -25,13 +26,38 @@
     </div>
   </div>
 
-  <script>
-    // Simple client-side demo: prevent real submission and redirect to home (home.html)
-    document.getElementById('loginForm').addEventListener('submit', function (e) {
-      e.preventDefault();
-      // In a real app you'd validate and send credentials to server here.
-      window.location.href = 'home.html';
-    });
-  </script>
+<script>
+  document.getElementById('loginForm').addEventListener('submit', async function (e){
+    e.preventDefault(); // Prevent page reload
+
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+
+    try{
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+
+      if (!res.ok){
+        alert(data.message || `Invalid login`);
+        return;
+      }
+
+      //Store token 
+      localStorage.setItem('token', data.token);
+
+      //Redirect after login
+      window.location.href = 'index.html';
+    } catch (error) {
+      console.error('Login failed:', error);
+      alert(`server error: could not login`);
+    }
+  });
+</script>
 </body>
 </html>

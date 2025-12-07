@@ -12,8 +12,8 @@
 
     <div class="login-card">
       <form id="signupForm">
-        <label for="fullName">Full name</label>
-        <input type="text" id="fullName" name="fullName" required>
+        <label for="fullname">Full name</label>
+        <input type="text" id="fullname" name="fullname" required>
 
         <label for="dob">Date of birth</label>
         <input type="date" id="dob" name="dob" required>
@@ -80,17 +80,31 @@
   </div>
 
   <script>
-    document.getElementById('signupForm').addEventListener('submit', function (e) {
-      e.preventDefault();
-      const pw = document.getElementById('password').value;
-      const cpw = document.getElementById('confirmPassword').value;
-      if (pw !== cpw) {
-        alert('Passwords do not match');
-        return;
-      }
-      // In a real app you'd send data to server here.
-      window.location.href = 'home.html';
+    document.getElementById("signupForm").addEventListener("submit", async function (e) {
+    e.preventDefault();
+
+    const data = {
+        fullname: document.getElementById("fullname").value,
+        dob: document.getElementById("dob").value,
+        email: document.getElementById("email").value,
+        country: document.getElementById("country").value,
+        capacity: document.getElementById("capacity").value,
+        purpose: document.getElementById("purpose").value,
+        password: document.getElementById("password").value
+    };
+
+    const response = await fetch("http://localhost:5000/api/auth/signup", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify(data)
     });
+
+    const result = await response.json();
+    console.log(result);
+});
+
   </script>
 </body>
 </html>
