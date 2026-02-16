@@ -58,3 +58,45 @@ exports.deleteBox = (req, res) => {
         res.json({ success: true, message: 'Box deleted successfully' });
     });
 };
+
+//DASHBOARD MY BOX API
+
+exports.getMyBoxes = (req, res) => {
+    const userid  = req.user.id; //authenticated user id from middleware
+    
+    const sql = 'SELECT * FROM boxes WHERE user_id = ?';
+
+    db.query(sql, [userid], (err, rows) => {
+        if (err) {
+            return res.status(500).json({ message: 'DB error', error: err });
+        }
+
+        res.json({
+            success: true,
+            data: rows
+        });
+    });
+};
+
+//EXISTING BOX (OTHER USER'S BOX) API
+
+exports.getOtherUsersBoxes = (req, res) => {
+    const userId = req.user.id;
+
+    const sql = `
+        SELECT boxes.*, users.fullName 
+        FROM boxes 
+        JOIN users ON boxes.user_id = users.id
+        WHERE boxes.user_id != ?
+    `;
+
+    db.query(sql, [userId], (err, rows) => {
+        if (err) return res.status(500).json({ message: "DB error", error: err });
+
+        res.json({
+            success: true,
+            data: rows
+        });
+    });
+};
+

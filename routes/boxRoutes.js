@@ -17,6 +17,10 @@ router.put('/update/:id', boxController.updateBox);
 //Delete Box
 router.delete('/delete/:id', boxController.deleteBox);
 
-// Define your routes here
+
+const auth =require("../utils/auth");
+
+router.get(`/my-boxes`, auth, boxController.getMyBoxes);
+router.get(`/other-boxes`, auth, boxController.getOtherUsersBoxes);  
 
 module.exports = router;

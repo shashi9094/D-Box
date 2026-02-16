@@ -183,6 +183,54 @@ body.allow-scroll {
   border-color: rgba(15, 140, 242, 0.906);
 }
 
+/* Divider */
+.login-divider {
+  text-align: center;
+  color: #888;
+  margin: 14px 0;
+  position: relative;
+}
+
+.login-divider::before,
+.login-divider::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 40%;
+  height: 1px;
+  background: #333;
+}
+.login-divider::before { left: 0; }
+.login-divider::after { right: 0; }
+
+
+/* Social Buttons */
+.social-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 10px;
+  border-radius: 25px;
+  border: 1px solid #333;
+  background: #111;
+  color: white;
+  text-decoration: none;
+  transition: 0.3s;
+}
+
+.social-btn img {
+  width: 18px;
+}
+
+.social-btn:hover {
+  background: #222;
+  border-color: #555;
+}
+
+
 /* select and text inputs for signup */
 .login-card input[type="text"],
 .login-card select,

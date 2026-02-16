@@ -1,5 +1,6 @@
 const db = require(`../db/connection`);
 const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");    
 
 // SIGNUP
 exports.signup = async (req, res) => {
@@ -83,7 +84,16 @@ exports.login = async (req, res) => {
             return res.status(400).json({ message: "Invalid password" });
         }
 
-        res.json({ message: "Login successful" });
+        // Generate JWT
+        const token = jwt.sign(
+            { id: user.id, email: user.email }, //payload
+            "my secret key",                      //secret key
+            { expiresIn: "7d" }                 //token validity
+        );
+
+        //return success response with token to frontend
+        res.json({ message: "Login successful", token });
+
     });
 };
 

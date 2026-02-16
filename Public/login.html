@@ -22,7 +22,19 @@
         <button type="submit" class="btn primary">Sign In</button>
       </form>
 
+      <!-- Divider -->
+      <div class="login-divider">
+        <span>or</span>`
+      </div>
+
+      <!-- Google Buttom -->
+       <a href="/api/auth/google" class="social-btn">
+        <img src="https://cdn-icons-png.flaticon.com/512/281/281764.png" alt="Google Logo" class="social-icon">
+          Continue with Google 
+      </a>
+
       <p class="muted">Don't have an account? <a href="signup.html">Sign up</a></p>
+      
     </div>
   </div>
 
@@ -45,14 +57,14 @@
 
       if (!res.ok){
         alert(data.message || `Invalid login`);
-        return;
+        return; //wrong: stay on login page
       }
 
       //Store token 
       localStorage.setItem('token', data.token);
 
       //Redirect after login
-      window.location.href = 'index.html';
+      window.location.href = 'home.html';
     } catch (error) {
       console.error('Login failed:', error);
       alert(`server error: could not login`);
