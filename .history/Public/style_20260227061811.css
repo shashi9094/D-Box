@@ -672,62 +672,60 @@ textarea:focus {
 }
 
 /* ========== FLOATING ADD BUTTON ========== */
-.add-box-btn,.upload-pdf-btn {
- display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0px;   /* default padding remove */
-  line-height: 1; /* baseline issue fix */
+.add-box-btn {
+  position: fixed;
+  bottom: 35px;
+  right: 35px;
   width: 60px;
   height: 60px;
   border: 1px solid #24a7ff;
   border-radius: 50%;
   background: linear-gradient(120deg, #ff00d9, #7b2ff7);
-  font-size: 25px;
+  font-size: 32px;
   color: white;
   cursor: pointer;
   box-shadow: 0 6px 20px rgba(0,0,0,0.5);
   transition: 0.25s ease;
 }
-.add-box-btn i {
-  transform: translateY(-2px);
-  font-size: 24px;
-}
-
 .add-box-btn:hover {
   transform: scale(1.1);
   box-shadow: 0 8px 25px rgba(123,47,247,0.6);
   border: 1px solid rgba(9, 228, 221, 0.915);
 }
-.add-box-btn i {
-  font-size: 24px;   /* thoda balanced look */
-  pointer-events: none; /* ensure icon doesn't interfere with button hover */
-}
-.add-box-btn:first-child i{
-  font-size: 26px; /* make the plus icon slightly bigger than the PDF icon for visual hierarchy */
-}
-
 
 /* DASHBOARD BTN */
 .button-group{
-    position: fixed;
-    bottom: 30px;
-    right: 30px;
     display: flex;
     gap: 10px;
-    z-index: 1000;
+    align-items: center;
 }
 
-/* agar label button jaisa behave nahi kar raha ho */
-.pdf-btn{
+.u-btn{
+    position: fixed;          /* Screen ke corner me fix karega */
+    bottom: 20px;             /* Neeche se distance */
+    right: 20px;              /* Right side se distance */
+    
+    background: #ff4d4d;
+    color: white;
+    width: 55px;
+    height: 55px;
+    
     display: flex;
     align-items: center;
     justify-content: center;
+    
+    border-radius: 50%;
+    font-size: 22px;
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    transition: 0.3s;
 }
 
-/* DASHBOAED PDF BTN */
-/* .fa-solid.fa-file-pdf{
-  background-color: #ff4d4d;
-  padding: 10px;
-  margin-right: 50px;
-} */
+.floating-upload-btn:hover{
+    background: #e60000;
+    transform: scale(1.1);
+}
+
+.upload-pdf-btn:hover{
+    background: #e60000;
+}

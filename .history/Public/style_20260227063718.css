@@ -673,40 +673,25 @@ textarea:focus {
 
 /* ========== FLOATING ADD BUTTON ========== */
 .add-box-btn,.upload-pdf-btn {
- display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0px;   /* default padding remove */
-  line-height: 1; /* baseline issue fix */
+  position: fixed;
+  bottom: 35px;
+  right: 35px;
   width: 60px;
   height: 60px;
   border: 1px solid #24a7ff;
   border-radius: 50%;
   background: linear-gradient(120deg, #ff00d9, #7b2ff7);
-  font-size: 25px;
+  font-size: 32px;
   color: white;
   cursor: pointer;
   box-shadow: 0 6px 20px rgba(0,0,0,0.5);
   transition: 0.25s ease;
 }
-.add-box-btn i {
-  transform: translateY(-2px);
-  font-size: 24px;
-}
-
 .add-box-btn:hover {
   transform: scale(1.1);
   box-shadow: 0 8px 25px rgba(123,47,247,0.6);
   border: 1px solid rgba(9, 228, 221, 0.915);
 }
-.add-box-btn i {
-  font-size: 24px;   /* thoda balanced look */
-  pointer-events: none; /* ensure icon doesn't interfere with button hover */
-}
-.add-box-btn:first-child i{
-  font-size: 26px; /* make the plus icon slightly bigger than the PDF icon for visual hierarchy */
-}
-
 
 /* DASHBOARD BTN */
 .button-group{
@@ -714,7 +699,7 @@ textarea:focus {
     bottom: 30px;
     right: 30px;
     display: flex;
-    gap: 10px;
+    gap: 15px;
     z-index: 1000;
 }
 
@@ -726,8 +711,6 @@ textarea:focus {
 }
 
 /* DASHBOAED PDF BTN */
-/* .fa-solid.fa-file-pdf{
+.fa-solid.fa-file-pdf{
   background-color: #ff4d4d;
-  padding: 10px;
-  margin-right: 50px;
-} */
+}
