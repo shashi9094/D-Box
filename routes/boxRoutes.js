@@ -24,3 +24,6 @@ router.get(`/my-boxes`, auth, boxController.getMyBoxes);
 router.get(`/other-boxes`, auth, boxController.getOtherUsersBoxes);  
 
 module.exports = router;
+
+// Upload Notes
+router.post("/uploadNotes", boxController.uploadNotes);

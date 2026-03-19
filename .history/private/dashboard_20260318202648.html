@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Exist Box</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+</head>
+
+<body>
+
+<div class="main-layout">
+
+    <!-- LEFT SIDEBAR -->
+    <div class="sidebar">
+        <h3>D-Box</h3>
+        <ul>
+            <li id="menudashboard">Dashboard</li>
+            <li id="newMenu">New Box</li>
+            <li id="menuExisting">Existing</li>
+            <li id="menuSettings">Settings</li>
+        </ul>
+    </div>
+
+    <!-- RIGHT CONTENT -->
+    <div class="exist-box-container" id="existingSection">
+        <!-- <h2 class="section-title">Old Boxes</h2> -->
+
+        <div class="box-list">
+
+            <div class="exist-box-card">
+                <div class="box-content">
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Add User Button -->
+        <div class="button-group">
+            <button class="add-box-btn">
+             <i class="fa-solid fa-plus"></i>
+            </button>
+
+          <label for="pdfUpload" class="upload-pdf-btn">
+             <i class="fa-solid fa-upload"></i>
+          </label>
+          <input type="file" id="pdfUpload" multiple hidden>
+        <p id="pdfName" class="pdf-name"></p>
+
+    </div>
+</div>
+<script>
+
+let boxes = JSON.parse(localStorage.getItem("boxes")) || [];
+
+// save to local storage
+function save() {
+    localStorage.setItem("boxes", JSON.stringify(boxes));
+}
+
+// unique id generator
+function uid() {
+    return Date.now().toString(36) + Math.random().toString(36).substr(2,5);
+}
+
+// Render all boxes
+function render() {
+    const list = document.querySelector(".box-list");
+    list.innerHTML = "";
+
+    boxes.forEach(box => {
+        // CARD
+        const card = document.createElement("div");
+        card.className = "exist-box-card";
+
+        // HEADER
+        const header = document.createElement("div");
+        header.className = "box-header";
+        header.innerHTML = `
+            <span class="box-title">${box.title}</span>
+            <div class="actions">
+                <button onclick="editBox('${box.id}')">✏️</button>
+                <button onclick="deleteBox('${box.id}')">🗑</button>
+            </div>
+        `;
+        card.appendChild(header);
+
+        // ITEMS
+        const content = document.createElement("div");
+        content.className = "box-content";
+
+        box.items.forEach(item => {
+            const row = document.createElement("div");
+            row.className = "item-line";
+            row.innerHTML = `
+                <span>${item.text}</span>
+                <button onclick="deleteItem('${box.id}', '${item.id}')">×</button>
+            `;
+            content.appendChild(row);
+        });
+
+        card.appendChild(content);
+
+        // ADD ITEM BUTTON
+        const addItemBtn = document.createElement("button");
+        addItemBtn.className = "add-item-btn";
+        addItemBtn.textContent = "+ Add Item";
+        addItemBtn.onclick = () => addItem(box.id);
+
+        card.appendChild(addItemBtn);
+
+        list.appendChild(card);
+    });
+}
+
+// Add new box
+function addBox() {
+    window.location.href = "createbox.html";
+}
+
+
+// Edit box title
+function editBox(id) {
+    let box = boxes.find(b => b.id === id);
+    let newTitle = prompt("Edit Box Name:", box.title);
+    if (!newTitle) return;
+
+    box.title = newTitle.trim();
+    save();
+    render();
+}
+
+// Delete box
+function deleteBox(id) {
+    boxes = boxes.filter(b => b.id !== id);
+    save();
+    render();
+}
+
+// Add item inside box
+function addItem(boxId) {
+    let box = boxes.find(b => b.id === boxId);
+    let text = prompt("Enter item:");
+    if (!text) return;
+
+    box.items.push({
+        id: uid(),
+        text: text.trim()
+    });
+
+    save();
+    render();
+}
+
+// Delete item
+function deleteItem(boxId, itemId) {
+    let box = boxes.find(b => b.id === boxId);
+    box.items = box.items.filter(item => item.id !== itemId);
+    save();
+    render();
+}
+
+document.querySelector(".add-box-btn").onclick = addBox;
+
+render();
+
+//// MENU HIGHLIGHT FUNCTION
+function activateMenu(menuId) {
+    const menus =["menudashboard", "newMenu", "menuExisting", "menuSettings"];
+    menus.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.remove("active");
+    });
+    const current = document.getElementById(menuId);
+    if (current) current.classList.add("active");
+}
+
+//page load: activate existing menu highlight
+window.onload = function() {
+    activateMenu("menuExisting");
+};  
+
+//Dashboard existing
+window.onload = function(){ 
+  const hash = window.location.hash.toLocaleLowerCase();
+  if (hash === "#existing"){
+      showExisting();
+  }
+};
+
+function showExisting(){
+    //section show/hide
+    document.getElementById("dashboardSection").style.display = "none";
+    document.getElementById("existingSection").style.display = "block";
+
+    //menu highlight
+    document.getElementById("menudashboard").classList.remove("active");
+    document.getElementById("menuExisting").classList.add("active");
+}
+
+// show file name after upload
+const pdfUpload = document.getElementById("pdfUpload");
+
+pdfUpload.addEventListener("change", function() {
+    const file = Array.from(this.files);
+
+    if (boxes.length === 0) {
+        alert("Please create a box first!");
+        this.value = "";
+        return;
+    }
+    //add last created box
+    const lastBox = boxes[boxes.length - 1];
+    file.forEach(file => {
+        lastBox.items.push({
+            id: uid(),
+            text: file.name
+        });
+    });
+    save();
+    render();
+});
+
+//fetch upload code or backend fetch code to show uploaded file name in dashboard
+const pdfUploadInput = document.getElementById("pdfUpload");
+pdfUploadInput.addEventListener("change", async function () {
+
+    const files = this.files[0];
+
+    const 
+    
+}) => {
+    
+})
+
+
+
+//load function to show uploaded file name
+async function loadFiles() {
+
+    const  res = await fetch("https://localhost:5000/api/box/files");
+    const files = await res.json();
+
+    const list = document.querySelector(".box-list");   
+    list.innerHTML = "";
+
+    files.forEach(file => {
+
+        const card = document.createElement("div");
+        card.className = "exist-box-card";
+
+        card.innerHTML = `
+            <div class="box-header">
+                <span class="box-title">${file}</span>
+            </div>
+        `;
+        list.appendChild(card);
+
+    });
+    
+}
+loadFiles();
+
+
+
+
+
+</script>
+
+</body>
+</html>

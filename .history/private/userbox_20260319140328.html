@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>User Box</title>
+<link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<div class="box-container">
+
+    <div class="sidebar">
+        <div class="side-btn">Add User</div>
+        <div class="side-btn">Pending Users</div>
+        <div class="side-btn">Total Users</div>
+    </div>
+
+    <div class="main-area">
+        <h2>Your <span class="gradient-text">Box</span></h2>
+
+        <div class="upload-area">
+            <div class="upload-box" id="uploadBox">
+                <p class="plus">+</p>
+                <p>Drop Your Files Here</p>
+            </div>
+        </div>
+
+        <!-- hidden file input -->
+        <input type="file" id="fileInput" hidden>
+
+        <!-- cards show here -->
+        <div class="boxes-section" id="boxesSection"></div>
+
+    </div>
+
+</div>
+
+<script>
+
+const uploadBox = document.getElementById("uploadBox");
+const fileInput = document.getElementById("fileInput");
+const boxesSection = document.getElementById("boxesSection");
+
+// Upload click
+uploadBox.addEventListener("click", () => {
+  fileInput.click();
+  uploadBox.style.transform = "scale(0.95)";
+});
+
+// File select
+fileInput.addEventListener("change", () => {
+  const file = fileInput.files[0];
+
+  if(file){
+    const card = document.createElement("div");
+    card.className = "box-card";
+
+    card.innerHTML = `
+      <h3>${file.name}</h3>
+      <p>${(file.size/1024).toFixed(2)} KB</p>
+    `;
+
+    boxesSection.appendChild(card);
+  }
+
+  uploadBox.style.transform = "scale(1)";
+});
+
+// Sidebar active
+const sideBtns = document.querySelectorAll(".side-btn");
+
+sideBtns.forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    sideBtns.forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+  });
+});
+
+</script>
+
+</body>
+</html>
