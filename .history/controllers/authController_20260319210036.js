@@ -41,7 +41,7 @@ exports.signup = async (req, res) => {
             // Step 3 → Database me insert karo
             const insertSql = `
                 INSERT INTO users 
-                (fullName, dob, email, country, capacity, purpose, password) 
+                (fullname, dob, email, country, capacity, purpose, password) 
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             `;
 

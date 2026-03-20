@@ -41,13 +41,13 @@ exports.signup = async (req, res) => {
             // Step 3 → Database me insert karo
             const insertSql = `
                 INSERT INTO users 
-                (fullName, dob, email, country, capacity, purpose, password) 
+                (fullname, dob, email, country, capacity, purpose, password) 
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             `;
 
             db.query(
                 insertSql,
-                [fullName, dob, email, country, capacity, purpose, hashedPassword],
+                [fullname, dob, email, country, capacity, purpose, hashedPassword],
                 (err, result) => {
                     if (err) {
                         return res.status(500).json({

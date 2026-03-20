@@ -17,7 +17,7 @@ exports.signup = async (req, res) => {
             password
         } = req.body;
 
-        const fullName = fullname; // Just to maintain the same variable name as before
+        co
 
         // Step 1 → Pehle check karo ki email already exist to nahi karta
         const checkSql = "SELECT * FROM users WHERE email = ?";
@@ -41,13 +41,13 @@ exports.signup = async (req, res) => {
             // Step 3 → Database me insert karo
             const insertSql = `
                 INSERT INTO users 
-                (fullName, dob, email, country, capacity, purpose, password) 
+                (fullname, dob, email, country, capacity, purpose, password) 
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             `;
 
             db.query(
                 insertSql,
-                [fullName, dob, email, country, capacity, purpose, hashedPassword],
+                [fullname, dob, email, country, capacity, purpose, hashedPassword],
                 (err, result) => {
                     if (err) {
                         return res.status(500).json({

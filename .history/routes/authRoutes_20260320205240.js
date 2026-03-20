@@ -25,7 +25,7 @@ router.get(
       email: req.user.email,
     };
 
-    res.redirect("/dashboard");
+    res.redirect("/dashboard.html");
   }
 );
 
