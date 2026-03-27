@@ -71,6 +71,10 @@ exports.signup = async (req, res) => {
 exports.login = async (req, res) => {
     const { email, password } = req.body;
 
+    if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
+    }
+
     const sql = "SELECT * FROM users WHERE email = ?";
 
     db.query(sql, [email], async (err, results) => {
@@ -93,8 +97,24 @@ exports.login = async (req, res) => {
             email: user.email
         };
 
-        // REDIRECT PRIVATE PAGE
-        res.redirect('/dashboard');
+        let token;
+        if (process.env.JWT_SECRET) {
+            token = jwt.sign(
+                { id: user.id, email: user.email },
+                process.env.JWT_SECRET,
+                { expiresIn: "1d" }
+            );
+        }
+
+        res.json({
+            message: "Login successful",
+            token,
+            redirectUrl: "/home",
+            user: {
+                id: user.id,
+                email: user.email
+            }
+        });
     });
 };
 

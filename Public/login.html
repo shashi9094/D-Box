@@ -48,6 +48,7 @@
     try{
       const res = await fetch('http://localhost:5000/api/auth/login', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: {
           'Content-Type': 'application/json'
         },
@@ -60,11 +61,14 @@
         return; //wrong: stay on login page
       }
 
-      //Store token 
-      localStorage.setItem('token', data.token);
+      if (data.token) {
+        localStorage.setItem('token', data.token);
+      } else {
+        localStorage.removeItem('token');
+      }
 
       //Redirect after login
-      window.location.href = 'home.html';
+      window.location.href = data.redirectUrl || '/home';
     } catch (error) {
       console.error('Login failed:', error);
       alert(`server error: could not login`);
