@@ -24,7 +24,7 @@
 
       <!-- Divider -->
       <div class="login-divider">
-        <span>or</span>`
+        <span>or</span>
       </div>
 
       <!-- Google Buttom -->
@@ -39,6 +39,30 @@
   </div>
 
 <script>
+  async function redirectIfLoggedIn() {
+    try {
+      const res = await fetch('/api/auth/session', {
+        credentials: 'same-origin'
+      });
+      const data = await res.json();
+
+      if (data.authenticated) {
+        window.location.replace('/home');
+      }
+    } catch (error) {
+      console.error('Session check failed:', error);
+    }
+  }
+
+  redirectIfLoggedIn();
+  window.addEventListener('pageshow', redirectIfLoggedIn);
+  window.addEventListener('focus', redirectIfLoggedIn);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      redirectIfLoggedIn();
+    }
+  });
+
   document.getElementById('loginForm').addEventListener('submit', async function (e){
     e.preventDefault(); // Prevent page reload
 
@@ -46,7 +70,7 @@
     const password = document.getElementById('password').value;
 
     try{
-      const res = await fetch('http://localhost:5000/api/auth/login', {
+      const res = await fetch('/api/auth/login', {
         method: 'POST',
         credentials: 'same-origin',
         headers: {
@@ -54,21 +78,26 @@
         },
         body: JSON.stringify({ email, password })
       });
-      const data = await res.json();
+
+      let data = {};
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        data = { message: text || 'Unexpected server response' };
+      }
 
       if (!res.ok){
         alert(data.message || `Invalid login`);
         return; //wrong: stay on login page
       }
 
-      if (data.token) {
-        localStorage.setItem('token', data.token);
-      } else {
-        localStorage.removeItem('token');
-      }
+      // Notify other tabs/pages that auth state changed.
+      localStorage.setItem('authState', `logged-in:${Date.now()}`);
 
       //Redirect after login
-      window.location.href = data.redirectUrl || '/home';
+      window.location.replace(data.redirectUrl || '/home');
     } catch (error) {
       console.error('Login failed:', error);
       alert(`server error: could not login`);

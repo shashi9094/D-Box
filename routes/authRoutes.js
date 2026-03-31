@@ -9,6 +9,24 @@ router.post("/signup", authController.signup);
 // Normal login
 router.post("/login", authController.login);
 
+router.get("/session", (req, res) => {
+  res.json({
+    authenticated: !!req.session?.user,
+    user: req.session?.user || null,
+  });
+});
+
+router.post("/logout", (req, res) => {
+  req.session.destroy((err) => {
+    if (err) {
+      return res.status(500).json({ message: "Logout failed" });
+    }
+
+    res.clearCookie("connect.sid");
+    return res.json({ message: "Logout successful" });
+  });
+});
+
 // Google login start
 router.get(
   "/google",

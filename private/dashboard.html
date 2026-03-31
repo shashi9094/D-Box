@@ -6,9 +6,10 @@
   <title>Exist Box</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <script src="/auth-guard.js" defer></script>
 </head>
 
-<body>
+<body class="dashboard-page">
 
 <div class="main-layout">
 
@@ -35,271 +36,366 @@
             </div>
 
         </div>
+</div>
 
-        <!-- Add User Button -->
-        <div class="button-group">
-            <button class="add-box-btn">
-             <i class="fa-solid fa-plus"></i>
+<div class="dashboard-modal" id="dashboardModal" aria-hidden="true">
+    <div class="dashboard-modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="dashboard-modal-header">
+            <h3 id="modalTitle">Manage Box</h3>
+            <button type="button" class="modal-close-btn" id="modalCloseBtn" aria-label="Close">
+                <i class="fa-solid fa-xmark"></i>
             </button>
+        </div>
 
-          <label for="pdfUpload" class="upload-pdf-btn">
-             <i class="fa-solid fa-upload"></i>
-          </label>
-          <input type="file" id="pdfUpload" multiple hidden>
-        <p id="pdfName" class="pdf-name"></p>
+        <form id="addMemberForm" class="modal-form" hidden>
+            <input type="hidden" id="addMemberBoxId">
+            <label for="memberEmailInput">User Email(s)</label>
+            <input id="memberEmailInput" type="text" placeholder="user1@example.com, user2@example.com" required>
+            <small class="modal-help-text">Multiple emails add kar sakte ho: comma ya new line se separate karo.</small>
+            <button type="submit" class="modal-submit-btn">
+                <i class="fa-solid fa-user-plus"></i> Add User
+            </button>
+        </form>
 
+        <form id="removeMemberForm" class="modal-form" hidden>
+            <input type="hidden" id="removeMemberBoxId">
+            <label for="removeMemberSelect">Select User</label>
+            <select id="removeMemberSelect" required></select>
+            <button type="submit" class="modal-submit-btn danger">
+                <i class="fa-solid fa-user-minus"></i> Revoke User
+            </button>
+        </form>
+
+        <p class="modal-error" id="modalErrorText"></p>
     </div>
 </div>
+
 <script>
+let boxes = [];
+let selectedBoxId = null;
+let selectedBoxRole = null;
+let reqUserId = null;
 
-let boxes = JSON.parse(localStorage.getItem("boxes")) || [];
+async function apiRequest(url, options = {}) {
+    const res = await fetch(url, {
+        credentials: 'same-origin',
+        ...options
+    });
 
-// save to local storage
-function save() {
-    localStorage.setItem("boxes", JSON.stringify(boxes));
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(payload.message || payload.error || 'Request failed');
+    }
+
+    return payload;
 }
 
-// unique id generator
-function uid() {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2,5);
+async function loadBoxes() {
+    const response = await apiRequest('/api/box/my-boxes');
+    boxes = response.data || [];
+
+    if (!boxes.length) {
+        selectedBoxId = null;
+        selectedBoxRole = null;
+        await render();
+        return;
+    }
+
+    if (!selectedBoxId) {
+        selectedBoxId = boxes[0].id;
+    }
+
+    const selectedBox = boxes.find((b) => b.id === selectedBoxId) || boxes[0];
+    selectedBoxId = selectedBox.id;
+    selectedBoxRole = selectedBox.role;
+    await render();
 }
 
-// Render all boxes
-function render() {
-    const list = document.querySelector(".box-list");
-    list.innerHTML = "";
+async function loadMembers(boxId) {
+    const response = await apiRequest(`/api/box/${boxId}/members`);
+    return response.data || [];
+}
 
-    boxes.forEach(box => {
-        // CARD
-        const card = document.createElement("div");
-        card.className = "exist-box-card";
+async function loadContents(boxId) {
+    const response = await apiRequest(`/api/box/${boxId}/content`);
+    return response.data || [];
+}
 
-        // HEADER
-        const header = document.createElement("div");
-        header.className = "box-header";
+function renderEmptyState(list) {
+    const card = document.createElement('div');
+    card.className = 'exist-box-card';
+    card.innerHTML = '<div class="box-content"><p>No boxes available. Create one to start collaboration.</p></div>';
+    list.appendChild(card);
+}
+
+async function render() {
+    const list = document.querySelector('.box-list');
+    list.innerHTML = '';
+
+    if (!boxes.length) {
+        renderEmptyState(list);
+        return;
+    }
+
+    for (const box of boxes) {
+        const card = document.createElement('div');
+        card.className = 'exist-box-card';
+        card.dataset.id = box.id;
+
+        const header = document.createElement('div');
+        header.className = 'box-header';
         header.innerHTML = `
-            <span class="box-title">${file.name}</span>
+            <span class="box-title">${box.title} <span class="role-pill">${box.role}</span></span>
             <div class="actions">
-                <button onclick="editBox('${box.id}')">✏️</button>
-                <button onclick="deleteBox('${box.id}')">🗑</button>
+                ${box.role === 'admin' ? `<button class="action-btn danger" data-action="delete" data-id="${box.id}"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
             </div>
         `;
         card.appendChild(header);
 
-        // ITEMS
-        const content = document.createElement("div");
-        content.className = "box-content";
+        const content = document.createElement('div');
+        content.className = 'box-content';
+        content.innerHTML = `<p class="box-description">${box.description || ''}</p>`;
 
-        box.items.forEach(item => {
-            const row = document.createElement("div");
-            row.className = "item-line";
-            row.innerHTML = `
-                <span>${item.text}</span>
-                <button onclick="deleteItem('${box.id}', '${item.id}')">×</button>
-            `;
-            content.appendChild(row);
-        });
+        if (box.id === selectedBoxId) {
+            const [members, contents] = await Promise.all([loadMembers(box.id), loadContents(box.id)]);
+
+            const membersBlock = document.createElement('div');
+            membersBlock.className = 'item-line members-line';
+            membersBlock.innerHTML = `<strong>Members:</strong> ${members.map((m) => `${m.email} (${m.role})`).join(', ') || 'No members'}`;
+            content.appendChild(membersBlock);
+
+            if (box.role === 'admin') {
+                const adminTools = document.createElement('div');
+                adminTools.className = 'item-line admin-tools';
+                adminTools.innerHTML = `
+                    <button class="action-chip" data-action="add-member" data-id="${box.id}"><i class="fa-solid fa-user-plus"></i> Add User by Email</button>
+                    <button class="action-chip danger" data-action="remove-member" data-id="${box.id}"><i class="fa-solid fa-user-minus"></i> Revoke User</button>
+                `;
+                content.appendChild(adminTools);
+            }
+
+            if (!contents.length) {
+                const row = document.createElement('div');
+                row.className = 'item-line';
+                row.textContent = 'No files/notes/videos in this box.';
+                content.appendChild(row);
+            }
+
+            if (contents.length) {
+                const summary = document.createElement('div');
+                summary.className = 'item-line content-row';
+                summary.innerHTML = `<span>${contents.length} item${contents.length === 1 ? '' : 's'} uploaded in this box.</span>`;
+                content.appendChild(summary);
+            }
+        }
 
         card.appendChild(content);
-
-        // ADD ITEM BUTTON
-        const addItemBtn = document.createElement("button");
-        addItemBtn.className = "add-item-btn";
-        addItemBtn.textContent = "+ Add Item";
-        addItemBtn.onclick = () => addItem(box.id);
-
-        card.appendChild(addItemBtn);
-
         list.appendChild(card);
+    }
+}
+
+async function deleteBox(id) {
+    if (!confirm('Delete this box and all its data?')) return;
+    await apiRequest(`/api/box/delete/${id}`, { method: 'DELETE' });
+
+    if (selectedBoxId === id) {
+        selectedBoxId = null;
+    }
+
+    await loadBoxes();
+}
+
+async function addMember(boxId) {
+    const email = document.getElementById('memberEmailInput').value.trim();
+    if (!email) return null;
+
+    return apiRequest(`/api/box/${boxId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
     });
 }
 
-// Add new box
-function addBox() {
-    window.location.href = "/createbox";
+async function removeMember(boxId) {
+    const memberUserId = document.getElementById('removeMemberSelect').value;
+    if (!memberUserId) return;
+
+    await apiRequest(`/api/box/${boxId}/members/${memberUserId}`, {
+        method: 'DELETE'
+    });
 }
 
-
-// Edit box title
-function editBox(id) {
-    let box = boxes.find(b => b.id === id);
-    let newTitle = prompt("Edit Box Name:", box.title);
-    if (!newTitle) return;
-
-    box.title = newTitle.trim();
-    save();
-    render();
+function closeModal() {
+    document.getElementById('dashboardModal').setAttribute('aria-hidden', 'true');
+    document.getElementById('modalErrorText').textContent = '';
+    setModalSection('none');
 }
 
-// Delete box
-function deleteBox(id) {
-    boxes = boxes.filter(b => b.id !== id);
-    save();
-    render();
+function setModalSection(section) {
+    const addForm = document.getElementById('addMemberForm');
+    const removeForm = document.getElementById('removeMemberForm');
+
+    addForm.hidden = section !== 'add';
+    removeForm.hidden = section !== 'remove';
+
+    addForm.style.display = section === 'add' ? 'grid' : 'none';
+    removeForm.style.display = section === 'remove' ? 'grid' : 'none';
 }
 
-// Add item inside box
-function addItem(boxId) {
-    let box = boxes.find(b => b.id === boxId);
-    let text = prompt("Enter item:");
-    if (!text) return;
+function openModal(type) {
+    const modal = document.getElementById('dashboardModal');
+    const title = document.getElementById('modalTitle');
+    setModalSection('none');
+    document.getElementById('modalErrorText').textContent = '';
 
-    box.items.push({
-        id: uid(),
-        text: text.trim()
+    if (type === 'add-member') {
+        title.textContent = 'Add User by Email';
+        setModalSection('add');
+        document.getElementById('memberEmailInput').value = '';
+    }
+
+    if (type === 'remove-member') {
+        title.textContent = 'Revoke User';
+        setModalSection('remove');
+    }
+
+    modal.setAttribute('aria-hidden', 'false');
+}
+
+async function openRemoveMemberModal(boxId) {
+    const members = await loadMembers(boxId);
+    const select = document.getElementById('removeMemberSelect');
+    select.innerHTML = '';
+
+    const removableMembers = members.filter((member) => String(member.user_id) !== String(reqUserId));
+
+    if (!removableMembers.length) {
+        throw new Error('No removable users found in this box');
+    }
+
+    removableMembers.forEach((member) => {
+        const option = document.createElement('option');
+        option.value = member.user_id;
+        option.textContent = `${member.email} (${member.role})`;
+        select.appendChild(option);
     });
 
-    save();
-    render();
+    document.getElementById('removeMemberBoxId').value = boxId;
+    openModal('remove-member');
 }
 
-// Delete item
-function deleteItem(boxId, itemId) {
-    let box = boxes.find(b => b.id === boxId);
-    box.items = box.items.filter(item => item.id !== itemId);
-    save();
-    render();
-}
+document.querySelector('.box-list').addEventListener('click', async (event) => {
+    const button = event.target.closest('button[data-action]');
 
-document.querySelector(".add-box-btn").onclick = addBox;
+    if (!button) {
+        const card = event.target.closest('.exist-box-card[data-id]');
+        if (!card) return;
 
-render();
+        const boxId = Number(card.dataset.id);
+        if (!Number.isFinite(boxId)) return;
 
-//// MENU HIGHLIGHT FUNCTION
-function activateMenu(menuId) {
-    const menus =["menudashboard", "newMenu", "menuExisting", "menuSettings"];
-    menus.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.remove("active");
-    });
-    const current = document.getElementById(menuId);
-    if (current) current.classList.add("active");
-}
-
-//page load: activate existing menu highlight
-window.onload = function() {
-    activateMenu("menuExisting");
-};  
-
-//Dashboard existing
-window.onload = function(){ 
-  const hash = window.location.hash.toLocaleLowerCase();
-  if (hash === "#existing"){
-      showExisting();
-  }
-};
-
-function showExisting(){
-    //section show/hide
-    document.getElementById("dashboardSection").style.display = "none";
-    document.getElementById("existingSection").style.display = "block";
-
-    //menu highlight
-    document.getElementById("menudashboard").classList.remove("active");
-    document.getElementById("menuExisting").classList.add("active");
-}
-
-// show file name after upload
-const pdfUpload = document.getElementById("pdfUpload");
-
-pdfUpload.addEventListener("change", function() {
-    const file = Array.from(this.files);
-
-    if (boxes.length === 0) {
-        alert("Please create a box first!");
-        this.value = "";
+        window.location.href = `/uploads?boxId=${boxId}`;
         return;
     }
-    //add last created box
-    const lastBox = boxes[boxes.length - 1];
-    file.forEach(file => {
-        lastBox.items.push({
-            id: uid(),
-            text: file.name
-        });
-    });
-    save();
-    render();
-});
 
-//sidebar navigation add 
-document.getElementById("menudashboard").onclick = function() {
-    window.location.href = "/dashboard";
-};
+    const { action, id } = button.dataset;
+    const boxId = Number(id);
 
-document.getElementById("menuExisting").onclick = function() {
-    window.location.href = "/userbox";
-};
+    try {
+        if (action === 'delete') {
+            await deleteBox(boxId);
+            return;
+        }
 
-document.getElementById("newMenu").onclick = function() {
-    window.location.href = "/createbox";
-};
+        if (action === 'add-member') {
+            document.getElementById('addMemberBoxId').value = boxId;
+            openModal('add-member');
+            return;
+        }
 
-document.getElementById("menuExisting").onclick = function() {
-    window.location.href = "/dashboard#existing";
-};
-
-document.getElementById("menuSettings").onclick = function() {
-    window.location.href = "/settings";
-};
-
-
-
-
-//fetch upload code or backend fetch code to show uploaded file name in dashboard
-const pdfUploadInput = document.getElementById("pdfUpload");
-pdfUploadInput.addEventListener("change", async function () {
-
-    const file = this.files[0];
-
-    const formData = new FormData();
-    formData.append("pdf", file);
-
-    const res = await fetch("https://localhost:5000/api/box/upload", {
-        method: "POST",
-        body: formData
-    });
-
-    const data = await res.json();
-
-    if(data.success) {
-        loadFiles(); //refesh file list after upload
+        if (action === 'remove-member') {
+            await openRemoveMemberModal(boxId);
+            return;
+        }
+    } catch (error) {
+        alert(error.message || 'Action failed');
     }
 });
 
+document.getElementById('menudashboard').onclick = function() {
+    window.location.href = '/dashboard';
+};
 
+document.getElementById('newMenu').onclick = function() {
+    window.location.href = '/createbox';
+};
 
+document.getElementById('menuExisting').onclick = function() {
+    window.location.href = '/dashboard#existing';
+};
 
-//load function to show uploaded file name
-async function loadFiles() {
+document.getElementById('menuSettings').onclick = function() {
+    window.location.href = '/settings';
+};
 
-    const  res = await fetch("https://localhost:5000/api/box/files");
-    const files = await res.json();
+document.getElementById('modalCloseBtn').addEventListener('click', closeModal);
+document.getElementById('dashboardModal').addEventListener('click', (event) => {
+    if (event.target.id === 'dashboardModal') {
+        closeModal();
+    }
+});
 
-    const list = document.querySelector(".box-list");   
-    list.innerHTML = "";
+document.getElementById('addMemberForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const boxId = Number(document.getElementById('addMemberBoxId').value);
+    try {
+        const result = await addMember(boxId);
+        if (result?.message) {
+            alert(result.message);
+        }
+        closeModal();
+        await loadBoxes();
+    } catch (error) {
+        document.getElementById('modalErrorText').textContent = error.message || 'Unable to add user';
+    }
+});
 
-    files.forEach(file => {
+document.getElementById('removeMemberForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const boxId = Number(document.getElementById('removeMemberBoxId').value);
+    try {
+        await removeMember(boxId);
+        closeModal();
+        await loadBoxes();
+    } catch (error) {
+        document.getElementById('modalErrorText').textContent = error.message || 'Unable to remove user';
+    }
+});
 
-        const card = document.createElement("div");
-        card.className = "exist-box-card";
-
-        card.innerHTML = `
-            <div class="box-header">
-                <span class="box-title">${file}</span>
-            </div>
-        `;
-        list.appendChild(card);
-
-    });
-    
+async function loadSessionUser() {
+    const session = await apiRequest('/api/auth/session');
+    reqUserId = session.user?.id || null;
 }
-loadFiles();
 
+function activateMenu(menuId) {
+    const menus = ['menudashboard', 'newMenu', 'menuExisting', 'menuSettings'];
+    menus.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.classList.remove('active');
+    });
+    const current = document.getElementById(menuId);
+    if (current) current.classList.add('active');
+}
 
-
-
-
+window.addEventListener('load', async () => {
+    activateMenu('menuExisting');
+    try {
+        await loadSessionUser();
+        await loadBoxes();
+    } catch (error) {
+        alert(error.message || 'Unable to load dashboard data');
+    }
+});
 </script>
 
 </body>

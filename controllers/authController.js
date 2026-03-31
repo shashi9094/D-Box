@@ -1,6 +1,7 @@
 const db = require(`../db/connection`);
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");    
+const boxController = require('./boxController');
 
 // SIGNUP
 exports.signup = async (req, res) => {
@@ -48,13 +49,20 @@ exports.signup = async (req, res) => {
             db.query(
                 insertSql,
                 [fullName, dob, email, country, capacity, purpose, hashedPassword],
-                (err, result) => {
+                async (err, result) => {
                     if (err) {
                         return res.status(500).json({
                             message: "Signup failed",
                             error: err
                         });
                     }
+
+                    try {
+                        await boxController.acceptPendingInvitesForUser(result.insertId, email);
+                    } catch (inviteErr) {
+                        console.error('Pending invite sync failed after signup:', inviteErr.message);
+                    }
+
                     res.json({ message: "Signup successful" });
                 }
             );
@@ -69,13 +77,14 @@ exports.signup = async (req, res) => {
 
 // LOGIN
 exports.login = async (req, res) => {
-    const { email, password } = req.body;
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const password = String(req.body.password || "");
 
     if (!email || !password) {
         return res.status(400).json({ message: "Email and password are required" });
     }
 
-    const sql = "SELECT * FROM users WHERE email = ?";
+    const sql = "SELECT * FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1";
 
     db.query(sql, [email], async (err, results) => {
         if (err) return res.status(500).json({ message: "DB error", error: err });
@@ -86,9 +95,29 @@ exports.login = async (req, res) => {
 
         const user = results[0];
 
-        const isMatch = await bcrypt.compare(password, user.password);
+        let isMatch = false;
+
+        // Support both bcrypt-hashed and legacy plain-text passwords.
+        if (typeof user.password === "string" && user.password.startsWith("$2")) {
+            isMatch = await bcrypt.compare(password, user.password);
+        } else {
+            isMatch = password === user.password;
+            if (isMatch) {
+                const upgradedHash = await bcrypt.hash(password, 10);
+                db.query("UPDATE users SET password = ? WHERE email = ?", [upgradedHash, email], () => {
+                    // Best effort migration; login should continue even if update fails.
+                });
+            }
+        }
+
         if (!isMatch) {
             return res.status(400).json({ message: "Invalid password" });
+        }
+
+        try {
+            await boxController.acceptPendingInvitesForUser(user.id, user.email);
+        } catch (inviteErr) {
+            console.error('Pending invite sync failed after login:', inviteErr.message);
         }
 
         // SESSION SET KARO (MOST IMPORTANT)
@@ -97,23 +126,16 @@ exports.login = async (req, res) => {
             email: user.email
         };
 
-        let token;
-        if (process.env.JWT_SECRET) {
-            token = jwt.sign(
-                { id: user.id, email: user.email },
-                process.env.JWT_SECRET,
-                { expiresIn: "1d" }
-            );
-        }
-
-        res.json({
-            message: "Login successful",
-            token,
-            redirectUrl: "/home",
-            user: {
-                id: user.id,
-                email: user.email
+        // Save session before responding so next protected route sees authenticated state.
+        req.session.save((saveErr) => {
+            if (saveErr) {
+                return res.status(500).json({ message: "Session save failed" });
             }
+
+            return res.json({
+                message: "Login successful",
+                redirectUrl: "/home"
+            });
         });
     });
 };

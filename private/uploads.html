@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Box Uploads</title>
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+  <script src="/auth-guard.js" defer></script>
+</head>
+<body class="dashboard-page">
+  <div class="main-layout uploads-page-layout">
+    <div class="sidebar">
+      <h3>D-Box</h3>
+      <ul>
+        <li id="menudashboard">Dashboard</li>
+        <li id="newMenu">New Box</li>
+        <li id="menuExisting" class="active">Existing</li>
+        <li id="menuSettings">Settings</li>
+      </ul>
+    </div>
+
+    <div class="exist-box-container uploads-container">
+      <section class="uploads-header-card" id="groupHeaderCard">
+        <div class="uploads-header-left">
+          <p class="uploads-eyebrow">Group Details</p>
+          <h1 id="groupTitle">Loading...</h1>
+          <p id="groupDescription">Please wait while we fetch your box details.</p>
+        </div>
+        <div class="uploads-header-right">
+          <span class="role-pill" id="groupRolePill">member</span>
+          <div class="uploads-admin-tools" id="adminTools" hidden>
+            <button class="action-chip" id="addMemberBtn" data-tooltip="Add User"><i class="fa-solid fa-user-plus"></i></button>
+            <button class="action-chip danger" id="removeMemberBtn" data-tooltip="Revoke User"><i class="fa-solid fa-user-minus"></i></button>
+          </div>
+        </div>
+      </section>
+
+      <section class="uploads-members-card">
+        <div class="uploads-members-head">
+          <h2>Members</h2>
+          <p id="memberCountText">0 members</p>
+        </div>
+        <div class="uploads-members-strip" id="membersStrip"></div>
+      </section>
+
+
+      <section class="uploads-grid-section">
+        <div class="uploads-grid-head">
+          <h2>All Uploads</h2>
+          <p>Read and access all files shared in this group.</p>
+        </div>
+        <div class="uploads-grid" id="uploadsGrid"></div>
+      </section>
+    </div>
+  </div>
+
+  <button class="uploads-fab" id="uploadsFab" aria-label="Create or upload" hidden>
+    <i class="fa-solid fa-plus"></i>
+  </button>
+
+  <div class="uploads-fab-menu" id="fabMenu" hidden>
+    <button type="button" data-action="new-folder"><i class="fa-regular fa-folder"></i> New folder</button>
+    <button type="button" data-action="file-upload"><i class="fa-regular fa-file"></i> File upload</button>
+    <button type="button" data-action="folder-upload"><i class="fa-regular fa-folder-open"></i> Folder upload</button>
+  </div>
+
+  <input id="fileInput" type="file" hidden />
+  <input id="folderInput" type="file" webkitdirectory directory multiple hidden />
+
+  <div class="dashboard-modal" id="uploadsModal" aria-hidden="true">
+    <div class="dashboard-modal-card" role="dialog" aria-modal="true" aria-labelledby="uploadsModalTitle">
+      <div class="dashboard-modal-header">
+        <h3 id="uploadsModalTitle">Action</h3>
+        <button type="button" class="modal-close-btn" id="uploadsModalClose" aria-label="Close">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <form id="addMemberForm" class="modal-form" hidden>
+        <label for="memberEmailInput">User Email(s)</label>
+        <input id="memberEmailInput" type="text" placeholder="user1@example.com, user2@example.com" required />
+        <small class="modal-help-text">Multiple emails add kar sakte ho: comma ya new line se separate karo.</small>
+        <button type="submit" class="modal-submit-btn"><i class="fa-solid fa-user-plus"></i> Add User</button>
+      </form>
+
+      <form id="removeMemberForm" class="modal-form" hidden>
+        <label for="removeMemberSelect">Select User</label>
+        <select id="removeMemberSelect" required></select>
+        <button type="submit" class="modal-submit-btn danger"><i class="fa-solid fa-user-minus"></i> Revoke User</button>
+      </form>
+
+      <form id="newFolderForm" class="modal-form" hidden>
+        <label for="folderNameInput">Folder Name</label>
+        <input id="folderNameInput" type="text" placeholder="Enter folder name" required />
+        <button type="submit" class="modal-submit-btn"><i class="fa-solid fa-folder-plus"></i> Create Folder</button>
+      </form>
+
+      <p class="modal-error" id="uploadsModalError"></p>
+    </div>
+  </div>
+
+  <script>
+    let boxId = null;
+    let myRole = 'member';
+    let reqUserId = null;
+    let members = [];
+    let contents = [];
+
+    function getBoxIdFromQuery() {
+      const params = new URLSearchParams(window.location.search);
+      const id = Number(params.get('boxId'));
+      return Number.isFinite(id) && id > 0 ? id : null;
+    }
+
+    async function apiRequest(url, options = {}) {
+      const response = await fetch(url, {
+        credentials: 'same-origin',
+        ...options
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || payload.error || 'Request failed');
+      }
+
+      return payload;
+    }
+
+    function formatDate(dateValue) {
+      if (!dateValue) return '';
+      const d = new Date(dateValue);
+      if (Number.isNaN(d.getTime())) return '';
+      return d.toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function setHeader(box) {
+      document.getElementById('groupTitle').textContent = box.title || 'Untitled Box';
+      document.getElementById('groupDescription').textContent = box.description || 'No description available.';
+      document.getElementById('groupRolePill').textContent = myRole;
+    }
+
+    function renderMembers() {
+      const strip = document.getElementById('membersStrip');
+      strip.innerHTML = '';
+
+      document.getElementById('memberCountText').textContent = `${members.length} member${members.length === 1 ? '' : 's'}`;
+
+      if (!members.length) {
+        strip.innerHTML = '<p class="uploads-empty">No users added yet.</p>';
+        return;
+      }
+
+      members.forEach((member) => {
+        const safeFullName = escapeHtml(member.fullName || 'User');
+        const safeEmail = escapeHtml(member.email || '-');
+        const safeRole = escapeHtml(member.role || 'member');
+        const chip = document.createElement('div');
+        chip.className = 'member-chip';
+        chip.innerHTML = `
+          <div class="member-chip-avatar">${(member.fullName || member.email || 'U').charAt(0).toUpperCase()}</div>
+          <div>
+            <p class="member-chip-name">${safeFullName}</p>
+            <p class="member-chip-meta">${safeEmail} (${safeRole})</p>
+          </div>
+        `;
+        strip.appendChild(chip);
+      });
+    }
+
+    function getTypeLabel(item) {
+      if (item.is_virtual_folder) return 'FOLDER';
+      if (item.content_type === 'note') return 'NOTE';
+      if (item.content_type === 'video') return 'VIDEO';
+      return 'FILE';
+    }
+
+    function getFileExtension(name) {
+      const value = String(name || '');
+      const parts = value.split('.');
+      return parts.length > 1 ? parts.pop().toLowerCase() : '';
+    }
+
+    function sanitizeFilePath(pathValue) {
+      const value = String(pathValue || '').trim();
+      if (!value || /^javascript:/i.test(value)) return '';
+      return value;
+    }
+
+    function isImageExtension(ext) {
+      return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif'].includes(ext);
+    }
+
+    function getFileBadge(item, extension) {
+      if (item.is_virtual_folder) return 'FOLDER';
+      if (item.content_type === 'note') return 'NOTE';
+      if (item.content_type === 'video') return 'VIDEO';
+      if (!extension) return 'FILE';
+      return extension;
+    }
+
+    function getFallbackIcon(item, extension) {
+      if (item.is_virtual_folder) return 'fa-regular fa-folder';
+      if (item.content_type === 'note') return 'fa-regular fa-note-sticky';
+      if (item.content_type === 'video') return 'fa-regular fa-circle-play';
+      if (extension === 'pdf') return 'fa-regular fa-file-pdf';
+      if (['doc', 'docx'].includes(extension)) return 'fa-regular fa-file-word';
+      if (['xls', 'xlsx', 'csv'].includes(extension)) return 'fa-regular fa-file-excel';
+      if (['ppt', 'pptx'].includes(extension)) return 'fa-regular fa-file-powerpoint';
+      if (['zip', 'rar', '7z'].includes(extension)) return 'fa-regular fa-file-zipper';
+      return 'fa-regular fa-file-lines';
+    }
+
+    function mapDisplayItem(item) {
+      const noteText = String(item.note_text || '').trim();
+      if (item.content_type === 'note' && noteText.startsWith('[Folder]')) {
+        const folderName = noteText.replace('[Folder]', '').trim() || 'Untitled Folder';
+        return {
+          ...item,
+          is_virtual_folder: true,
+          displayName: folderName
+        };
+      }
+
+      return {
+        ...item,
+        is_virtual_folder: false,
+        displayName: noteText || item.original_name || item.file_name || 'Untitled'
+      };
+    }
+
+    function renderContents() {
+      const grid = document.getElementById('uploadsGrid');
+      grid.innerHTML = '';
+
+      if (!contents.length) {
+        grid.innerHTML = '<div class="uploads-empty-card">No files, videos, or notes uploaded in this group.</div>';
+        return;
+      }
+
+      contents.forEach((rawItem) => {
+        const item = mapDisplayItem(rawItem);
+        const card = document.createElement('article');
+        card.className = 'upload-item-card';
+
+        const name = item.displayName;
+        const extension = getFileExtension(name);
+        const safePath = sanitizeFilePath(item.file_path);
+
+        const shortName = name.length > 70 ? `${name.slice(0, 67)}...` : name;
+        const uploadedBy = item.uploaded_by_name || `User ${item.uploaded_by || '-'}`;
+        const safeName = escapeHtml(name);
+        const safeShortName = escapeHtml(shortName);
+        const safeUploadedBy = escapeHtml(uploadedBy);
+        const safePathHtml = escapeHtml(safePath);
+        const isOpenable = Boolean(safePath && !item.is_virtual_folder);
+
+        if (isOpenable) {
+          card.classList.add('is-openable');
+          card.tabIndex = 0;
+          card.setAttribute('role', 'link');
+          card.setAttribute('aria-label', `Open ${name}`);
+          card.addEventListener('click', () => {
+            window.open(safePath, '_blank', 'noopener');
+          });
+          card.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              window.open(safePath, '_blank', 'noopener');
+            }
+          });
+        }
+
+        const previewMarkup = safePath && isImageExtension(extension) && !item.is_virtual_folder
+          ? `<img src="${safePathHtml}" alt="${safeName}" loading="lazy" />`
+          : `<div class="upload-preview-fallback"><i class="${getFallbackIcon(item, extension)}"></i></div>`;
+
+        card.innerHTML = `
+          <div class="upload-preview">
+            ${previewMarkup}
+            <span class="upload-preview-badge">${escapeHtml(getFileBadge(item, extension))}</span>
+          </div>
+          <div class="upload-item-body">
+            <div class="upload-item-head">
+              <span class="upload-type-pill">${getTypeLabel(item)}</span>
+            </div>
+            <h3 title="${safeName}">${safeShortName}</h3>
+            <p class="upload-meta">By ${safeUploadedBy}</p>
+            <p class="upload-meta">${formatDate(item.created_at)}</p>
+          </div>
+        `;
+
+        grid.appendChild(card);
+      });
+    }
+
+    function setAdminControlsVisible(isVisible) {
+      document.getElementById('adminTools').hidden = !isVisible;
+      document.getElementById('uploadsFab').hidden = !isVisible;
+    }
+
+    function closeModal() {
+      document.getElementById('uploadsModal').setAttribute('aria-hidden', 'true');
+      document.getElementById('uploadsModalError').textContent = '';
+      document.getElementById('addMemberForm').hidden = true;
+      document.getElementById('removeMemberForm').hidden = true;
+      document.getElementById('newFolderForm').hidden = true;
+    }
+
+    function openModal(type) {
+      document.getElementById('uploadsModalError').textContent = '';
+
+      document.getElementById('addMemberForm').hidden = type !== 'add-member';
+      document.getElementById('removeMemberForm').hidden = type !== 'remove-member';
+      document.getElementById('newFolderForm').hidden = type !== 'new-folder';
+
+      if (type === 'add-member') {
+        document.getElementById('uploadsModalTitle').textContent = 'Add User by Email';
+      } else if (type === 'remove-member') {
+        document.getElementById('uploadsModalTitle').textContent = 'Revoke User';
+      } else {
+        document.getElementById('uploadsModalTitle').textContent = 'New Folder';
+      }
+
+      document.getElementById('uploadsModal').setAttribute('aria-hidden', 'false');
+    }
+
+    async function uploadFile(file) {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      await apiRequest(`/api/box/${boxId}/content`, {
+        method: 'POST',
+        body: formData
+      });
+    }
+
+    async function uploadFolder(files) {
+      for (const file of files) {
+        await uploadFile(file);
+      }
+    }
+
+    async function addNote(noteText) {
+      const formData = new FormData();
+      formData.append('note', noteText);
+
+      await apiRequest(`/api/box/${boxId}/content`, {
+        method: 'POST',
+        body: formData
+      });
+    }
+
+    async function loadSessionUser() {
+      const session = await apiRequest('/api/auth/session');
+      reqUserId = session.user?.id || null;
+    }
+
+    async function loadGroupData() {
+      const boxResponse = await apiRequest('/api/box/my-boxes');
+      const allBoxes = boxResponse.data || [];
+      const currentBox = allBoxes.find((box) => Number(box.id) === Number(boxId));
+
+      if (!currentBox) {
+        throw new Error('This box is not accessible for your account');
+      }
+
+      myRole = currentBox.role || 'member';
+      setHeader(currentBox);
+      setAdminControlsVisible(myRole === 'admin');
+
+      const [memberResponse, contentResponse] = await Promise.all([
+        apiRequest(`/api/box/${boxId}/members`),
+        apiRequest(`/api/box/${boxId}/content`)
+      ]);
+
+      members = memberResponse.data || [];
+      contents = contentResponse.data || [];
+      renderMembers();
+      renderContents();
+    }
+
+    async function openRemoveModal() {
+      const select = document.getElementById('removeMemberSelect');
+      select.innerHTML = '';
+
+      const removable = members.filter((m) => String(m.user_id) !== String(reqUserId));
+      if (!removable.length) {
+        throw new Error('No removable users found');
+      }
+
+      removable.forEach((member) => {
+        const option = document.createElement('option');
+        option.value = member.user_id;
+        option.textContent = `${member.email} (${member.role})`;
+        select.appendChild(option);
+      });
+
+      openModal('remove-member');
+    }
+
+    document.getElementById('menudashboard').onclick = () => { window.location.href = '/dashboard'; };
+    document.getElementById('newMenu').onclick = () => { window.location.href = '/createbox'; };
+    document.getElementById('menuExisting').onclick = () => { window.location.href = '/dashboard#existing'; };
+    document.getElementById('menuSettings').onclick = () => { window.location.href = '/settings'; };
+
+    document.getElementById('uploadsFab').addEventListener('mouseenter', () => {
+      document.getElementById('fabMenu').hidden = false;
+    });
+
+    document.getElementById('uploadsFab').addEventListener('mouseleave', () => {
+      const menu = document.getElementById('fabMenu');
+      setTimeout(() => {
+        if (!menu.matches(':hover')) {
+          menu.hidden = true;
+        }
+      }, 100);
+    });
+
+    document.getElementById('fabMenu').addEventListener('mouseleave', () => {
+      document.getElementById('fabMenu').hidden = true;
+    });
+
+    document.getElementById('fabMenu').addEventListener('click', (event) => {
+      const actionButton = event.target.closest('button[data-action]');
+      if (!actionButton) return;
+
+      const action = actionButton.dataset.action;
+      document.getElementById('fabMenu').hidden = true;
+
+      if (action === 'file-upload') {
+        document.getElementById('fileInput').click();
+      }
+
+      if (action === 'folder-upload') {
+        document.getElementById('folderInput').click();
+      }
+
+      if (action === 'new-folder') {
+        document.getElementById('folderNameInput').value = '';
+        openModal('new-folder');
+      }
+    });
+
+    document.getElementById('fileInput').addEventListener('change', async (event) => {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+
+      try {
+        await uploadFile(file);
+        await loadGroupData();
+      } catch (error) {
+        alert(error.message || 'Upload failed');
+      } finally {
+        event.target.value = '';
+      }
+    });
+
+    document.getElementById('folderInput').addEventListener('change', async (event) => {
+      const files = Array.from(event.target.files || []);
+      if (!files.length) return;
+
+      try {
+        await uploadFolder(files);
+        await loadGroupData();
+      } catch (error) {
+        alert(error.message || 'Folder upload failed');
+      } finally {
+        event.target.value = '';
+      }
+    });
+
+    document.getElementById('addMemberBtn').addEventListener('click', () => {
+      document.getElementById('memberEmailInput').value = '';
+      openModal('add-member');
+    });
+
+    document.getElementById('removeMemberBtn').addEventListener('click', async () => {
+      try {
+        await openRemoveModal();
+      } catch (error) {
+        alert(error.message || 'Unable to open revoke user dialog');
+      }
+    });
+
+    document.getElementById('addMemberForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const email = document.getElementById('memberEmailInput').value.trim();
+      if (!email) return;
+
+      try {
+        const result = await apiRequest(`/api/box/${boxId}/members`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        });
+
+        if (result.message) {
+          alert(result.message);
+        }
+        closeModal();
+        await loadGroupData();
+      } catch (error) {
+        document.getElementById('uploadsModalError').textContent = error.message || 'Unable to add member';
+      }
+    });
+
+    document.getElementById('removeMemberForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const memberUserId = document.getElementById('removeMemberSelect').value;
+      if (!memberUserId) return;
+
+      try {
+        await apiRequest(`/api/box/${boxId}/members/${memberUserId}`, { method: 'DELETE' });
+        closeModal();
+        await loadGroupData();
+      } catch (error) {
+        document.getElementById('uploadsModalError').textContent = error.message || 'Unable to revoke user';
+      }
+    });
+
+    document.getElementById('newFolderForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const folderName = document.getElementById('folderNameInput').value.trim();
+      if (!folderName) {
+        document.getElementById('uploadsModalError').textContent = 'Please provide folder name';
+        return;
+      }
+
+      try {
+        await addNote(`[Folder] ${folderName}`);
+        closeModal();
+        await loadGroupData();
+      } catch (error) {
+        document.getElementById('uploadsModalError').textContent = error.message || 'Unable to create folder';
+      }
+    });
+
+    document.getElementById('uploadsModalClose').addEventListener('click', closeModal);
+    document.getElementById('uploadsModal').addEventListener('click', (event) => {
+      if (event.target.id === 'uploadsModal') {
+        closeModal();
+      }
+    });
+
+    window.addEventListener('load', async () => {
+      boxId = getBoxIdFromQuery();
+      if (!boxId) {
+        alert('Box not selected. Redirecting to dashboard.');
+        window.location.href = '/dashboard#existing';
+        return;
+      }
+
+      try {
+        await loadSessionUser();
+        await loadGroupData();
+      } catch (error) {
+        alert(error.message || 'Unable to open this group uploads');
+        window.location.href = '/dashboard#existing';
+      }
+    });
+  </script>
+</body>
+</html>

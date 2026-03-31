@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Create D-Box</title>
   <link rel="stylesheet" href="style.css">
+  <script src="/auth-guard.js" defer></script>
 </head>
 <body>
   <div class="container create D-Box">
@@ -20,21 +21,52 @@
         <!-- <input type="submit" value="Submit"> -->
 
         <label for="icapacity">Initial Box Capacity</label>
-        <input type="number" id="icapacity" name="icapacity" required min="1" max="50">
+        <input type="number" id="icapacity" name="icapacity" min="1" max="50" required>
 
         <button type="submit" class="btn primary">Create Box</button>
       </form>
 
-      <p class="muted">Doubtful? <a href="/createbox">Clear form</a></p>
+      <p class="muted">Doubtful? <a href="createbox.html">Clear form</a></p>
     </div>
   </div>
 
   <script>
-    // Simple client-side demo: prevent real submission and redirect to home (home.html)
-    document.getElementById('createBoxForm').addEventListener('submit', function (e) {
+    document.getElementById('createBoxForm').addEventListener('submit', async function (e) {
       e.preventDefault();
-      // In a real app you'd validate and send credentials to server here.
-      window.location.href = '/userbox';
+
+      const title = document.getElementById('text').value.trim();
+      const description = document.getElementById('user_paragraph').value.trim();
+
+      if (!title || !description) {
+        alert('Please enter both box name and description.');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/box/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ title, description })
+        });
+
+        let data = {};
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          data = await res.json();
+        } else {
+          const text = await res.text();
+          data = { message: text || 'Unexpected server response' };
+        }
+
+        if (!res.ok) {
+          throw new Error(data.message || data.error || 'Unable to create box');
+        }
+
+        window.location.href = '/dashboard#existing';
+      } catch (error) {
+        alert(error.message || 'Something went wrong while creating box.');
+      }
     });
   </script>
 </body>

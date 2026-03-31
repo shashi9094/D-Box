@@ -35,6 +35,19 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
+function setNoStore(res) {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+}
+
+app.get('/login.html', (req, res) => {
+    if (req.session && req.session.user) {
+        return res.redirect('/home');
+    }
+
+    setNoStore(res);
+    return res.sendFile(path.join(__dirname, 'Public', 'login.html'));
+});
+
 // Static
 app.use(express.static(path.join(__dirname, 'Public')));
 app.use("/uploads", express.static(path.join(__dirname, 'uploads')));
@@ -54,19 +67,23 @@ function isAuth(req, res, next) {
 
 // Private Pages
 app.get('/dashboard', isAuth, (req, res) => {
+    setNoStore(res);
     res.sendFile(path.join(__dirname, 'private', 'dashboard.html'));
 });
 
 app.get('/createbox', isAuth, (req, res) => {
+    setNoStore(res);
     res.sendFile(path.join(__dirname, 'private', 'createbox.html'));
 });
 
-app.get('/userbox', isAuth, (req, res) => {
-    res.sendFile(path.join(__dirname, 'private', 'userbox.html'));
+app.get('/home', isAuth, (req, res) => {
+    setNoStore(res);
+    res.sendFile(path.join(__dirname, 'private', 'home.html'));
 });
 
-app.get('/home', isAuth, (req, res) => {
-    res.sendFile(path.join(__dirname, 'private', 'home.html'));
+app.get('/uploads', isAuth, (req, res) => {
+    setNoStore(res);
+    res.sendFile(path.join(__dirname, 'private', 'uploads.html'));
 });
 
 // Start

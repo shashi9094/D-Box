@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>D-Box - Home</title>
   <link rel="stylesheet" href="/style.css" />
+  <script src="/auth-guard.js" defer></script>
 </head>
 <body class="allow-scroll home-body">
 
@@ -138,10 +139,20 @@
     //hilight active menu
 
 
-     //Logout function: clears token and redirects to login page
-    function logout() {
-     localStorage.removeItem('token'); //clear token on logout
-     window.location.href = "login.html"; //redirect to login
+    // Logout destroys server session so private pages remain protected on back/forward.
+    async function logout() {
+      try {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          credentials: 'same-origin'
+        });
+      } catch (error) {
+        console.error('Logout failed:', error);
+      }
+
+      localStorage.removeItem('token');
+      localStorage.setItem('authState', `logged-out:${Date.now()}`);
+      window.location.replace('/login.html');
     }
 
 
