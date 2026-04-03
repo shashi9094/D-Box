@@ -111,6 +111,23 @@
     </div>
   </div>
 
+  <div class="dashboard-modal" id="renameUploadModal" aria-hidden="true">
+    <div class="dashboard-modal-card upload-rename-modal" role="dialog" aria-modal="true" aria-labelledby="renameUploadModalTitle">
+      <div class="dashboard-modal-header">
+        <h3 id="renameUploadModalTitle">Rename Upload</h3>
+        <button type="button" class="modal-close-btn" id="renameUploadModalClose" aria-label="Close">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <form id="renameUploadForm" class="modal-form">
+        <label for="renameUploadInput">New name</label>
+        <input id="renameUploadInput" type="text" placeholder="Enter new file or folder name" required />
+        <button type="submit" class="modal-submit-btn"><i class="fa-solid fa-pen-to-square"></i> Save name</button>
+      </form>
+    </div>
+  </div>
+
   <script>
     let boxId = null;
     let myRole = 'member';
@@ -118,6 +135,8 @@
     let members = [];
     let contents = [];
     let currentFolderPath = '';
+    let activeMenuContentId = null;
+    let renameTarget = null;
 
     function goToParentFolder() {
       currentFolderPath = getParentFolderPath(currentFolderPath);
@@ -306,6 +325,7 @@
     function renderContents() {
       const grid = document.getElementById('uploadsGrid');
       grid.innerHTML = '';
+      closeActiveMenu();
       setFolderHeader();
 
       const visibleItems = contents
@@ -323,6 +343,7 @@
       visibleItems.forEach((item) => {
         const card = document.createElement('article');
         card.className = 'upload-item-card';
+        card.dataset.contentId = item.id;
 
         const name = item.displayName;
         const extension = getFileExtension(name);
@@ -336,6 +357,21 @@
         const safePathHtml = escapeHtml(safePath);
         const isOpenable = Boolean(safePath && !item.is_virtual_folder);
         const isFolder = Boolean(item.is_virtual_folder);
+        const canManage = myRole === 'admin';
+
+        const actionsMarkup = canManage
+          ? `
+            <div class="upload-card-actions" aria-label="Upload actions">
+              <button type="button" class="upload-card-menu-btn" data-menu-toggle="${item.id}" aria-label="More actions" aria-expanded="false">
+                <i class="fa-solid fa-ellipsis-vertical"></i>
+              </button>
+              <div class="upload-card-menu" data-menu="${item.id}" hidden>
+                <button type="button" data-action="rename" data-content-id="${item.id}"><i class="fa-solid fa-pen-to-square"></i> Rename</button>
+                <button type="button" class="danger" data-action="delete" data-content-id="${item.id}"><i class="fa-solid fa-trash"></i> Delete</button>
+              </div>
+            </div>
+          `
+          : '';
 
         if (isFolder) {
           card.classList.add('is-openable');
@@ -346,7 +382,10 @@
             currentFolderPath = buildChildFolderPath(name);
             renderContents();
           };
-          card.addEventListener('click', openFolder);
+          card.addEventListener('click', (event) => {
+            if (event.target.closest('.upload-card-actions')) return;
+            openFolder();
+          });
           card.addEventListener('keydown', (event) => {
             if (event.key === 'Enter' || event.key === ' ') {
               event.preventDefault();
@@ -358,7 +397,8 @@
           card.tabIndex = 0;
           card.setAttribute('role', 'link');
           card.setAttribute('aria-label', `Open ${name}`);
-          card.addEventListener('click', () => {
+          card.addEventListener('click', (event) => {
+            if (event.target.closest('.upload-card-actions')) return;
             window.open(safePath, '_blank', 'noopener');
           });
           card.addEventListener('keydown', (event) => {
@@ -374,6 +414,7 @@
           : `<div class="upload-preview-fallback"><i class="${getFallbackIcon(item, extension)}"></i></div>`;
 
         card.innerHTML = `
+          ${actionsMarkup}
           <div class="upload-preview">
             ${previewMarkup}
             <span class="upload-preview-badge">${escapeHtml(getFileBadge(item, extension))}</span>
@@ -389,6 +430,57 @@
         `;
 
         grid.appendChild(card);
+      });
+    }
+
+    function closeActiveMenu() {
+      activeMenuContentId = null;
+      document.querySelectorAll('.upload-card-menu').forEach((menu) => {
+        menu.hidden = true;
+      });
+      document.querySelectorAll('.upload-card-menu-btn').forEach((btn) => {
+        btn.setAttribute('aria-expanded', 'false');
+      });
+    }
+
+    function toggleItemMenu(contentId) {
+      const menu = document.querySelector(`.upload-card-menu[data-menu="${contentId}"]`);
+      const button = document.querySelector(`.upload-card-menu-btn[data-menu-toggle="${contentId}"]`);
+      if (!menu || !button) return;
+
+      const shouldOpen = activeMenuContentId !== String(contentId);
+      closeActiveMenu();
+
+      if (shouldOpen) {
+        activeMenuContentId = String(contentId);
+        menu.hidden = false;
+        button.setAttribute('aria-expanded', 'true');
+      }
+    }
+
+    function openRenameModal(item) {
+      renameTarget = item;
+      document.getElementById('renameUploadInput').value = item.displayName || '';
+      document.getElementById('renameUploadModal').setAttribute('aria-hidden', 'false');
+    }
+
+    function closeRenameModal() {
+      renameTarget = null;
+      document.getElementById('renameUploadModal').setAttribute('aria-hidden', 'true');
+      document.getElementById('renameUploadInput').value = '';
+    }
+
+    async function renameUpload(contentId, name) {
+      await apiRequest(`/api/box/${boxId}/content/${contentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+    }
+
+    async function deleteUpload(contentId) {
+      await apiRequest(`/api/box/${boxId}/content/${contentId}`, {
+        method: 'DELETE'
       });
     }
 
@@ -542,6 +634,75 @@
       if (action === 'new-folder') {
         document.getElementById('folderNameInput').value = '';
         openModal('new-folder');
+      }
+    });
+
+    document.getElementById('uploadsGrid').addEventListener('click', async (event) => {
+      const menuToggle = event.target.closest('button[data-menu-toggle]');
+      if (menuToggle) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleItemMenu(menuToggle.dataset.menuToggle);
+        return;
+      }
+
+      const actionButton = event.target.closest('button[data-action]');
+      if (!actionButton) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      closeActiveMenu();
+
+      const contentId = actionButton.dataset.contentId;
+      const action = actionButton.dataset.action;
+      const item = contents.find((entry) => String(entry.id) === String(contentId));
+      if (!item) return;
+
+      if (action === 'rename') {
+        openRenameModal(mapDisplayItem(item));
+        return;
+      }
+
+      if (action === 'delete') {
+        const confirmed = window.confirm(`Delete ${item.original_name || item.note_text || 'this upload'}?`);
+        if (!confirmed) return;
+
+        try {
+          await deleteUpload(contentId);
+          await loadGroupData();
+        } catch (error) {
+          alert(error.message || 'Delete failed');
+        }
+      }
+    });
+
+    document.addEventListener('click', (event) => {
+      if (!event.target.closest('.upload-item-card')) {
+        closeActiveMenu();
+      }
+    });
+
+    document.getElementById('renameUploadModalClose').addEventListener('click', closeRenameModal);
+    document.getElementById('renameUploadModal').addEventListener('click', (event) => {
+      if (event.target.id === 'renameUploadModal') {
+        closeRenameModal();
+      }
+    });
+
+    document.getElementById('renameUploadForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      if (!renameTarget) return;
+
+      const nextName = document.getElementById('renameUploadInput').value.trim();
+      if (!nextName) return;
+
+      try {
+        await renameUpload(renameTarget.id, nextName);
+        closeRenameModal();
+        await loadGroupData();
+      } catch (error) {
+        alert(error.message || 'Rename failed');
       }
     });
 

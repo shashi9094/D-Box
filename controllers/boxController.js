@@ -587,12 +587,18 @@ exports.uploadBoxContent = [
         const { boxId } = req.params;
         const userId = req.user.id;
         const { note, folderPath } = req.body;
+        const cleanupUploadedFile = () => {
+            if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+                fs.unlink(req.file.path, () => {});
+            }
+        };
 
         try {
             await ensureCollaborationTables();
 
             const isAdmin = await ensureAdmin(boxId, userId);
             if (!isAdmin) {
+                cleanupUploadedFile();
                 return res.status(403).json({ message: 'Only admin can upload or add notes/videos/files' });
             }
 
@@ -626,6 +632,7 @@ exports.uploadBoxContent = [
                 id: result.insertId
             });
         } catch (err) {
+            cleanupUploadedFile();
             return res.status(500).json({ message: 'Unable to upload content', error: err.message });
         }
     }
@@ -655,6 +662,109 @@ exports.getBoxContents = async (req, res) => {
         return res.json({ success: true, data: rows });
     } catch (err) {
         return res.status(500).json({ message: 'Unable to fetch contents', error: err.message });
+    }
+};
+
+exports.renameBoxContent = async (req, res) => {
+    const { boxId, contentId } = req.params;
+    const userId = req.user.id;
+    const { name } = req.body;
+
+    const safeName = String(name || '').trim();
+    if (!safeName) {
+        return res.status(400).json({ message: 'Name is required' });
+    }
+
+    try {
+        await ensureCollaborationTables();
+
+        const isAdmin = await ensureAdmin(boxId, userId);
+        if (!isAdmin) {
+            return res.status(403).json({ message: 'Only admin can rename uploads' });
+        }
+
+        const [rows] = await sql.query(
+            'SELECT id, content_type, file_name, file_path, original_name, note_text FROM box_contents WHERE id = ? AND box_id = ? LIMIT 1',
+            [contentId, boxId]
+        );
+
+        if (!rows.length) {
+            return res.status(404).json({ message: 'Upload not found' });
+        }
+
+        const content = rows[0];
+
+        if (content.content_type === 'note') {
+            const updatedNote = safeName.startsWith('[Folder]') ? safeName : content.note_text && content.note_text.startsWith('[Folder]')
+                ? `[Folder] ${safeName}`
+                : safeName;
+
+            await sql.query(
+                'UPDATE box_contents SET note_text = ? WHERE id = ? AND box_id = ?',
+                [updatedNote, contentId, boxId]
+            );
+
+            return res.json({ success: true, message: 'Upload renamed successfully' });
+        }
+
+        const currentFilePath = content.file_path ? path.join(__dirname, '..', String(content.file_path).replace(/^\/+/, '')) : '';
+        const originalExt = path.extname(String(content.original_name || content.file_name || '')).toLowerCase();
+        const nextBaseName = path.extname(safeName) ? path.basename(safeName, path.extname(safeName)) : safeName;
+        const nextFileName = `${Date.now()}-${nextBaseName}${originalExt || ''}`;
+        const nextRelativePath = `/uploads/boxes/${nextFileName}`;
+        const nextAbsolutePath = path.join(__dirname, '..', 'uploads', 'boxes', nextFileName);
+
+        if (currentFilePath && fs.existsSync(currentFilePath)) {
+            fs.renameSync(currentFilePath, nextAbsolutePath);
+        }
+
+        await sql.query(
+            `UPDATE box_contents
+             SET file_name = ?, file_path = ?, original_name = ?
+             WHERE id = ? AND box_id = ?`,
+            [nextFileName, nextRelativePath, safeName, contentId, boxId]
+        );
+
+        return res.json({ success: true, message: 'Upload renamed successfully' });
+    } catch (err) {
+        return res.status(500).json({ message: 'Unable to rename upload', error: err.message });
+    }
+};
+
+exports.deleteBoxContent = async (req, res) => {
+    const { boxId, contentId } = req.params;
+    const userId = req.user.id;
+
+    try {
+        await ensureCollaborationTables();
+
+        const isAdmin = await ensureAdmin(boxId, userId);
+        if (!isAdmin) {
+            return res.status(403).json({ message: 'Only admin can delete uploads' });
+        }
+
+        const [rows] = await sql.query(
+            'SELECT id, content_type, file_path FROM box_contents WHERE id = ? AND box_id = ? LIMIT 1',
+            [contentId, boxId]
+        );
+
+        if (!rows.length) {
+            return res.status(404).json({ message: 'Upload not found' });
+        }
+
+        const content = rows[0];
+        if (content.file_path) {
+            const absolutePath = path.join(__dirname, '..', String(content.file_path).replace(/^\/+/, ''));
+            if (fs.existsSync(absolutePath)) {
+                fs.unlinkSync(absolutePath);
+            }
+        }
+
+        await sql.query('DELETE FROM box_contents WHERE id = ? AND box_id = ?', [contentId, boxId]);
+
+        return res.json({ success: true, message: 'Upload deleted successfully' });
+    } catch (err) {
+        return res.status(500).json({ message: 'Unable to delete upload', error: err.message });
     }
 };
 

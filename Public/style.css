@@ -1396,11 +1396,12 @@ body{
   display: flex;
   flex-direction: column;
   gap: 10px;
-  overflow: hidden;
+  overflow: visible;
   transform: translateY(12px);
   opacity: 0;
   animation: uploadCardEnter 0.45s ease forwards;
   transition: transform 0.28s ease, box-shadow 0.28s ease, border-color 0.28s ease;
+  position: relative;
 }
 
 .upload-item-card.is-openable {
@@ -1416,6 +1417,89 @@ body{
   transform: translateY(-8px) scale(1.01);
   border-color: rgba(110, 231, 255, 0.72);
   box-shadow: 0 22px 38px rgba(5, 12, 32, 0.58), 0 0 0 1px rgba(123, 211, 255, 0.16) inset;
+}
+
+.upload-card-actions {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.upload-item-card:hover .upload-card-actions,
+.upload-item-card:focus-within .upload-card-actions {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.upload-card-menu-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(162, 191, 255, 0.32);
+  background: rgba(10, 16, 34, 0.92);
+  color: #eef6ff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 10px 18px rgba(2, 8, 20, 0.35);
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.upload-card-menu-btn:hover {
+  transform: scale(1.06);
+  border-color: rgba(111, 220, 255, 0.75);
+  background: rgba(16, 24, 48, 0.98);
+}
+
+.upload-card-menu {
+  min-width: 170px;
+  background: rgba(14, 19, 36, 0.98);
+  border: 1px solid rgba(128, 162, 255, 0.22);
+  border-radius: 12px;
+  padding: 8px;
+  box-shadow: 0 18px 32px rgba(0, 8, 24, 0.55);
+  display: grid;
+  gap: 6px;
+}
+
+.upload-card-menu[hidden] {
+  display: none !important;
+}
+
+.upload-card-menu button {
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(28, 36, 60, 0.92);
+  color: #e8f3ff;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.upload-card-menu button:hover {
+  background: rgba(23, 180, 249, 0.16);
+  transform: translateX(3px);
+}
+
+.upload-card-menu button i {
+  margin-right: 8px;
+}
+
+.upload-card-menu button.danger {
+  color: #ffd5d5;
+}
+
+.upload-rename-modal {
+  width: min(520px, 92vw);
 }
 
 .upload-preview {
@@ -1650,5 +1734,9 @@ body{
 
   .upload-preview {
     height: 160px;
+  }
+
+  .upload-card-actions {
+    opacity: 1;
   }
 }

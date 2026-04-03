@@ -28,6 +28,8 @@ router.delete('/:boxId/members/:memberUserId', boxController.removeMember);
 // Box content management
 router.get('/:boxId/content', boxController.getBoxContents);
 router.post('/:boxId/content', boxController.uploadBoxContent);
+router.patch('/:boxId/content/:contentId', boxController.renameBoxContent);
+router.delete('/:boxId/content/:contentId', boxController.deleteBoxContent);
 
 //Get Single Box
 router.get('/:id', boxController.getBoxById);
