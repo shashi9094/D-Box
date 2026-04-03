@@ -18,7 +18,38 @@ const storage = multer.diskStorage({
     }
 });
 
-const upload = multer({ storage });
+const allowedDocumentMimeTypes = new Set([
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+]);
+
+const allowedExtensions = new Set(['.pdf', '.doc', '.docx', '.mp4', '.webm', '.mov', '.mkv']);
+
+const isAllowedUpload = (file) => {
+    if (!file) return false;
+
+    const mime = String(file.mimetype || '').toLowerCase();
+    const extension = path.extname(String(file.originalname || '')).toLowerCase();
+
+    if (mime.startsWith('video/')) return true;
+    if (allowedDocumentMimeTypes.has(mime)) return true;
+    if (allowedExtensions.has(extension)) return true;
+
+    return false;
+};
+
+const upload = multer({
+    storage,
+    limits: { fileSize: 200 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (isAllowedUpload(file)) {
+            return cb(null, true);
+        }
+
+        return cb(new Error('Only PDF, DOC, DOCX, and video files are allowed'));
+    }
+});
 
 const sql = db.promise();
 let tablesReady = false;
@@ -48,9 +79,20 @@ const ensureCollaborationTables = async () => {
             file_path VARCHAR(500) NULL,
             original_name VARCHAR(255) NULL,
             note_text TEXT NULL,
+            folder_path VARCHAR(500) NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     `);
+
+    // Backward compatibility for older table versions.
+    try {
+        await sql.query('ALTER TABLE box_contents ADD COLUMN folder_path VARCHAR(500) NULL AFTER note_text');
+    } catch (alterErr) {
+        // ER_DUP_FIELDNAME means column already exists.
+        if (alterErr && alterErr.code !== 'ER_DUP_FIELDNAME') {
+            throw alterErr;
+        }
+    }
 
     await sql.query(`
         CREATE TABLE IF NOT EXISTS box_invites (
@@ -530,11 +572,21 @@ exports.listMembers = async (req, res) => {
 };
 
 exports.uploadBoxContent = [
-    upload.single('file'),
+    (req, res, next) => {
+        upload.single('file')(req, res, (err) => {
+            if (!err) return next();
+
+            if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(400).json({ message: 'File size should be less than 200 MB' });
+            }
+
+            return res.status(400).json({ message: err.message || 'Invalid file upload' });
+        });
+    },
     async (req, res) => {
         const { boxId } = req.params;
         const userId = req.user.id;
-        const { note } = req.body;
+        const { note, folderPath } = req.body;
 
         try {
             await ensureCollaborationTables();
@@ -552,6 +604,7 @@ exports.uploadBoxContent = [
             let fileName = null;
             let filePath = null;
             let originalName = null;
+            const safeFolderPath = String(folderPath || '').trim().replace(/^\/+|\/+$/g, '');
 
             if (req.file) {
                 contentType = inferContentType(req.file);
@@ -562,9 +615,9 @@ exports.uploadBoxContent = [
 
             const [result] = await sql.query(
                 `INSERT INTO box_contents
-                (box_id, uploaded_by, content_type, file_name, file_path, original_name, note_text)
-                VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                [boxId, userId, contentType, fileName, filePath, originalName, note || null]
+                (box_id, uploaded_by, content_type, file_name, file_path, original_name, note_text, folder_path)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [boxId, userId, contentType, fileName, filePath, originalName, note || null, safeFolderPath || null]
             );
 
             return res.json({
@@ -590,7 +643,7 @@ exports.getBoxContents = async (req, res) => {
         }
 
         const [rows] = await sql.query(
-            `SELECT bc.id, bc.content_type, bc.file_name, bc.file_path, bc.original_name, bc.note_text,
+            `SELECT bc.id, bc.content_type, bc.file_name, bc.file_path, bc.original_name, bc.note_text, bc.folder_path,
                     bc.created_at, bc.uploaded_by, u.fullName AS uploaded_by_name
              FROM box_contents bc
              LEFT JOIN users u ON u.id = bc.uploaded_by

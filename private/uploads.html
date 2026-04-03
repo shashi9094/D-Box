@@ -15,7 +15,6 @@
       <ul>
         <li id="menudashboard">Dashboard</li>
         <li id="newMenu">New Box</li>
-        <li id="menuExisting" class="active">Existing</li>
         <li id="menuSettings">Settings</li>
       </ul>
     </div>
@@ -47,8 +46,20 @@
 
       <section class="uploads-grid-section">
         <div class="uploads-grid-head">
-          <h2>All Uploads</h2>
-          <p>Read and access all files shared in this group.</p>
+          <h2 id="uploadsGridTitle">All Uploads</h2>
+          <div class="uploads-path-controls" id="uploadsPathControls">
+            <p id="uploadsGridSubtitle">Read and access all files shared in this group.</p>
+            <button
+              type="button"
+              class="uploads-parent-icon-btn"
+              id="backToParentBtn"
+              aria-label="Back to parent folder"
+              title="Back to parent"
+              hidden
+            >
+              <i class="fa-solid fa-turn-up"></i>
+            </button>
+          </div>
         </div>
         <div class="uploads-grid" id="uploadsGrid"></div>
       </section>
@@ -65,7 +76,7 @@
     <button type="button" data-action="folder-upload"><i class="fa-regular fa-folder-open"></i> Folder upload</button>
   </div>
 
-  <input id="fileInput" type="file" hidden />
+  <input id="fileInput" type="file" accept=".pdf,.doc,.docx,video/*" hidden />
   <input id="folderInput" type="file" webkitdirectory directory multiple hidden />
 
   <div class="dashboard-modal" id="uploadsModal" aria-hidden="true">
@@ -106,6 +117,12 @@
     let reqUserId = null;
     let members = [];
     let contents = [];
+    let currentFolderPath = '';
+
+    function goToParentFolder() {
+      currentFolderPath = getParentFolderPath(currentFolderPath);
+      renderContents();
+    }
 
     function getBoxIdFromQuery() {
       const params = new URLSearchParams(window.location.search);
@@ -188,6 +205,48 @@
       return 'FILE';
     }
 
+    function normalizeFolderPath(value) {
+      return String(value || '')
+        .replace(/\\/g, '/')
+        .replace(/^\/+|\/+$/g, '')
+        .trim();
+    }
+
+    function getParentFolderPath(value) {
+      const safe = normalizeFolderPath(value);
+      if (!safe) return '';
+      const parts = safe.split('/');
+      parts.pop();
+      return parts.join('/');
+    }
+
+    function buildChildFolderPath(folderName) {
+      const safeName = String(folderName || '').replace(/[\\/]/g, '').trim();
+      if (!safeName) return currentFolderPath;
+      return normalizeFolderPath(currentFolderPath ? `${currentFolderPath}/${safeName}` : safeName);
+    }
+
+    function setFolderHeader() {
+      const titleEl = document.getElementById('uploadsGridTitle');
+      const subtitleEl = document.getElementById('uploadsGridSubtitle');
+      const backBtn = document.getElementById('backToParentBtn');
+
+      if (!currentFolderPath) {
+        titleEl.textContent = 'All Uploads';
+        subtitleEl.textContent = 'Read and access all files shared in this group.';
+        backBtn.hidden = true;
+        return;
+      }
+
+      titleEl.textContent = `Folder: ${currentFolderPath.split('/').pop()}`;
+      subtitleEl.textContent = `Path: /${currentFolderPath}`;
+      backBtn.hidden = false;
+
+      const parentPath = `/${getParentFolderPath(currentFolderPath) || ''}`;
+      backBtn.setAttribute('aria-label', `Back to parent: ${parentPath || '/'}`);
+      backBtn.setAttribute('title', `Back to ${parentPath || '/'}`);
+    }
+
     function getFileExtension(name) {
       const value = String(name || '');
       const parts = value.split('.');
@@ -231,28 +290,37 @@
         return {
           ...item,
           is_virtual_folder: true,
-          displayName: folderName
+          displayName: folderName,
+          folder_path: normalizeFolderPath(item.folder_path)
         };
       }
 
       return {
         ...item,
         is_virtual_folder: false,
-        displayName: noteText || item.original_name || item.file_name || 'Untitled'
+        displayName: noteText || item.original_name || item.file_name || 'Untitled',
+        folder_path: normalizeFolderPath(item.folder_path)
       };
     }
 
     function renderContents() {
       const grid = document.getElementById('uploadsGrid');
       grid.innerHTML = '';
+      setFolderHeader();
 
-      if (!contents.length) {
-        grid.innerHTML = '<div class="uploads-empty-card">No files, videos, or notes uploaded in this group.</div>';
+      const visibleItems = contents
+        .map((rawItem) => mapDisplayItem(rawItem))
+        .filter((item) => item.folder_path === currentFolderPath);
+
+      if (!visibleItems.length) {
+        const emptyCard = document.createElement('div');
+        emptyCard.className = 'uploads-empty-card';
+        emptyCard.textContent = 'No files, videos, or notes uploaded in this folder.';
+        grid.appendChild(emptyCard);
         return;
       }
 
-      contents.forEach((rawItem) => {
-        const item = mapDisplayItem(rawItem);
+      visibleItems.forEach((item) => {
         const card = document.createElement('article');
         card.className = 'upload-item-card';
 
@@ -267,8 +335,25 @@
         const safeUploadedBy = escapeHtml(uploadedBy);
         const safePathHtml = escapeHtml(safePath);
         const isOpenable = Boolean(safePath && !item.is_virtual_folder);
+        const isFolder = Boolean(item.is_virtual_folder);
 
-        if (isOpenable) {
+        if (isFolder) {
+          card.classList.add('is-openable');
+          card.tabIndex = 0;
+          card.setAttribute('role', 'button');
+          card.setAttribute('aria-label', `Open folder ${name}`);
+          const openFolder = () => {
+            currentFolderPath = buildChildFolderPath(name);
+            renderContents();
+          };
+          card.addEventListener('click', openFolder);
+          card.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              openFolder();
+            }
+          });
+        } else if (isOpenable) {
           card.classList.add('is-openable');
           card.tabIndex = 0;
           card.setAttribute('role', 'link');
@@ -341,6 +426,7 @@
     async function uploadFile(file) {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('folderPath', currentFolderPath);
 
       await apiRequest(`/api/box/${boxId}/content`, {
         method: 'POST',
@@ -357,6 +443,7 @@
     async function addNote(noteText) {
       const formData = new FormData();
       formData.append('note', noteText);
+      formData.append('folderPath', currentFolderPath);
 
       await apiRequest(`/api/box/${boxId}/content`, {
         method: 'POST',
@@ -412,10 +499,13 @@
       openModal('remove-member');
     }
 
-    document.getElementById('menudashboard').onclick = () => { window.location.href = '/dashboard'; };
+    document.getElementById('menudashboard').onclick = () => { window.location.href = '/dashboard#existing'; };
     document.getElementById('newMenu').onclick = () => { window.location.href = '/createbox'; };
-    document.getElementById('menuExisting').onclick = () => { window.location.href = '/dashboard#existing'; };
     document.getElementById('menuSettings').onclick = () => { window.location.href = '/settings'; };
+
+    document.getElementById('backToParentBtn').addEventListener('click', () => {
+      goToParentFolder();
+    });
 
     document.getElementById('uploadsFab').addEventListener('mouseenter', () => {
       document.getElementById('fabMenu').hidden = false;

@@ -19,7 +19,6 @@
         <ul>
             <li id="menudashboard">Dashboard</li>
             <li id="newMenu">New Box</li>
-            <li id="menuExisting">Existing</li>
             <li id="menuSettings">Settings</li>
         </ul>
     </div>
@@ -36,6 +35,12 @@
             </div>
 
         </div>
+</div>
+
+<div class="button-group" aria-label="Quick actions">
+    <button type="button" class="add-box-btn" id="newBoxCornerBtn" aria-label="Create New Box" title="Create New Box">
+        <i class="fa-solid fa-plus"></i>
+    </button>
 </div>
 
 <div class="dashboard-modal" id="dashboardModal" aria-hidden="true">
@@ -323,15 +328,15 @@ document.querySelector('.box-list').addEventListener('click', async (event) => {
 });
 
 document.getElementById('menudashboard').onclick = function() {
-    window.location.href = '/dashboard';
+    window.location.href = '/dashboard#existing';
 };
 
 document.getElementById('newMenu').onclick = function() {
     window.location.href = '/createbox';
 };
 
-document.getElementById('menuExisting').onclick = function() {
-    window.location.href = '/dashboard#existing';
+document.getElementById('newBoxCornerBtn').onclick = function() {
+    window.location.href = '/createbox';
 };
 
 document.getElementById('menuSettings').onclick = function() {
@@ -378,7 +383,7 @@ async function loadSessionUser() {
 }
 
 function activateMenu(menuId) {
-    const menus = ['menudashboard', 'newMenu', 'menuExisting', 'menuSettings'];
+    const menus = ['menudashboard', 'newMenu', 'menuSettings'];
     menus.forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.classList.remove('active');
@@ -388,7 +393,7 @@ function activateMenu(menuId) {
 }
 
 window.addEventListener('load', async () => {
-    activateMenu('menuExisting');
+    activateMenu('menudashboard');
     try {
         await loadSessionUser();
         await loadBoxes();

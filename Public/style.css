@@ -1262,6 +1262,45 @@ body{
   font-size: 0.9rem;
 }
 
+.uploads-path-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+}
+
+.uploads-parent-icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid rgba(114, 236, 255, 0.55);
+  background:
+    radial-gradient(circle at 25% 15%, rgba(164, 245, 255, 0.35), transparent 62%),
+    linear-gradient(145deg, rgba(10, 35, 70, 0.94), rgba(7, 20, 48, 0.94));
+  color: #9feeff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(3, 10, 32, 0.55), inset 0 0 10px rgba(106, 221, 255, 0.12);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.uploads-parent-icon-btn i {
+  font-size: 0.82rem;
+}
+
+.uploads-parent-icon-btn:hover {
+  transform: translateY(-2px);
+  border-color: rgba(145, 245, 255, 0.9);
+  box-shadow: 0 10px 20px rgba(4, 12, 38, 0.62), 0 0 0 1px rgba(110, 231, 255, 0.26) inset;
+}
+
+.uploads-parent-icon-btn:focus-visible {
+  outline: 2px solid rgba(145, 230, 255, 0.95);
+  outline-offset: 2px;
+}
+
 .uploads-members-strip {
   display: flex;
   gap: 10px;
@@ -1579,6 +1618,11 @@ body{
     flex-direction: column;
     align-items: flex-start;
     margin-bottom: 10px;
+  }
+
+  .uploads-path-controls {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .member-chip {
