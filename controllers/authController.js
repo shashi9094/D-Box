@@ -63,7 +63,24 @@ exports.signup = async (req, res) => {
                         console.error('Pending invite sync failed after signup:', inviteErr.message);
                     }
 
-                    res.json({ message: "Signup successful" });
+                    req.session.user = {
+                        id: result.insertId,
+                        email: email
+                    };
+
+                    req.session.save((saveErr) => {
+                        if (saveErr) {
+                            return res.status(500).json({
+                                message: "Session save failed",
+                                error: saveErr
+                            });
+                        }
+
+                        res.json({
+                            message: "Signup successful",
+                            redirectUrl: "/home"
+                        });
+                    });
                 }
             );
         });

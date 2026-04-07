@@ -2,3 +2,9 @@ node_modules/
 .env
 
 .history/
+
+uploads/
+
+.vscode/
+
+*.log

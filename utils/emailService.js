@@ -1,23 +1,30 @@
 const nodemailer = require('nodemailer');
 
-// Create transporter - using Gmail SMTP
-// For production, use environment variables with app passwords
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER || 'your-email@gmail.com',
-    pass: process.env.EMAIL_PASSWORD || 'your-app-password'
-  }
-});
+const emailUser = String(process.env.EMAIL_USER || '').trim();
+const emailPassword = String(process.env.EMAIL_PASSWORD || '').trim();
+const emailEnabled = Boolean(emailUser && emailPassword);
 
-// Verify transporter connection on startup
-transporter.verify((error, success) => {
-  if (error) {
-    console.warn('Email service not configured:', error.message);
-  } else {
-    console.log('Email service ready');
-  }
-});
+const transporter = emailEnabled
+  ? nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: emailUser,
+        pass: emailPassword
+      }
+    })
+  : null;
+
+if (transporter) {
+  transporter.verify((error) => {
+    if (error) {
+      console.warn('Email service not configured:', error.message);
+    } else {
+      console.log('Email service ready');
+    }
+  });
+} else {
+  console.warn('Email service disabled because EMAIL_USER or EMAIL_PASSWORD is missing.');
+}
 
 /**
  * Send invitation email to join a box/group
@@ -29,8 +36,12 @@ transporter.verify((error, success) => {
  */
 const sendInvitationEmail = async (recipientEmail, boxTitle, senderName, joinUrl) => {
   try {
+    if (!transporter) {
+      return { success: false, error: 'Email service is disabled' };
+    }
+
     const mailOptions = {
-      from: process.env.EMAIL_USER || 'noreply@d-box.local',
+      from: emailUser,
       to: recipientEmail,
       subject: `You're invited to join "${boxTitle}" on D-Box`,
       html: `

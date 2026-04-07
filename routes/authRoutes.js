@@ -3,6 +3,11 @@ const router = express.Router();
 const passport = require("passport");
 const authController = require("../controllers/authController");
 
+const googleAuthEnabled = Boolean(
+  String(process.env.GOOGLE_CLIENT_ID || '').trim() &&
+  String(process.env.GOOGLE_CLIENT_SECRET || '').trim()
+);
+
 // Normal signup
 router.post("/signup", authController.signup);
 
@@ -28,22 +33,29 @@ router.post("/logout", (req, res) => {
 });
 
 // Google login start
-router.get(
-  "/google",
-  passport.authenticate("google", { scope: ["profile", "email"] })
-);
+router.get("/google", (req, res, next) => {
+  if (!googleAuthEnabled) {
+    return res.status(503).json({ message: "Google login is not configured" });
+  }
+
+  return passport.authenticate("google", { scope: ["profile", "email"] })(req, res, next);
+});
 
 // Google callback
-router.get(
-  "/google/callback",
-  passport.authenticate("google", { failureRedirect: "/login.html" }),
+router.get("/google/callback", (req, res, next) => {
+  if (!googleAuthEnabled) {
+    return res.status(503).json({ message: "Google login is not configured" });
+  }
+
+  return passport.authenticate("google", { failureRedirect: "/login.html" })(req, res, next);
+},
   (req, res) => {
     req.session.user = {
       id: req.user.id,
       email: req.user.email,
     };
 
-    res.redirect("/dashboard");
+    res.redirect("/home");
   }
 );
 

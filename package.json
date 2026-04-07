@@ -4,7 +4,12 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "backfill:uploads:dry": "node scripts/backfillBoxContents.js",
+    "backfill:uploads": "node scripts/backfillBoxContents.js --apply",
+    "sync:boxfiles": "node scripts/syncBoxFilesFromContents.js",
+    "cleanup:uploads:dry": "node scripts/cleanupStaleUploads.js",
+    "cleanup:uploads": "node scripts/cleanupStaleUploads.js --apply"
   },
   "repository": {
     "type": "git",

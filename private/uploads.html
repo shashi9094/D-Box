@@ -349,10 +349,8 @@
         const extension = getFileExtension(name);
         const safePath = sanitizeFilePath(item.file_path);
 
-        const shortName = name.length > 70 ? `${name.slice(0, 67)}...` : name;
         const uploadedBy = item.uploaded_by_name || `User ${item.uploaded_by || '-'}`;
         const safeName = escapeHtml(name);
-        const safeShortName = escapeHtml(shortName);
         const safeUploadedBy = escapeHtml(uploadedBy);
         const safePathHtml = escapeHtml(safePath);
         const isOpenable = Boolean(safePath && !item.is_virtual_folder);
@@ -365,7 +363,7 @@
               <button type="button" class="upload-card-menu-btn" data-menu-toggle="${item.id}" aria-label="More actions" aria-expanded="false">
                 <i class="fa-solid fa-ellipsis-vertical"></i>
               </button>
-              <div class="upload-card-menu" data-menu="${item.id}" hidden>
+              <div class="upload-card-menu" data-menu="${item.id}">
                 <button type="button" data-action="rename" data-content-id="${item.id}"><i class="fa-solid fa-pen-to-square"></i> Rename</button>
                 <button type="button" class="danger" data-action="delete" data-content-id="${item.id}"><i class="fa-solid fa-trash"></i> Delete</button>
               </div>
@@ -423,7 +421,7 @@
             <div class="upload-item-head">
               <span class="upload-type-pill">${getTypeLabel(item)}</span>
             </div>
-            <h3 title="${safeName}">${safeShortName}</h3>
+            <h3 title="${safeName}">${safeName}</h3>
             <p class="upload-meta">By ${safeUploadedBy}</p>
             <p class="upload-meta">${formatDate(item.created_at)}</p>
           </div>
@@ -435,8 +433,8 @@
 
     function closeActiveMenu() {
       activeMenuContentId = null;
-      document.querySelectorAll('.upload-card-menu').forEach((menu) => {
-        menu.hidden = true;
+      document.querySelectorAll('.upload-card-actions').forEach((actions) => {
+        actions.classList.remove('is-open');
       });
       document.querySelectorAll('.upload-card-menu-btn').forEach((btn) => {
         btn.setAttribute('aria-expanded', 'false');
@@ -445,15 +443,16 @@
 
     function toggleItemMenu(contentId) {
       const menu = document.querySelector(`.upload-card-menu[data-menu="${contentId}"]`);
+      const actions = document.querySelector(`.upload-card-actions .upload-card-menu[data-menu="${contentId}"]`)?.closest('.upload-card-actions');
       const button = document.querySelector(`.upload-card-menu-btn[data-menu-toggle="${contentId}"]`);
-      if (!menu || !button) return;
+      if (!menu || !button || !actions) return;
 
       const shouldOpen = activeMenuContentId !== String(contentId);
       closeActiveMenu();
 
       if (shouldOpen) {
         activeMenuContentId = String(contentId);
-        menu.hidden = false;
+        actions.classList.add('is-open');
         button.setAttribute('aria-expanded', 'true');
       }
     }
@@ -486,7 +485,7 @@
 
     function setAdminControlsVisible(isVisible) {
       document.getElementById('adminTools').hidden = !isVisible;
-      document.getElementById('uploadsFab').hidden = !isVisible;
+      document.getElementById('uploadsFab').hidden = false;
     }
 
     function closeModal() {
@@ -517,8 +516,8 @@
 
     async function uploadFile(file) {
       const formData = new FormData();
-      formData.append('file', file);
       formData.append('folderPath', currentFolderPath);
+      formData.append('file', file);
 
       await apiRequest(`/api/box/${boxId}/content`, {
         method: 'POST',
