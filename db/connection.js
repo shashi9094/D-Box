@@ -9,6 +9,24 @@ const dbSslRejectUnauthorized = !['0', 'false', 'no'].includes(
     String(process.env.DB_SSL_REJECT_UNAUTHORIZED || 'true').trim().toLowerCase()
 );
 
+const dbSslCaFromText = String(process.env.DB_SSL_CA || '').trim();
+const dbSslCaFromBase64 = String(process.env.DB_SSL_CA_BASE64 || '').trim();
+
+const resolveDbSslCa = () => {
+    if (dbSslCaFromBase64) {
+        try {
+            return Buffer.from(dbSslCaFromBase64, 'base64').toString('utf8');
+        } catch (_) {
+            return '';
+        }
+    }
+
+    if (!dbSslCaFromText) return '';
+    return dbSslCaFromText.replace(/\\n/g, '\n');
+};
+
+const dbSslCa = resolveDbSslCa();
+
 const pool = mysql.createPool({
     host: process.env.DB_HOST || 'localhost',
     user: process.env.DB_USER || 'root',
@@ -21,7 +39,8 @@ const pool = mysql.createPool({
     queueLimit: 0,
     ssl: dbSslEnabled
         ? {
-            rejectUnauthorized: dbSslRejectUnauthorized
+            rejectUnauthorized: dbSslRejectUnauthorized,
+            ca: dbSslCa || undefined
         }
         : undefined
 });

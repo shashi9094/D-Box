@@ -21,9 +21,21 @@ services:
         sync: false
       - key: DB_PORT
         sync: false
+      - key: DB_SSL
+        sync: false
+      - key: DB_SSL_REJECT_UNAUTHORIZED
+        sync: false
+      - key: DB_SSL_CA
+        sync: false
+      - key: DB_SSL_CA_BASE64
+        sync: false
+      - key: DB_CONNECT_TIMEOUT_MS
+        sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_CALLBACK_URL
         sync: false
       - key: EMAIL_USER
         sync: false
