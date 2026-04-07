@@ -688,6 +688,8 @@ exports.addMemberByEmail = async (req, res) => {
         let skippedSelfCount = 0;
         let addedCount = 0;
         let invitedCount = 0;
+        let emailSentCount = 0;
+        const emailFailed = [];
 
         for (const user of users) {
             if (Number(user.id) === Number(currentUserId)) {
@@ -724,6 +726,12 @@ exports.addMemberByEmail = async (req, res) => {
 
             if (!emailResult.success) {
                 console.warn(`Invitation email not sent to ${missingEmail}:`, emailResult.error);
+                emailFailed.push({
+                    email: missingEmail,
+                    error: emailResult.error || 'Unknown email error'
+                });
+            } else {
+                emailSentCount += 1;
             }
 
             invitedCount += 1;
@@ -739,9 +747,11 @@ exports.addMemberByEmail = async (req, res) => {
             success: true,
             addedCount,
             invitedCount,
+            emailSentCount,
+            emailFailed,
             skippedSelfCount,
             missingEmails,
-            message: `Added ${addedCount} member(s)${invitedCount ? `. Invited ${invitedCount} email(s)` : ''}${skippedSelfCount ? `. Skipped your own email` : ''}`
+            message: `Added ${addedCount} member(s)${invitedCount ? `. Processed ${invitedCount} invite(s), sent ${emailSentCount}` : ''}${emailFailed.length ? `. Failed ${emailFailed.length} email(s)` : ''}${skippedSelfCount ? `. Skipped your own email` : ''}`
         });
     } catch (err) {
         return res.status(500).json({ message: 'Unable to add member', error: err.message });
