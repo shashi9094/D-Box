@@ -1,7 +1,7 @@
 const nodemailer = require('nodemailer');
 
 const emailUser = String(process.env.EMAIL_USER || '').trim();
-const emailPassword = String(process.env.EMAIL_PASSWORD || '').trim();
+const emailPassword = String(process.env.EMAIL_PASSWORD || '').replace(/\s+/g, '').trim();
 const emailEnabled = Boolean(emailUser && emailPassword);
 
 const transporter = emailEnabled
@@ -94,8 +94,11 @@ If you did not expect this invitation, you can safely ignore this email.
     console.log(`Invitation email sent to ${recipientEmail}:`, result.messageId);
     return { success: true, messageId: result.messageId };
   } catch (error) {
-    console.error(`Failed to send invitation email to ${recipientEmail}:`, error.message);
-    return { success: false, error: error.message };
+    const detail = [error.code, error.responseCode, error.command, error.message]
+      .filter(Boolean)
+      .join(' | ');
+    console.error(`Failed to send invitation email to ${recipientEmail}:`, detail);
+    return { success: false, error: detail || 'Unknown email error' };
   }
 };
 
