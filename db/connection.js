@@ -45,6 +45,36 @@ const pool = mysql.createPool({
         : undefined
 });
 
+async function ensureCoreTables() {
+    const sql = pool.promise();
+
+    await sql.query(`
+        CREATE TABLE IF NOT EXISTS users (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            fullName VARCHAR(255) NOT NULL,
+            dob DATE NULL,
+            email VARCHAR(255) NOT NULL UNIQUE,
+            country VARCHAR(100) NULL,
+            capacity VARCHAR(100) NULL,
+            purpose VARCHAR(255) NULL,
+            password VARCHAR(255) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+
+    await sql.query(`
+        CREATE TABLE IF NOT EXISTS boxes (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            description TEXT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_boxes_user_id (user_id),
+            CONSTRAINT boxes_ibfk_1 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    `);
+}
+
 // Validate connection once on startup for faster error feedback.
 pool.getConnection((err, conn) => {
     if (err) {
@@ -60,6 +90,18 @@ pool.getConnection((err, conn) => {
 
     conn.release();
     console.log('Database connected successfully.');
+
+    ensureCoreTables()
+        .then(() => {
+            console.log('Core tables are ready.');
+        })
+        .catch((tableErr) => {
+            console.error('Core table setup failed:', {
+                code: tableErr.code,
+                errno: tableErr.errno,
+                sqlMessage: tableErr.sqlMessage
+            });
+        });
 });
 
 module.exports = pool;
