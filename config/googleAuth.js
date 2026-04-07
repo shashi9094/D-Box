@@ -4,6 +4,7 @@ const db = require("../db/connection");
 
 const clientID = String(process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_iD || '').trim();
 const clientSecret = String(process.env.GOOGLE_CLIENT_SECRET || '').trim();
+const callbackURL = String(process.env.GOOGLE_CALLBACK_URL || '/api/auth/google/callback').trim();
 
 if (clientID && clientSecret) {
   passport.use(
@@ -11,7 +12,7 @@ if (clientID && clientSecret) {
       {
         clientID,
         clientSecret,
-        callbackURL: "/api/auth/google/callback",
+        callbackURL,
       },
       (accessToken, refreshToken, profile, done) => {
         const email = profile.emails[0].value;

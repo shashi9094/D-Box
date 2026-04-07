@@ -9,6 +9,7 @@ const db = require('./db/connection');
 require('./config/googleAuth'); // Google Strategy load
 const passport = require('passport');
 const session = require('express-session');
+const isProduction = process.env.NODE_ENV === 'production';
 
 // Routes
 const authRoutes = require('./routes/authRoutes');
@@ -24,11 +25,18 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Render and other managed hosts run behind a reverse proxy
+app.set('trust proxy', 1);
+
 // Session
 app.use(session({
-    secret: 'secretKey',
+    secret: process.env.SESSION_SECRET || 'secretKey',
     resave: false,
-    saveUninitialized: false
+    saveUninitialized: false,
+    cookie: {
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax'
+    }
 }));
 
 // ⭐ VERY IMPORTANT (Google Login ke liye)
@@ -87,6 +95,8 @@ app.get('/uploads', isAuth, (req, res) => {
 });
 
 // Start
-app.listen(5000, () => {
-    console.log('Server is running on port 5000');
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
 });
