@@ -751,7 +751,7 @@ exports.addMemberByEmail = async (req, res) => {
             emailFailed,
             skippedSelfCount,
             missingEmails,
-            message: `Added ${addedCount} member(s)${invitedCount ? `. Processed ${invitedCount} invite(s), sent ${emailSentCount}` : ''}${emailFailed.length ? `. Failed ${emailFailed.length} email(s)` : ''}${skippedSelfCount ? `. Skipped your own email` : ''}`
+            message: `Added ${addedCount} member(s)${invitedCount ? `. Processed ${invitedCount} invite(s), sent ${emailSentCount}` : ''}${emailFailed.length ? `. Failed ${emailFailed.length} email(s)` : ''}${emailFailed.length ? `. Reason: ${emailFailed[0].error}` : ''}${skippedSelfCount ? `. Skipped your own email` : ''}`
         });
     } catch (err) {
         return res.status(500).json({ message: 'Unable to add member', error: err.message });
