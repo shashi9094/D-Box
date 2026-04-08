@@ -11,6 +11,8 @@
     <h1 class="title">Signing in to <span class="gradient-text">D-Box</span></h1>
 
     <div class="login-card">
+      <p id="googleNotice" class="muted" hidden></p>
+
       <!-- Fixed: Real Backend Login Route -->
       <form id="loginForm" action="/api/auth/login" method="POST">
         <label for="email">Email</label>
@@ -54,7 +56,18 @@
     }
   }
 
+  function showGoogleDisabledNotice() {
+    const params = new URLSearchParams(window.location.search);
+    const googleNotice = document.getElementById('googleNotice');
+
+    if (params.get('google') === 'disabled') {
+      googleNotice.textContent = 'Google login is not configured on this deployment. Use email and password to sign in.';
+      googleNotice.hidden = false;
+    }
+  }
+
   redirectIfLoggedIn();
+  showGoogleDisabledNotice();
   window.addEventListener('pageshow', redirectIfLoggedIn);
   window.addEventListener('focus', redirectIfLoggedIn);
   document.addEventListener('visibilitychange', () => {

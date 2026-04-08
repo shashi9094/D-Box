@@ -388,6 +388,8 @@ const resolvePublicBaseUrl = (req) => {
     return configuredPublicUrl || `${proto}://${host || 'localhost:5000'}`;
 };
 
+const isInviteEmailEnabled = () => String(process.env.INVITE_EMAIL_ENABLED || 'true').toLowerCase() !== 'false';
+
 const resolveUploadAbsolutePath = (filePathValue) => {
     const normalizedPath = String(filePathValue || '').replace(/^\/+/, '').replace(/\\/g, path.sep);
     return normalizedPath ? path.join(__dirname, '..', normalizedPath) : '';
@@ -688,8 +690,7 @@ exports.addMemberByEmail = async (req, res) => {
         let skippedSelfCount = 0;
         let addedCount = 0;
         let invitedCount = 0;
-        let emailSentCount = 0;
-        const emailFailed = [];
+        let emailQueuedCount = 0;
 
         for (const user of users) {
             if (Number(user.id) === Number(currentUserId)) {
@@ -709,6 +710,8 @@ exports.addMemberByEmail = async (req, res) => {
             addedCount += 1;
         }
 
+        const inviteBaseUrl = isInviteEmailEnabled() ? resolvePublicBaseUrl(req) : '';
+
         for (const missingEmail of missingEmails) {
             await sql.query(
                 `INSERT INTO box_invites (box_id, email, role, invited_by, status)
@@ -719,19 +722,20 @@ exports.addMemberByEmail = async (req, res) => {
                 [boxId, missingEmail, safeRole, currentUserId]
             );
 
-            // Send invitation email
-            const baseUrl = resolvePublicBaseUrl(req);
-            const joinUrl = `${baseUrl}/signup.html?invite=${boxId}&email=${encodeURIComponent(missingEmail)}`;
-            const emailResult = await sendInvitationEmail(missingEmail, boxTitle, senderName, joinUrl);
+            if (isInviteEmailEnabled()) {
+                const joinUrl = `${inviteBaseUrl}/signup.html?invite=${boxId}&email=${encodeURIComponent(missingEmail)}`;
+                emailQueuedCount += 1;
 
-            if (!emailResult.success) {
-                console.warn(`Invitation email not sent to ${missingEmail}:`, emailResult.error);
-                emailFailed.push({
-                    email: missingEmail,
-                    error: emailResult.error || 'Unknown email error'
-                });
-            } else {
-                emailSentCount += 1;
+                // Fire-and-forget so API is fast even if SMTP/network is slow.
+                sendInvitationEmail(missingEmail, boxTitle, senderName, joinUrl)
+                    .then((emailResult) => {
+                        if (!emailResult.success) {
+                            console.warn(`Invitation email not sent to ${missingEmail}:`, emailResult.error);
+                        }
+                    })
+                    .catch((emailErr) => {
+                        console.warn(`Invitation email error for ${missingEmail}:`, emailErr && emailErr.message ? emailErr.message : emailErr);
+                    });
             }
 
             invitedCount += 1;
@@ -747,11 +751,10 @@ exports.addMemberByEmail = async (req, res) => {
             success: true,
             addedCount,
             invitedCount,
-            emailSentCount,
-            emailFailed,
+            emailQueuedCount,
             skippedSelfCount,
             missingEmails,
-            message: `Added ${addedCount} member(s)${invitedCount ? `. Processed ${invitedCount} invite(s), sent ${emailSentCount}` : ''}${emailFailed.length ? `. Failed ${emailFailed.length} email(s)` : ''}${emailFailed.length ? `. Reason: ${emailFailed[0].error}` : ''}${skippedSelfCount ? `. Skipped your own email` : ''}`
+            message: `Added ${addedCount} member(s)${invitedCount ? isInviteEmailEnabled() ? `. Processed ${invitedCount} invite(s), email dispatch queued ${emailQueuedCount}` : `. Processed ${invitedCount} invite(s) without sending email` : ''}${skippedSelfCount ? `. Skipped your own email` : ''}`
         });
     } catch (err) {
         return res.status(500).json({ message: 'Unable to add member', error: err.message });

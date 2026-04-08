@@ -35,7 +35,7 @@ router.post("/logout", (req, res) => {
 // Google login start
 router.get("/google", (req, res, next) => {
   if (!googleAuthEnabled) {
-    return res.status(503).json({ message: "Google login is not configured" });
+    return res.redirect("/login.html?google=disabled");
   }
 
   return passport.authenticate("google", { scope: ["profile", "email"] })(req, res, next);
@@ -44,7 +44,7 @@ router.get("/google", (req, res, next) => {
 // Google callback
 router.get("/google/callback", (req, res, next) => {
   if (!googleAuthEnabled) {
-    return res.status(503).json({ message: "Google login is not configured" });
+    return res.redirect("/login.html?google=disabled");
   }
 
   return passport.authenticate("google", { failureRedirect: "/login.html" })(req, res, next);
