@@ -710,9 +710,13 @@ exports.addMemberByEmail = async (req, res) => {
             addedCount += 1;
         }
 
-        const inviteBaseUrl = isInviteEmailEnabled() ? resolvePublicBaseUrl(req) : '';
+        const inviteBaseUrl = resolvePublicBaseUrl(req);
+        const inviteLinks = [];
 
         for (const missingEmail of missingEmails) {
+            const joinUrl = `${inviteBaseUrl}/signup.html?invite=${boxId}&email=${encodeURIComponent(missingEmail)}`;
+            inviteLinks.push({ email: missingEmail, url: joinUrl });
+
             await sql.query(
                 `INSERT INTO box_invites (box_id, email, role, invited_by, status)
                  VALUES (?, ?, ?, ?, 'pending')
@@ -723,7 +727,6 @@ exports.addMemberByEmail = async (req, res) => {
             );
 
             if (isInviteEmailEnabled()) {
-                const joinUrl = `${inviteBaseUrl}/signup.html?invite=${boxId}&email=${encodeURIComponent(missingEmail)}`;
                 emailQueuedCount += 1;
 
                 // Fire-and-forget so API is fast even if SMTP/network is slow.
@@ -754,6 +757,7 @@ exports.addMemberByEmail = async (req, res) => {
             emailQueuedCount,
             skippedSelfCount,
             missingEmails,
+            inviteLinks,
             message: `Added ${addedCount} member(s)${invitedCount ? isInviteEmailEnabled() ? `. Processed ${invitedCount} invite(s), email dispatch queued ${emailQueuedCount}` : `. Processed ${invitedCount} invite(s) without sending email` : ''}${skippedSelfCount ? `. Skipped your own email` : ''}`
         });
     } catch (err) {

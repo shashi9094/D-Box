@@ -758,7 +758,18 @@
           body: JSON.stringify({ email })
         });
 
-        if (result.message) {
+        const inviteLinks = Array.isArray(result.inviteLinks) ? result.inviteLinks : [];
+        if (inviteLinks.length) {
+          const shareText = inviteLinks
+            .map((entry) => `${entry.email}: ${entry.url}`)
+            .join('\n');
+
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(shareText).catch(() => {});
+          }
+
+          alert(`${result.message || 'Invite processed'}\n\nJoin link copied. Share this if email not received:\n${shareText}`);
+        } else if (result.message) {
           alert(result.message);
         }
         closeModal();
