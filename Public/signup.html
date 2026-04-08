@@ -103,6 +103,47 @@
       signInLink.href = `login.html?invite=${inviteBoxId}${extraEmail}`;
     }
 
+    async function redirectIfLoggedInForInvite() {
+      try {
+        const sessionRes = await fetch('/api/auth/session', {
+          credentials: 'same-origin'
+        });
+        const sessionData = await sessionRes.json();
+
+        if (!sessionData.authenticated) {
+          return;
+        }
+
+        if (!(Number.isFinite(inviteBoxId) && inviteBoxId > 0)) {
+          window.location.replace('/home');
+          return;
+        }
+
+        const consumeRes = await fetch('/api/auth/accept-invite', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            inviteBoxId,
+            inviteEmail: inviteEmail || null
+          })
+        });
+
+        const consumeData = await consumeRes.json().catch(() => ({}));
+        if (!consumeRes.ok) {
+          throw new Error(consumeData.message || 'Unable to process invite');
+        }
+
+        window.location.replace(consumeData.redirectUrl || `/uploads?boxId=${inviteBoxId}`);
+      } catch (error) {
+        console.error('Invite consume failed:', error);
+      }
+    }
+
+    redirectIfLoggedInForInvite();
+
     document.getElementById("signupForm").addEventListener("submit", async function (e) {
     e.preventDefault();
 

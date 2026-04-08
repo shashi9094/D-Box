@@ -712,10 +712,23 @@ exports.addMemberByEmail = async (req, res) => {
 
         const inviteBaseUrl = resolvePublicBaseUrl(req);
         const inviteLinks = [];
+        const emailNotifications = [];
+
+        for (const user of users) {
+            const userEmail = String(user.email || '').trim().toLowerCase();
+            if (!userEmail || Number(user.id) === Number(currentUserId)) {
+                continue;
+            }
+
+            const loginJoinUrl = `${inviteBaseUrl}/login.html?invite=${boxId}&email=${encodeURIComponent(userEmail)}`;
+            inviteLinks.push({ email: userEmail, url: loginJoinUrl });
+            emailNotifications.push({ email: userEmail, url: loginJoinUrl });
+        }
 
         for (const missingEmail of missingEmails) {
             const joinUrl = `${inviteBaseUrl}/signup.html?invite=${boxId}&email=${encodeURIComponent(missingEmail)}`;
             inviteLinks.push({ email: missingEmail, url: joinUrl });
+            emailNotifications.push({ email: missingEmail, url: joinUrl });
 
             await sql.query(
                 `INSERT INTO box_invites (box_id, email, role, invited_by, status)
@@ -726,22 +739,24 @@ exports.addMemberByEmail = async (req, res) => {
                 [boxId, missingEmail, safeRole, currentUserId]
             );
 
-            if (isInviteEmailEnabled()) {
+            invitedCount += 1;
+        }
+
+        if (isInviteEmailEnabled()) {
+            for (const notification of emailNotifications) {
                 emailQueuedCount += 1;
 
                 // Fire-and-forget so API is fast even if SMTP/network is slow.
-                sendInvitationEmail(missingEmail, boxTitle, senderName, joinUrl)
+                sendInvitationEmail(notification.email, boxTitle, senderName, notification.url)
                     .then((emailResult) => {
                         if (!emailResult.success) {
-                            console.warn(`Invitation email not sent to ${missingEmail}:`, emailResult.error);
+                            console.warn(`Invitation email not sent to ${notification.email}:`, emailResult.error);
                         }
                     })
                     .catch((emailErr) => {
-                        console.warn(`Invitation email error for ${missingEmail}:`, emailErr && emailErr.message ? emailErr.message : emailErr);
+                        console.warn(`Invitation email error for ${notification.email}:`, emailErr && emailErr.message ? emailErr.message : emailErr);
                     });
             }
-
-            invitedCount += 1;
         }
 
         if (addedCount === 0 && invitedCount === 0) {
@@ -758,7 +773,7 @@ exports.addMemberByEmail = async (req, res) => {
             skippedSelfCount,
             missingEmails,
             inviteLinks,
-            message: `Added ${addedCount} member(s)${invitedCount ? isInviteEmailEnabled() ? `. Processed ${invitedCount} invite(s), email dispatch queued ${emailQueuedCount}` : `. Processed ${invitedCount} invite(s) without sending email` : ''}${skippedSelfCount ? `. Skipped your own email` : ''}`
+            message: `Added ${addedCount} member(s)${invitedCount ? `. Processed ${invitedCount} pending signup invite(s)` : ''}${isInviteEmailEnabled() ? `. Email dispatch queued ${emailQueuedCount}` : '. Email sending disabled'}${skippedSelfCount ? `. Skipped your own email` : ''}`
         });
     } catch (err) {
         return res.status(500).json({ message: 'Unable to add member', error: err.message });

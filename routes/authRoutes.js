@@ -32,6 +32,8 @@ router.post("/logout", (req, res) => {
   });
 });
 
+router.post('/accept-invite', authController.acceptInviteForSession);
+
 // Google login start
 router.get("/google", (req, res, next) => {
   if (!googleAuthEnabled) {

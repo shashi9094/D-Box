@@ -63,6 +63,37 @@
     inviteNotice.hidden = false;
   }
 
+  async function consumeInviteForLoggedInUser() {
+    if (!(Number.isFinite(inviteBoxId) && inviteBoxId > 0)) {
+      window.location.replace('/home');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/auth/accept-invite', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          inviteBoxId,
+          inviteEmail: inviteEmail || null
+        })
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.message || 'Unable to process invite');
+      }
+
+      window.location.replace(data.redirectUrl || `/uploads?boxId=${inviteBoxId}`);
+    } catch (error) {
+      alert(error.message || 'Unable to process invite. Please login again with invited account.');
+      window.location.replace('/home');
+    }
+  }
+
   async function redirectIfLoggedIn() {
     try {
       const res = await fetch('/api/auth/session', {
@@ -71,7 +102,7 @@
       const data = await res.json();
 
       if (data.authenticated) {
-        window.location.replace('/home');
+        await consumeInviteForLoggedInUser();
       }
     } catch (error) {
       console.error('Session check failed:', error);
