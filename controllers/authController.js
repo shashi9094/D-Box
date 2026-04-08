@@ -193,3 +193,40 @@ exports.resetPassword = async (req, res) => {
         return res.status(500).json({ message: "Error hashing password", error: err });
     }
 };
+
+// Accept invite from link for currently logged-in user.
+exports.acceptInviteForSession = async (req, res) => {
+    const sessionUser = req.session && req.session.user;
+    if (!sessionUser || !sessionUser.id || !sessionUser.email) {
+        return res.status(401).json({ message: 'Not authenticated' });
+    }
+
+    const inviteBoxId = Number(req.body && req.body.inviteBoxId);
+    const inviteEmail = String(req.body && req.body.inviteEmail || '').trim().toLowerCase();
+    const sessionEmail = String(sessionUser.email || '').trim().toLowerCase();
+
+    if (!Number.isFinite(inviteBoxId) || inviteBoxId <= 0) {
+        return res.status(400).json({ message: 'Invalid invite box id' });
+    }
+
+    if (inviteEmail && inviteEmail !== sessionEmail) {
+        return res.status(403).json({
+            message: 'Invite email does not match current logged-in user'
+        });
+    }
+
+    try {
+        await boxController.acceptPendingInvitesForUser(sessionUser.id, sessionUser.email);
+
+        return res.json({
+            success: true,
+            redirectUrl: `/uploads?boxId=${inviteBoxId}`,
+            message: 'Invite processed for current user'
+        });
+    } catch (error) {
+        return res.status(500).json({
+            message: 'Unable to process invite',
+            error: error.message
+        });
+    }
+};
