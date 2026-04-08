@@ -11,6 +11,8 @@
     <h1 class="title">Signing up to <span class="gradient-text">D-Box</span></h1>
 
     <div class="login-card">
+      <p id="inviteNotice" class="muted" hidden></p>
+
       <form id="signupForm">
         <label for="fullName">Full name</label>
         <input type="text" id="fullName" name="fullName" required>
@@ -75,11 +77,32 @@
         <button type="submit" class="btn primary">Create account</button>
       </form>
 
-      <p class="muted">Already have an account? <a href="login.html">Sign in</a></p>
+      <p class="muted">Already have an account? <a id="signinLink" href="login.html">Sign in</a></p>
     </div>
   </div>
 
   <script>
+    const inviteParams = new URLSearchParams(window.location.search);
+    const inviteEmail = String(inviteParams.get('email') || '').trim();
+    const inviteBoxId = Number(inviteParams.get('invite'));
+
+    if (inviteEmail) {
+      const emailInput = document.getElementById('email');
+      emailInput.value = inviteEmail;
+      emailInput.readOnly = true;
+      emailInput.title = 'Invite email locked for joining shared box';
+
+      const inviteNotice = document.getElementById('inviteNotice');
+      inviteNotice.textContent = `You were invited as ${inviteEmail}. Sign up with this email to auto-join the shared group.`;
+      inviteNotice.hidden = false;
+    }
+
+    if (Number.isFinite(inviteBoxId) && inviteBoxId > 0) {
+      const signInLink = document.getElementById('signinLink');
+      const extraEmail = inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : '';
+      signInLink.href = `login.html?invite=${inviteBoxId}${extraEmail}`;
+    }
+
     document.getElementById("signupForm").addEventListener("submit", async function (e) {
     e.preventDefault();
 
@@ -100,7 +123,8 @@
         country: document.getElementById("country").value,
         capacity: document.getElementById("capacity").value,
         purpose: document.getElementById("purpose").value,
-        password: password
+      password: password,
+      inviteBoxId: Number.isFinite(inviteBoxId) && inviteBoxId > 0 ? inviteBoxId : null
     };
 
     try {

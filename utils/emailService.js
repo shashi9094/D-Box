@@ -3,10 +3,20 @@ const nodemailer = require('nodemailer');
 const emailUser = String(process.env.EMAIL_USER || '').trim();
 const emailPassword = String(process.env.EMAIL_PASSWORD || '').replace(/\s+/g, '').trim();
 const emailEnabled = Boolean(emailUser && emailPassword);
+const smtpHost = String(process.env.SMTP_HOST || 'smtp.gmail.com').trim();
+const smtpPort = Number(process.env.SMTP_PORT || 465);
+const smtpSecure = String(process.env.SMTP_SECURE || 'true').toLowerCase() !== 'false';
+const smtpForceIpv4 = String(process.env.SMTP_FORCE_IPV4 || 'true').toLowerCase() !== 'false';
 
 const transporter = emailEnabled
   ? nodemailer.createTransport({
-      service: 'gmail',
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpSecure,
+      family: smtpForceIpv4 ? 4 : 0,
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
       auth: {
         user: emailUser,
         pass: emailPassword

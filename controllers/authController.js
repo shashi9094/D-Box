@@ -15,8 +15,14 @@ exports.signup = async (req, res) => {
             country,
             capacity,
             purpose,
-            password
+            password,
+            inviteBoxId
         } = req.body;
+
+        const safeInviteBoxId = Number(inviteBoxId);
+        const redirectUrl = Number.isFinite(safeInviteBoxId) && safeInviteBoxId > 0
+            ? `/uploads?boxId=${safeInviteBoxId}`
+            : '/home';
 
         const fullName = fullname; // Just to maintain the same variable name as before
 
@@ -78,7 +84,7 @@ exports.signup = async (req, res) => {
 
                         res.json({
                             message: "Signup successful",
-                            redirectUrl: "/home"
+                            redirectUrl
                         });
                     });
                 }
@@ -96,6 +102,10 @@ exports.signup = async (req, res) => {
 exports.login = async (req, res) => {
     const email = String(req.body.email || "").trim().toLowerCase();
     const password = String(req.body.password || "");
+    const inviteBoxId = Number(req.body.inviteBoxId);
+    const redirectUrl = Number.isFinite(inviteBoxId) && inviteBoxId > 0
+        ? `/uploads?boxId=${inviteBoxId}`
+        : '/home';
 
     if (!email || !password) {
         return res.status(400).json({ message: "Email and password are required" });
@@ -151,7 +161,7 @@ exports.login = async (req, res) => {
 
             return res.json({
                 message: "Login successful",
-                redirectUrl: "/home"
+                redirectUrl
             });
         });
     });

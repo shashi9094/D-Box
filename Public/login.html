@@ -12,6 +12,7 @@
 
     <div class="login-card">
       <p id="googleNotice" class="muted" hidden></p>
+      <p id="inviteNotice" class="muted" hidden></p>
 
       <!-- Fixed: Real Backend Login Route -->
       <form id="loginForm" action="/api/auth/login" method="POST">
@@ -41,6 +42,27 @@
   </div>
 
 <script>
+  const inviteParams = new URLSearchParams(window.location.search);
+  const inviteEmail = String(inviteParams.get('email') || '').trim();
+  const inviteBoxId = Number(inviteParams.get('invite'));
+
+  function showInviteNotice() {
+    const inviteNotice = document.getElementById('inviteNotice');
+    if (!inviteEmail && !(Number.isFinite(inviteBoxId) && inviteBoxId > 0)) {
+      return;
+    }
+
+    if (inviteEmail) {
+      const emailInput = document.getElementById('email');
+      emailInput.value = inviteEmail;
+      emailInput.readOnly = true;
+      emailInput.title = 'Invite email locked for joining shared box';
+    }
+
+    inviteNotice.textContent = 'Invite link detected. Sign in with this invited email to join the shared group instantly.';
+    inviteNotice.hidden = false;
+  }
+
   async function redirectIfLoggedIn() {
     try {
       const res = await fetch('/api/auth/session', {
@@ -68,6 +90,7 @@
 
   redirectIfLoggedIn();
   showGoogleDisabledNotice();
+  showInviteNotice();
   window.addEventListener('pageshow', redirectIfLoggedIn);
   window.addEventListener('focus', redirectIfLoggedIn);
   document.addEventListener('visibilitychange', () => {
@@ -89,7 +112,11 @@
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({
+          email,
+          password,
+          inviteBoxId: Number.isFinite(inviteBoxId) && inviteBoxId > 0 ? inviteBoxId : null
+        })
       });
 
       let data = {};
