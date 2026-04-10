@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const passport = require("passport");
 const authController = require("../controllers/authController");
+const db = require("../db/connection");
 
 function isValidGoogleClientId(value) {
   return /^\d+-[a-z0-9-]+\.apps\.googleusercontent\.com$/i.test(String(value || '').trim());
@@ -43,6 +44,31 @@ router.get("/google/status", (req, res) => {
     validClientIdFormat: isValidGoogleClientId(googleClientId),
     hasClientSecret: Boolean(googleClientSecret),
     callbackURL: googleCallbackUrl,
+  });
+});
+
+router.get("/status", async (req, res) => {
+  db.query("SELECT 1 AS ok", (err) => {
+    const dbStatus = err
+      ? {
+          connected: false,
+          code: err.code || null,
+          message: err.sqlMessage || err.message || "Database error",
+        }
+      : {
+          connected: true,
+        };
+
+    return res.json({
+      googleAuthEnabled,
+      google: {
+        clientIdMasked: maskClientId(googleClientId),
+        validClientIdFormat: isValidGoogleClientId(googleClientId),
+        hasClientSecret: Boolean(googleClientSecret),
+        callbackURL: googleCallbackUrl,
+      },
+      database: dbStatus,
+    });
   });
 });
 

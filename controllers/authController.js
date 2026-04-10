@@ -114,7 +114,13 @@ exports.login = async (req, res) => {
     const sql = "SELECT * FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1";
 
     db.query(sql, [email], async (err, results) => {
-        if (err) return res.status(500).json({ message: "DB error", error: err });
+        if (err) {
+            return res.status(500).json({
+                message: "DB error",
+                errorCode: err.code || null,
+                error: err
+            });
+        }
 
         if (results.length === 0) {
             return res.status(400).json({ message: "User not found" });
