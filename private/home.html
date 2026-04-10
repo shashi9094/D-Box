@@ -226,16 +226,33 @@
   <script>
     const SETTINGS_STORAGE_KEY = 'dbox.settings';
 
+    function updateModalOpenState() {
+      const hasOpenModal = Array.from(document.querySelectorAll('.dashboard-modal'))
+        .some((modal) => modal.getAttribute('aria-hidden') === 'false');
+
+      document.body.classList.toggle('modal-open', hasOpenModal);
+    }
+
     function openModal(modalId) {
       const modal = document.getElementById(modalId);
       if (!modal) return;
+
       modal.setAttribute('aria-hidden', 'false');
+
+      const card = modal.querySelector('.dashboard-modal-card');
+      if (card) {
+        card.scrollTop = 0;
+      }
+
+      updateModalOpenState();
     }
 
     function closeModal(modalId) {
       const modal = document.getElementById(modalId);
       if (!modal) return;
+
       modal.setAttribute('aria-hidden', 'true');
+      updateModalOpenState();
     }
 
     function closeAllDropdowns() {
@@ -265,6 +282,27 @@
     function applyTheme(theme) {
       document.body.classList.remove('theme-dark', 'theme-light', 'theme-neon');
       document.body.classList.add(`theme-${theme}`);
+    }
+
+    function showAppToast(message) {
+      const existing = document.querySelector('.app-toast');
+      if (existing) {
+        existing.remove();
+      }
+
+      const toast = document.createElement('div');
+      toast.className = 'app-toast';
+      toast.textContent = message;
+      document.body.appendChild(toast);
+
+      requestAnimationFrame(() => {
+        toast.classList.add('visible');
+      });
+
+      setTimeout(() => {
+        toast.classList.remove('visible');
+        setTimeout(() => toast.remove(), 220);
+      }, 2000);
     }
 
     async function loadProfile() {
@@ -348,6 +386,8 @@
         ...getSavedSettings(),
       };
 
+      saveSettings(settings);
+
       applyTheme(settings.theme);
 
       const themeModeSelect = document.getElementById('themeModeSelect');
@@ -365,6 +405,10 @@
       sessionManagementSelect.value = settings.sessionManagement;
       autoLogoutTimerSelect.value = settings.autoLogout;
       defaultDashboardViewSelect.value = settings.defaultDashboardView;
+
+      themeModeSelect.addEventListener('change', () => {
+        applyTheme(themeModeSelect.value);
+      });
 
       navItems.forEach((item) => {
         item.addEventListener('mouseenter', function () {
@@ -518,7 +562,9 @@
         };
         saveSettings(newSettings);
         applyTheme(newSettings.theme);
-        document.getElementById('settingsModalMessage').textContent = 'Settings saved successfully';
+        document.getElementById('settingsModalMessage').textContent = '';
+        closeModal('settingsModal');
+        showAppToast('Settings saved successfully');
       });
 
       document.getElementById('logoutCurrentBtn')?.addEventListener('click', logoutCurrent);
