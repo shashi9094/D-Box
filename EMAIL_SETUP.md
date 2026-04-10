@@ -46,6 +46,8 @@ node server.js
 
 You should see in the console: "Email service ready"
 
+If you want to create invites without sending mail, set `INVITE_EMAIL_ENABLED=false` in your environment.
+
 ---
 
 ### Option 2: Other Email Providers

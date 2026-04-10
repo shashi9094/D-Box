@@ -6,7 +6,11 @@ const clientID = String(process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIEN
 const clientSecret = String(process.env.GOOGLE_CLIENT_SECRET || '').trim();
 const callbackURL = String(process.env.GOOGLE_CALLBACK_URL || '/api/auth/google/callback').trim();
 
-if (clientID && clientSecret) {
+function isValidGoogleClientId(value) {
+  return typeof value === 'string' && value.endsWith('.apps.googleusercontent.com') && value.includes('-');
+}
+
+if (clientID && clientSecret && isValidGoogleClientId(clientID)) {
   passport.use(
     new GoogleStrategy(
       {
@@ -64,7 +68,9 @@ if (clientID && clientSecret) {
     )
   );
 } else {
-  console.warn("Google OAuth is disabled because GOOGLE_CLIENT_ID/GOOGLE_CLIENT_iD or GOOGLE_CLIENT_SECRET is missing.");
+  console.warn(
+    "Google OAuth is disabled because GOOGLE_CLIENT_ID/GOOGLE_CLIENT_iD is invalid or GOOGLE_CLIENT_SECRET is missing."
+  );
 }
 
 passport.serializeUser((user, done) => done(null, user));

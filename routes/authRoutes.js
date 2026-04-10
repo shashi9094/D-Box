@@ -3,9 +3,16 @@ const router = express.Router();
 const passport = require("passport");
 const authController = require("../controllers/authController");
 
+function isValidGoogleClientId(value) {
+  return typeof value === 'string' && value.endsWith('.apps.googleusercontent.com') && value.includes('-');
+}
+
+const googleClientId = String(process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_iD || '').trim();
+const googleClientSecret = String(process.env.GOOGLE_CLIENT_SECRET || '').trim();
+
 const googleAuthEnabled = Boolean(
-  String(process.env.GOOGLE_CLIENT_ID || '').trim() &&
-  String(process.env.GOOGLE_CLIENT_SECRET || '').trim()
+  isValidGoogleClientId(googleClientId) &&
+  googleClientSecret
 );
 
 // Normal signup
