@@ -75,6 +75,39 @@
   </footer>
 
   <script>
+   // Menu exclusive activation - only one dropdown at a time
+    document.addEventListener('DOMContentLoaded', function() {
+      const navItems = document.querySelectorAll('.main-nav .has-dropdown');
+      
+      navItems.forEach(item => {
+        item.addEventListener('mouseenter', function() {
+          // Close all dropdowns first
+          navItems.forEach(other => {
+            other.querySelector('.dropdown')?.classList.remove('active');
+          });
+          
+          // Open only this dropdown
+          this.querySelector('.dropdown')?.classList.add('active');
+        });
+      });
+      
+      // Close all dropdowns when mouse leaves navbar
+      document.querySelector('.main-nav')?.addEventListener('mouseleave', function() {
+        navItems.forEach(item => {
+          item.querySelector('.dropdown')?.classList.remove('active');
+        });
+      });
+      
+      // Close dropdowns when clicking outside navbar
+      document.addEventListener('click', function(e) {
+        if (!e.target.closest('.main-nav')) {
+          navItems.forEach(item => {
+            item.querySelector('.dropdown')?.classList.remove('active');
+          });
+        }
+      });
+    });
+
    // Footer typing: expands D -> Distributed then back to D-Box and loops
     (function () {
       const el = document.getElementById('footerTyping');
@@ -138,6 +171,45 @@
 
     //hilight active menu
 
+    // Dropdown menu smooth open/close behavior
+    const dropdownItems = document.querySelectorAll('.has-dropdown');
+    let closeTimer = null;
+
+    dropdownItems.forEach(item => {
+      const dropdown = item.querySelector('.dropdown');
+      if (!dropdown) return;
+
+      // Show dropdown on parent hover
+      item.addEventListener('mouseenter', () => {
+        clearTimeout(closeTimer);
+        dropdown.classList.add('active');
+      });
+
+      // Keep dropdown visible when hovering over it
+      dropdown.addEventListener('mouseenter', () => {
+        clearTimeout(closeTimer);
+        dropdown.classList.add('active');
+      });
+
+      // Hide dropdown after mouse leaves with slight delay to prevent flickering
+      const handleMouseLeave = () => {
+        closeTimer = setTimeout(() => {
+          dropdown.classList.remove('active');
+        }, 150);
+      };
+
+      item.addEventListener('mouseleave', handleMouseLeave);
+      dropdown.addEventListener('mouseleave', handleMouseLeave);
+
+      // Close dropdown when item is clicked (optional)
+      dropdown.querySelectorAll('li').forEach(li => {
+        li.addEventListener('click', () => {
+          setTimeout(() => {
+            dropdown.classList.remove('active');
+          }, 100);
+        });
+      });
+    });
 
     // Logout destroys server session so private pages remain protected on back/forward.
     async function logout() {
