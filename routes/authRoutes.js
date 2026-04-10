@@ -4,11 +4,19 @@ const passport = require("passport");
 const authController = require("../controllers/authController");
 
 function isValidGoogleClientId(value) {
-  return typeof value === 'string' && value.endsWith('.apps.googleusercontent.com') && value.includes('-');
+  return /^\d+-[a-z0-9-]+\.apps\.googleusercontent\.com$/i.test(String(value || '').trim());
+}
+
+function maskClientId(value) {
+  const id = String(value || '').trim();
+  if (!id) return '(empty)';
+  if (id.length <= 18) return `${id.slice(0, 4)}...`;
+  return `${id.slice(0, 10)}...${id.slice(-18)}`;
 }
 
 const googleClientId = String(process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_iD || '').trim();
 const googleClientSecret = String(process.env.GOOGLE_CLIENT_SECRET || '').trim();
+const googleCallbackUrl = String(process.env.GOOGLE_CALLBACK_URL || '/api/auth/google/callback').trim();
 
 const googleAuthEnabled = Boolean(
   isValidGoogleClientId(googleClientId) &&
@@ -25,6 +33,16 @@ router.get("/session", (req, res) => {
   res.json({
     authenticated: !!req.session?.user,
     user: req.session?.user || null,
+  });
+});
+
+router.get("/google/status", (req, res) => {
+  res.json({
+    googleAuthEnabled,
+    clientIdMasked: maskClientId(googleClientId),
+    validClientIdFormat: isValidGoogleClientId(googleClientId),
+    hasClientSecret: Boolean(googleClientSecret),
+    callbackURL: googleCallbackUrl,
   });
 });
 

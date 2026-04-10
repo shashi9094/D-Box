@@ -7,7 +7,14 @@ const clientSecret = String(process.env.GOOGLE_CLIENT_SECRET || '').trim();
 const callbackURL = String(process.env.GOOGLE_CALLBACK_URL || '/api/auth/google/callback').trim();
 
 function isValidGoogleClientId(value) {
-  return typeof value === 'string' && value.endsWith('.apps.googleusercontent.com') && value.includes('-');
+  return /^\d+-[a-z0-9-]+\.apps\.googleusercontent\.com$/i.test(String(value || '').trim());
+}
+
+function maskClientId(value) {
+  const id = String(value || '').trim();
+  if (!id) return '(empty)';
+  if (id.length <= 18) return `${id.slice(0, 4)}...`;
+  return `${id.slice(0, 10)}...${id.slice(-18)}`;
 }
 
 if (clientID && clientSecret && isValidGoogleClientId(clientID)) {
@@ -69,7 +76,7 @@ if (clientID && clientSecret && isValidGoogleClientId(clientID)) {
   );
 } else {
   console.warn(
-    "Google OAuth is disabled because GOOGLE_CLIENT_ID/GOOGLE_CLIENT_iD is invalid or GOOGLE_CLIENT_SECRET is missing."
+    `Google OAuth is disabled. clientId=${maskClientId(clientID)} validClientId=${isValidGoogleClientId(clientID)} hasSecret=${Boolean(clientSecret)} callbackURL=${callbackURL}`
   );
 }
 
