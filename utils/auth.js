@@ -1,7 +1,18 @@
 const jwt = require("jsonwebtoken");
+const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 module.exports = (req, res, next) => {
     if (req.session?.user) {
+        const loginAt = Number(req.session.user.loginAt || 0);
+        const isExpired = !Number.isFinite(loginAt) || (Date.now() - loginAt) > SESSION_MAX_AGE_MS;
+
+        if (isExpired) {
+            return req.session.destroy(() => {
+                res.clearCookie("connect.sid");
+                return res.status(401).json({ message: "Session expired. Please login again." });
+            });
+        }
+
         req.user = req.session.user;
         return next();
     }

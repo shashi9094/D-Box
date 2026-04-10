@@ -12,6 +12,7 @@
 
     <div class="login-card">
       <p id="googleNotice" class="muted" hidden></p>
+      <p id="sessionNotice" class="muted" hidden></p>
       <p id="inviteNotice" class="muted" hidden></p>
 
       <!-- Fixed: Real Backend Login Route -->
@@ -119,8 +120,19 @@
     }
   }
 
+  function showSessionExpiredNotice() {
+    const params = new URLSearchParams(window.location.search);
+    const sessionNotice = document.getElementById('sessionNotice');
+
+    if (params.get('reason') === 'session-expired') {
+      sessionNotice.textContent = 'Session expired, please login again.';
+      sessionNotice.hidden = false;
+    }
+  }
+
   redirectIfLoggedIn();
   showGoogleDisabledNotice();
+  showSessionExpiredNotice();
   showInviteNotice();
   window.addEventListener('pageshow', redirectIfLoggedIn);
   window.addEventListener('focus', redirectIfLoggedIn);

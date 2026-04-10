@@ -3,6 +3,8 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");    
 const boxController = require('./boxController');
 
+const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
 // SIGNUP
 exports.signup = async (req, res) => {
     console.log("SIGNUP HIT");
@@ -71,8 +73,11 @@ exports.signup = async (req, res) => {
 
                     req.session.user = {
                         id: result.insertId,
-                        email: email
+                        email: email,
+                        loginAt: Date.now()
                     };
+
+                    req.session.cookie.maxAge = SESSION_MAX_AGE_MS;
 
                     req.session.save((saveErr) => {
                         if (saveErr) {
@@ -156,8 +161,11 @@ exports.login = async (req, res) => {
         // SESSION SET KARO (MOST IMPORTANT)
         req.session.user = {
             id: user.id,
-            email: user.email
+            email: user.email,
+            loginAt: Date.now()
         };
+
+        req.session.cookie.maxAge = SESSION_MAX_AGE_MS;
 
         // Save session before responding so next protected route sees authenticated state.
         req.session.save((saveErr) => {

@@ -10,6 +10,7 @@ require('./config/googleAuth'); // Google Strategy load
 const passport = require('passport');
 const session = require('express-session');
 const isProduction = process.env.NODE_ENV === 'production';
+const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Routes
 const authRoutes = require('./routes/authRoutes');
@@ -34,6 +35,7 @@ app.use(session({
     resave: false,
     saveUninitialized: false,
     cookie: {
+        maxAge: SESSION_MAX_AGE_MS,
         secure: isProduction,
         sameSite: isProduction ? 'none' : 'lax'
     }
@@ -67,6 +69,16 @@ app.use('/api/box', boxRoutes);
 // Auth middleware
 function isAuth(req, res, next) {
     if (req.session && req.session.user) {
+        const loginAt = Number(req.session.user.loginAt || 0);
+        const isExpired = !Number.isFinite(loginAt) || (Date.now() - loginAt) > SESSION_MAX_AGE_MS;
+
+        if (isExpired) {
+            return req.session.destroy(() => {
+                res.clearCookie('connect.sid');
+                return res.redirect('/login.html?reason=session-expired');
+            });
+        }
+
         next();
     } else {
         res.redirect('/login.html');

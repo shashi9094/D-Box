@@ -15,7 +15,8 @@ async function ensureAuthenticated() {
     const data = await res.json();
 
     if (!data.authenticated) {
-      window.location.replace('/login.html');
+      const reason = data?.reason ? `?reason=${encodeURIComponent(data.reason)}` : '';
+      window.location.replace(`/login.html${reason}`);
       return;
     }
 

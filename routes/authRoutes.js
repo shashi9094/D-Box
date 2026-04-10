@@ -3,6 +3,7 @@ const router = express.Router();
 const passport = require("passport");
 const authController = require("../controllers/authController");
 const db = require("../db/connection");
+const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function isValidGoogleClientId(value) {
   return /^\d+-[a-z0-9-]+\.apps\.googleusercontent\.com$/i.test(String(value || '').trim());
@@ -31,9 +32,26 @@ router.post("/signup", authController.signup);
 router.post("/login", authController.login);
 
 router.get("/session", (req, res) => {
+  const sessionUser = req.session?.user;
+  if (sessionUser) {
+    const loginAt = Number(sessionUser.loginAt || 0);
+    const isExpired = !Number.isFinite(loginAt) || (Date.now() - loginAt) > SESSION_MAX_AGE_MS;
+
+    if (isExpired) {
+      return req.session.destroy(() => {
+        res.clearCookie("connect.sid");
+        return res.json({
+          authenticated: false,
+          user: null,
+          reason: "session-expired",
+        });
+      });
+    }
+  }
+
   res.json({
-    authenticated: !!req.session?.user,
-    user: req.session?.user || null,
+    authenticated: !!sessionUser,
+    user: sessionUser || null,
   });
 });
 
@@ -106,9 +124,14 @@ router.get("/google/callback", (req, res, next) => {
     req.session.user = {
       id: req.user.id,
       email: req.user.email,
+      loginAt: Date.now(),
     };
 
-    res.redirect("/home");
+    req.session.cookie.maxAge = SESSION_MAX_AGE_MS;
+
+    req.session.save(() => {
+      res.redirect("/home");
+    });
   }
 );
 
