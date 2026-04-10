@@ -41,14 +41,12 @@
           <li class="has-dropdown"><input type="search" placeholder="Search D-box" aria-label="Search D-box">          
           </li>
           <li class="has-dropdown">Profile
-               <ul class="dropdown">
-               <li>User Profile</li>
-              <li>User logs</li>
-              <li>User Data</li>
-              <li>User Groups</li>
-              <li>Help/Support</li>
-              <li onclick="logout()">Log out</li>
-           </ul>
+            <ul class="dropdown">
+              <li id="openProfileAction">Profile</li>
+              <li id="openSettingsAction">Settings</li>
+              <li id="openHelpAction">Help</li>
+              <li id="openLogoutAction">Logout</li>
+            </ul>
           </li>
         </ul>
       </nav>
@@ -74,39 +72,458 @@
     </div>
   </footer>
 
+  <div class="dashboard-modal" id="profileModal" aria-hidden="true">
+    <div class="dashboard-modal-card home-modal-card" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+      <div class="dashboard-modal-header">
+        <h3 id="profileModalTitle">User Profile</h3>
+        <button type="button" class="modal-close-btn" data-close-modal="profileModal" aria-label="Close">
+          x
+        </button>
+      </div>
+      <div class="home-profile-head">
+        <img id="profileAvatar" class="home-profile-avatar" alt="Profile photo" src="" />
+        <div>
+          <p id="profileNameText" class="home-profile-name">-</p>
+          <p id="profileRoleText" class="home-profile-role">-</p>
+        </div>
+      </div>
+      <div class="home-modal-grid">
+        <p><strong>Name:</strong> <span id="profileName">-</span></p>
+        <p><strong>Email:</strong> <span id="profileEmail">-</span></p>
+        <p><strong>Role:</strong> <span id="profileRole">-</span></p>
+        <p><strong>Joined date:</strong> <span id="profileJoined">-</span></p>
+        <p><strong>Last login:</strong> <span id="profileLastLogin">-</span></p>
+      </div>
+
+      <form id="editProfileForm" class="modal-form">
+        <label for="editProfileName">Edit profile name</label>
+        <input id="editProfileName" type="text" maxlength="255" required>
+        <button type="submit" class="modal-submit-btn">Save profile</button>
+      </form>
+
+      <button type="button" class="modal-submit-btn" id="showChangePasswordBtn">Change password</button>
+
+      <form id="changePasswordForm" class="modal-form" hidden>
+        <label for="currentPasswordInput">Current password</label>
+        <input id="currentPasswordInput" type="password" required>
+        <label for="newPasswordInput">New password</label>
+        <input id="newPasswordInput" type="password" minlength="6" required>
+        <button type="submit" class="modal-submit-btn">Change password</button>
+      </form>
+
+      <p class="modal-error" id="profileModalMessage"></p>
+    </div>
+  </div>
+
+  <div class="dashboard-modal" id="settingsModal" aria-hidden="true">
+    <div class="dashboard-modal-card home-modal-card" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
+      <div class="dashboard-modal-header">
+        <h3 id="settingsModalTitle">Settings</h3>
+        <button type="button" class="modal-close-btn" data-close-modal="settingsModal" aria-label="Close">
+          x
+        </button>
+      </div>
+
+      <div class="home-modal-grid settings-grid">
+        <label>Theme mode
+          <select id="themeModeSelect">
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+            <option value="neon">Neon</option>
+          </select>
+        </label>
+        <label>Notifications
+          <select id="notificationToggle">
+            <option value="on">On</option>
+            <option value="off">Off</option>
+          </select>
+        </label>
+        <label>Language
+          <select id="languageSelect">
+            <option value="en">English</option>
+            <option value="hi">Hindi</option>
+          </select>
+        </label>
+        <label>Privacy settings
+          <select id="privacySelect">
+            <option value="private">Private</option>
+            <option value="team">Team</option>
+          </select>
+        </label>
+        <label>Session management
+          <select id="sessionManagementSelect">
+            <option value="strict">Strict</option>
+            <option value="standard">Standard</option>
+          </select>
+        </label>
+        <label>Auto logout timer
+          <select id="autoLogoutTimerSelect">
+            <option value="7d">7 days (enforced)</option>
+          </select>
+        </label>
+        <label>Default dashboard view
+          <select id="defaultDashboardViewSelect">
+            <option value="existing">Existing Boxes</option>
+            <option value="new">Create Box</option>
+          </select>
+        </label>
+        <label>Connected Google account
+          <select id="googleAccountSelect" disabled>
+            <option value="unknown">Checking...</option>
+          </select>
+        </label>
+      </div>
+
+      <button type="button" class="modal-submit-btn" id="saveSettingsBtn">Save settings</button>
+      <p class="modal-error" id="settingsModalMessage"></p>
+    </div>
+  </div>
+
+  <div class="dashboard-modal" id="helpModal" aria-hidden="true">
+    <div class="dashboard-modal-card home-modal-card" role="dialog" aria-modal="true" aria-labelledby="helpModalTitle">
+      <div class="dashboard-modal-header">
+        <h3 id="helpModalTitle">Help & Guide</h3>
+        <button type="button" class="modal-close-btn" data-close-modal="helpModal" aria-label="Close">
+          x
+        </button>
+      </div>
+
+      <div class="home-guide-panel">
+        <h4>Futuristic User Guide</h4>
+        <p>1. Create your first D-Box from Home.</p>
+        <p>2. Add users using email invite.</p>
+        <p>3. Upload files and folders, then manage from dashboard.</p>
+      </div>
+
+      <div class="home-modal-grid">
+        <p><strong>FAQ:</strong> Most common questions are covered in User Guide.</p>
+        <p><strong>Contact support:</strong> dbox.support@help.local</p>
+        <p><strong>Report bug:</strong> Use dashboard feedback section.</p>
+        <p><strong>Keyboard shortcuts:</strong> <kbd>Ctrl</kbd> + <kbd>K</kbd> quick search</p>
+        <p><strong>App version:</strong> <span id="appVersion">v1.0.0</span></p>
+        <p><strong>Privacy / Terms:</strong> Internal policy applies.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-modal" id="logoutModal" aria-hidden="true">
+    <div class="dashboard-modal-card home-modal-card" role="dialog" aria-modal="true" aria-labelledby="logoutModalTitle">
+      <div class="dashboard-modal-header">
+        <h3 id="logoutModalTitle">Confirm Logout</h3>
+        <button type="button" class="modal-close-btn" data-close-modal="logoutModal" aria-label="Close">
+          x
+        </button>
+      </div>
+      <p>Are you sure you want to logout?</p>
+      <div class="actions">
+        <button type="button" class="modal-submit-btn" id="logoutCurrentBtn">Logout current device</button>
+        <button type="button" class="modal-submit-btn danger" id="logoutAllBtn">Logout all devices</button>
+      </div>
+      <p class="modal-error" id="logoutModalMessage"></p>
+    </div>
+  </div>
+
   <script>
-   // Menu exclusive activation - only one dropdown at a time
-    document.addEventListener('DOMContentLoaded', function() {
+    const SETTINGS_STORAGE_KEY = 'dbox.settings';
+
+    function openModal(modalId) {
+      const modal = document.getElementById(modalId);
+      if (!modal) return;
+      modal.setAttribute('aria-hidden', 'false');
+    }
+
+    function closeModal(modalId) {
+      const modal = document.getElementById(modalId);
+      if (!modal) return;
+      modal.setAttribute('aria-hidden', 'true');
+    }
+
+    function closeAllDropdowns() {
+      document.querySelectorAll('.main-nav .dropdown').forEach((d) => d.classList.remove('active'));
+    }
+
+    function formatDate(value) {
+      if (!value) return '-';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '-';
+      return date.toLocaleString();
+    }
+
+    function getSavedSettings() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || '{}');
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch (_) {
+        return {};
+      }
+    }
+
+    function saveSettings(settings) {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    }
+
+    function applyTheme(theme) {
+      document.body.classList.remove('theme-dark', 'theme-light', 'theme-neon');
+      document.body.classList.add(`theme-${theme}`);
+    }
+
+    async function loadProfile() {
+      const messageEl = document.getElementById('profileModalMessage');
+      messageEl.textContent = '';
+
+      try {
+        const res = await fetch('/api/auth/profile', {
+          credentials: 'same-origin',
+          cache: 'no-store'
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          throw new Error(data.message || 'Unable to load profile');
+        }
+
+        const profile = data.profile || {};
+        document.getElementById('profileAvatar').src = profile.profilePhoto || '';
+        document.getElementById('profileName').textContent = profile.name || '-';
+        document.getElementById('profileNameText').textContent = profile.name || '-';
+        document.getElementById('profileEmail').textContent = profile.email || '-';
+        document.getElementById('profileRole').textContent = profile.role || 'User';
+        document.getElementById('profileRoleText').textContent = profile.role || 'User';
+        document.getElementById('profileJoined').textContent = formatDate(profile.joinedAt);
+        document.getElementById('profileLastLogin').textContent = formatDate(profile.lastLoginAt);
+        document.getElementById('editProfileName').value = profile.name || '';
+      } catch (error) {
+        messageEl.textContent = error.message || 'Profile load failed';
+      }
+    }
+
+    async function logoutCurrent() {
+      try {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          credentials: 'same-origin'
+        });
+      } catch (error) {
+        console.error('Logout failed:', error);
+      }
+
+      localStorage.removeItem('token');
+      localStorage.setItem('authState', `logged-out:${Date.now()}`);
+      window.location.replace('/login.html');
+    }
+
+    async function logoutAllDevices() {
+      const msgEl = document.getElementById('logoutModalMessage');
+      msgEl.textContent = '';
+
+      try {
+        const res = await fetch('/api/auth/logout-all', {
+          method: 'POST',
+          credentials: 'same-origin'
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.message || 'Unable to logout all devices');
+        }
+
+        localStorage.removeItem('token');
+        localStorage.setItem('authState', `logged-out-all:${Date.now()}`);
+        window.location.replace('/login.html');
+      } catch (error) {
+        msgEl.textContent = error.message || 'Logout all devices failed';
+      }
+    }
+
+    async function initHomePage() {
       const navItems = document.querySelectorAll('.main-nav .has-dropdown');
-      
-      navItems.forEach(item => {
-        item.addEventListener('mouseenter', function() {
-          // Close all dropdowns first
-          navItems.forEach(other => {
-            other.querySelector('.dropdown')?.classList.remove('active');
-          });
-          
-          // Open only this dropdown
+      const settings = {
+        theme: 'dark',
+        notifications: 'on',
+        language: 'en',
+        privacy: 'private',
+        sessionManagement: 'strict',
+        autoLogout: '7d',
+        defaultDashboardView: 'existing',
+        ...getSavedSettings(),
+      };
+
+      applyTheme(settings.theme);
+
+      const themeModeSelect = document.getElementById('themeModeSelect');
+      const notificationToggle = document.getElementById('notificationToggle');
+      const languageSelect = document.getElementById('languageSelect');
+      const privacySelect = document.getElementById('privacySelect');
+      const sessionManagementSelect = document.getElementById('sessionManagementSelect');
+      const autoLogoutTimerSelect = document.getElementById('autoLogoutTimerSelect');
+      const defaultDashboardViewSelect = document.getElementById('defaultDashboardViewSelect');
+
+      themeModeSelect.value = settings.theme;
+      notificationToggle.value = settings.notifications;
+      languageSelect.value = settings.language;
+      privacySelect.value = settings.privacy;
+      sessionManagementSelect.value = settings.sessionManagement;
+      autoLogoutTimerSelect.value = settings.autoLogout;
+      defaultDashboardViewSelect.value = settings.defaultDashboardView;
+
+      navItems.forEach((item) => {
+        item.addEventListener('mouseenter', function () {
+          closeAllDropdowns();
           this.querySelector('.dropdown')?.classList.add('active');
         });
       });
-      
-      // Close all dropdowns when mouse leaves navbar
-      document.querySelector('.main-nav')?.addEventListener('mouseleave', function() {
-        navItems.forEach(item => {
-          item.querySelector('.dropdown')?.classList.remove('active');
-        });
-      });
-      
-      // Close dropdowns when clicking outside navbar
-      document.addEventListener('click', function(e) {
+
+      document.querySelector('.main-nav')?.addEventListener('mouseleave', closeAllDropdowns);
+      document.addEventListener('click', (e) => {
         if (!e.target.closest('.main-nav')) {
-          navItems.forEach(item => {
-            item.querySelector('.dropdown')?.classList.remove('active');
-          });
+          closeAllDropdowns();
         }
       });
-    });
+
+      document.getElementById('openProfileAction')?.addEventListener('click', async () => {
+        closeAllDropdowns();
+        await loadProfile();
+        document.getElementById('changePasswordForm')?.setAttribute('hidden', 'hidden');
+        document.getElementById('profileModalMessage').textContent = '';
+        openModal('profileModal');
+      });
+
+      document.getElementById('showChangePasswordBtn')?.addEventListener('click', () => {
+        const passwordForm = document.getElementById('changePasswordForm');
+        const messageEl = document.getElementById('profileModalMessage');
+
+        const shouldOpen = window.confirm('If you want change password?');
+        if (!shouldOpen) {
+          return;
+        }
+
+        if (passwordForm) {
+          passwordForm.reset();
+          passwordForm.removeAttribute('hidden');
+        }
+
+        if (messageEl) {
+          messageEl.textContent = '';
+        }
+
+        setTimeout(() => {
+          document.getElementById('currentPasswordInput')?.focus();
+          passwordForm?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 40);
+      });
+
+      document.getElementById('openSettingsAction')?.addEventListener('click', async () => {
+        closeAllDropdowns();
+        const googleSelect = document.getElementById('googleAccountSelect');
+        try {
+          const statusRes = await fetch('/api/auth/google/status', { credentials: 'same-origin' });
+          const statusData = await statusRes.json().catch(() => ({}));
+          googleSelect.innerHTML = '';
+          const option = document.createElement('option');
+          option.value = statusData.googleAuthEnabled ? 'connected' : 'not-connected';
+          option.textContent = statusData.googleAuthEnabled ? 'Connected' : 'Not connected';
+          googleSelect.appendChild(option);
+        } catch (_) {
+          googleSelect.innerHTML = '<option value="unknown">Unknown</option>';
+        }
+        openModal('settingsModal');
+      });
+
+      document.getElementById('openHelpAction')?.addEventListener('click', () => {
+        closeAllDropdowns();
+        openModal('helpModal');
+      });
+
+      document.getElementById('openLogoutAction')?.addEventListener('click', () => {
+        closeAllDropdowns();
+        openModal('logoutModal');
+      });
+
+      document.querySelectorAll('[data-close-modal]').forEach((btn) => {
+        btn.addEventListener('click', () => closeModal(btn.getAttribute('data-close-modal')));
+      });
+
+      document.querySelectorAll('.dashboard-modal').forEach((modal) => {
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) {
+            modal.setAttribute('aria-hidden', 'true');
+          }
+        });
+      });
+
+      document.getElementById('editProfileForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const messageEl = document.getElementById('profileModalMessage');
+        messageEl.textContent = '';
+
+        try {
+          const res = await fetch('/api/auth/profile', {
+            method: 'PUT',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fullName: document.getElementById('editProfileName').value.trim()
+            })
+          });
+
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(data.message || 'Unable to update profile');
+          }
+
+          messageEl.textContent = data.message || 'Profile updated';
+          await loadProfile();
+        } catch (error) {
+          messageEl.textContent = error.message || 'Profile update failed';
+        }
+      });
+
+      document.getElementById('changePasswordForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const messageEl = document.getElementById('profileModalMessage');
+        messageEl.textContent = '';
+
+        try {
+          const res = await fetch('/api/auth/change-password', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              currentPassword: document.getElementById('currentPasswordInput').value,
+              newPassword: document.getElementById('newPasswordInput').value
+            })
+          });
+
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(data.message || 'Password change failed');
+          }
+
+          messageEl.textContent = data.message || 'Password changed';
+          document.getElementById('changePasswordForm').reset();
+        } catch (error) {
+          messageEl.textContent = error.message || 'Password change failed';
+        }
+      });
+
+      document.getElementById('saveSettingsBtn')?.addEventListener('click', () => {
+        const newSettings = {
+          theme: themeModeSelect.value,
+          notifications: notificationToggle.value,
+          language: languageSelect.value,
+          privacy: privacySelect.value,
+          sessionManagement: sessionManagementSelect.value,
+          autoLogout: autoLogoutTimerSelect.value,
+          defaultDashboardView: defaultDashboardViewSelect.value,
+        };
+        saveSettings(newSettings);
+        applyTheme(newSettings.theme);
+        document.getElementById('settingsModalMessage').textContent = 'Settings saved successfully';
+      });
+
+      document.getElementById('logoutCurrentBtn')?.addEventListener('click', logoutCurrent);
+      document.getElementById('logoutAllBtn')?.addEventListener('click', logoutAllDevices);
+    }
 
    // Footer typing: expands D -> Distributed then back to D-Box and loops
     (function () {
@@ -166,69 +583,7 @@
       // start the loop
       tick();
     })();
-
-    
-
-    //hilight active menu
-
-    // Dropdown menu smooth open/close behavior
-    const dropdownItems = document.querySelectorAll('.has-dropdown');
-    let closeTimer = null;
-
-    dropdownItems.forEach(item => {
-      const dropdown = item.querySelector('.dropdown');
-      if (!dropdown) return;
-
-      // Show dropdown on parent hover
-      item.addEventListener('mouseenter', () => {
-        clearTimeout(closeTimer);
-        dropdown.classList.add('active');
-      });
-
-      // Keep dropdown visible when hovering over it
-      dropdown.addEventListener('mouseenter', () => {
-        clearTimeout(closeTimer);
-        dropdown.classList.add('active');
-      });
-
-      // Hide dropdown after mouse leaves with slight delay to prevent flickering
-      const handleMouseLeave = () => {
-        closeTimer = setTimeout(() => {
-          dropdown.classList.remove('active');
-        }, 150);
-      };
-
-      item.addEventListener('mouseleave', handleMouseLeave);
-      dropdown.addEventListener('mouseleave', handleMouseLeave);
-
-      // Close dropdown when item is clicked (optional)
-      dropdown.querySelectorAll('li').forEach(li => {
-        li.addEventListener('click', () => {
-          setTimeout(() => {
-            dropdown.classList.remove('active');
-          }, 100);
-        });
-      });
-    });
-
-    // Logout destroys server session so private pages remain protected on back/forward.
-    async function logout() {
-      try {
-        await fetch('/api/auth/logout', {
-          method: 'POST',
-          credentials: 'same-origin'
-        });
-      } catch (error) {
-        console.error('Logout failed:', error);
-      }
-
-      localStorage.removeItem('token');
-      localStorage.setItem('authState', `logged-out:${Date.now()}`);
-      window.location.replace('/login.html');
-    }
-
-
-    
+    document.addEventListener('DOMContentLoaded', initHomePage);
 
   </script>
 </body>

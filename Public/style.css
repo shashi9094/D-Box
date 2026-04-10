@@ -440,6 +440,54 @@ body.dashboard-page {
   text-align: center;
 }
 
+#openProfileAction,
+#openChangePasswordAction,
+#openSettingsAction,
+#openHelpAction,
+#openLogoutAction {
+  display: grid;
+  grid-template-columns: 20px auto;
+  column-gap: 10px;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  text-align: center;
+}
+
+#openProfileAction::before,
+#openChangePasswordAction::before,
+#openSettingsAction::before,
+#openHelpAction::before,
+#openLogoutAction::before {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  border: 1px solid rgba(155, 228, 255, 0.35);
+  background: rgba(56, 75, 130, 0.35);
+  color: #d8f2ff;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+#openProfileAction::before { content: "P"; }
+#openChangePasswordAction::before { content: "C"; }
+#openSettingsAction::before { content: "S"; }
+#openHelpAction::before { content: "?"; }
+#openLogoutAction::before { content: "L"; }
+
+#openProfileAction:hover::before,
+#openChangePasswordAction:hover::before,
+#openSettingsAction:hover::before,
+#openHelpAction:hover::before,
+#openLogoutAction:hover::before {
+  transform: scale(1.08);
+  border-color: rgba(140, 239, 255, 0.75);
+  box-shadow: 0 0 10px rgba(72, 216, 255, 0.4);
+}
+
 /* Option hover - clean bottom highlight on full width */
 .dropdown li:hover {
   background: rgba(123, 47, 247, 0.25);
@@ -506,6 +554,195 @@ body.dashboard-page {
 .hero { text-align: center; display: flex; flex-direction: column; gap: 18px; align-items: center; }
 .headline { font-size: 3rem; margin: 0; }
 .btn.create-box { padding: 14px 36px; font-size: 1.1rem; border-radius: 40px; }
+
+.home-modal-card {
+  width: min(620px, 94vw);
+  max-height: 86vh;
+  overflow-y: auto;
+  border: 1px solid rgba(117, 206, 255, 0.28);
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.home-modal-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(128, 233, 255, 0.55);
+  box-shadow: 0 20px 45px rgba(5, 14, 40, 0.55);
+}
+
+.home-profile-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.home-profile-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 1px solid rgba(149, 229, 255, 0.45);
+  box-shadow: 0 0 20px rgba(123, 47, 247, 0.35);
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.home-profile-avatar:hover {
+  transform: scale(1.06) rotate(-2deg);
+  border-color: rgba(163, 241, 255, 0.9);
+  box-shadow: 0 0 24px rgba(70, 221, 255, 0.45), 0 0 14px rgba(123, 47, 247, 0.35);
+}
+
+.home-profile-name {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.home-profile-role {
+  margin: 2px 0 0;
+  color: #9bdfff;
+  font-size: 0.9rem;
+}
+
+.home-modal-grid {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.home-modal-grid p {
+  margin: 0;
+  color: #d3e6ff;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.home-modal-grid p:hover {
+  transform: translateX(3px);
+  border-color: rgba(117, 221, 255, 0.4);
+  background: rgba(91, 216, 255, 0.08);
+}
+
+.settings-grid label {
+  display: grid;
+  gap: 6px;
+  color: #d5e5ff;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.settings-grid label:hover {
+  transform: translateY(-2px);
+  border-color: rgba(109, 223, 255, 0.45);
+  background: rgba(109, 223, 255, 0.08);
+}
+
+.settings-grid select {
+  border: 1px solid rgba(147, 201, 255, 0.38);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f2f7ff;
+  padding: 10px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.settings-grid select option {
+  background: #1b2138;
+  color: #eef5ff;
+}
+
+.settings-grid select:hover,
+.settings-grid select:focus {
+  border-color: rgba(141, 238, 255, 0.8);
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 0 2px rgba(84, 204, 255, 0.2);
+}
+
+.home-guide-panel {
+  border: 1px solid rgba(110, 231, 255, 0.32);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 12px;
+  background:
+    radial-gradient(circle at 20% 10%, rgba(93, 240, 255, 0.12), transparent 60%),
+    linear-gradient(150deg, rgba(13, 22, 54, 0.9), rgba(35, 9, 68, 0.9));
+  transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.home-guide-panel:hover {
+  transform: translateY(-2px);
+  border-color: rgba(114, 236, 255, 0.65);
+  box-shadow: 0 10px 25px rgba(10, 24, 62, 0.45), inset 0 0 14px rgba(93, 240, 255, 0.14);
+}
+
+.home-modal-card .modal-close-btn {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.home-modal-card .modal-close-btn:hover,
+.home-modal-card .modal-close-btn:focus-visible {
+  transform: scale(1.08);
+  border-color: rgba(136, 236, 255, 0.85);
+  box-shadow: 0 0 14px rgba(79, 219, 255, 0.35);
+}
+
+#logoutCurrentBtn:hover,
+#logoutCurrentBtn:focus-visible {
+  box-shadow: 0 0 0 2px rgba(90, 215, 255, 0.22), 0 8px 20px rgba(16, 30, 70, 0.45);
+}
+
+#logoutAllBtn:hover,
+#logoutAllBtn:focus-visible {
+  box-shadow: 0 0 0 2px rgba(255, 110, 130, 0.24), 0 8px 20px rgba(70, 16, 30, 0.45);
+}
+
+.home-guide-panel h4 {
+  margin: 0 0 8px;
+  color: #9af1ff;
+}
+
+.home-guide-panel p {
+  margin: 6px 0;
+  color: #e5f0ff;
+}
+
+.home-body.theme-light {
+  background: linear-gradient(180deg, #f5f9ff, #e8f3ff);
+  color: #162235;
+}
+
+.home-body.theme-light .site-header {
+  background: linear-gradient(180deg, rgba(191, 213, 255, 0.9), rgba(240, 246, 255, 0.85));
+}
+
+.home-body.theme-light .headline,
+.home-body.theme-light .footer-typing,
+.home-body.theme-light .logo {
+  color: #162235;
+}
+
+.home-body.theme-light .settings-grid select {
+  background: rgba(255, 255, 255, 0.94);
+  color: #1a2942;
+  border-color: rgba(52, 103, 184, 0.35);
+}
+
+.home-body.theme-light .settings-grid select option {
+  background: #ffffff;
+  color: #1a2942;
+}
+
+.home-body.theme-neon {
+  background:
+    radial-gradient(circle at 12% 8%, rgba(0, 255, 204, 0.15), transparent 52%),
+    radial-gradient(circle at 92% 20%, rgba(255, 0, 170, 0.14), transparent 48%),
+    linear-gradient(145deg, #030615, #090022 62%, #0e0420);
+}
 
 .site-footer { position: fixed; bottom: 18px; left: 0; right: 0; display: flex; justify-content: center; pointer-events: none; }
 
@@ -1696,6 +1933,7 @@ body{
   word-break: break-word;
   display: -webkit-box;
   -webkit-box-orient: vertical;
+  line-clamp: 2;
   -webkit-line-clamp: 2;
 }
 
