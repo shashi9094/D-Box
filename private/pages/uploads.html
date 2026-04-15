@@ -32,7 +32,6 @@
           <span class="capacity-pill" id="groupCapacityPill">0/0</span>
           <div class="uploads-admin-tools" id="adminTools" hidden>
             <button class="action-chip" id="addMemberBtn" data-tooltip="Add User"><i class="fa-solid fa-user-plus"></i></button>
-            <button class="action-chip danger" id="removeMemberBtn" data-tooltip="Revoke User"><i class="fa-solid fa-user-minus"></i></button>
           </div>
         </div>
       </section>
@@ -139,6 +138,7 @@
     let currentFolderPath = '';
     let activeMenuContentId = null;
     let renameTarget = null;
+    let currentBoxOwnerId = null;
 
     function isAdminUser() {
       return myRole === 'admin';
@@ -211,14 +211,29 @@
         const safeFullName = escapeHtml(member.fullName || 'User');
         const safeEmail = escapeHtml(member.email || '-');
         const safeRole = escapeHtml(member.role || 'member');
+        const isOwner = Boolean(member.is_owner) || Number(member.user_id) === Number(currentBoxOwnerId);
+        const isSelf = Number(member.user_id) === Number(reqUserId);
+        const canManageTarget = isAdminUser() && !isSelf;
+        const canPromote = canManageTarget && !isOwner && String(member.role || '').toLowerCase() !== 'admin';
+        const canRemove = canManageTarget && !isOwner;
         const chip = document.createElement('div');
         chip.className = 'member-chip';
+        if (isOwner) {
+          chip.classList.add('is-owner');
+        }
         chip.innerHTML = `
           <div class="member-chip-avatar">${(member.fullName || member.email || 'U').charAt(0).toUpperCase()}</div>
-          <div>
+          <div class="member-chip-body">
             <p class="member-chip-name">${safeFullName}</p>
             <p class="member-chip-meta">${safeEmail} (${safeRole})</p>
+            ${isOwner ? '<span class="member-chip-badge">Main admin</span>' : ''}
           </div>
+          ${canManageTarget ? `
+            <div class="member-chip-actions">
+              ${canPromote ? `<button type="button" class="member-chip-action promote" data-member-action="promote" data-user-id="${member.user_id}" aria-label="Promote ${safeFullName} to admin"><i class="fa-solid fa-user-shield"></i></button>` : ''}
+              ${canRemove ? `<button type="button" class="member-chip-action danger" data-member-action="remove" data-user-id="${member.user_id}" aria-label="Remove ${safeFullName}"><i class="fa-solid fa-user-xmark"></i></button>` : ''}
+            </div>
+          ` : ''}
         `;
         strip.appendChild(chip);
       });
@@ -575,6 +590,7 @@
       }
 
       myRole = currentBox.role || 'member';
+      currentBoxOwnerId = currentBox.user_id;
       setHeader(currentBox);
       setAdminControlsVisible(myRole === 'admin');
 
@@ -776,12 +792,43 @@
       openModal('add-member');
     });
 
-    document.getElementById('removeMemberBtn').addEventListener('click', async () => {
-      if (!isAdminUser()) return;
-      try {
-        await openRemoveModal();
-      } catch (error) {
-        alert(error.message || 'Unable to open revoke user dialog');
+    document.getElementById('membersStrip').addEventListener('click', async (event) => {
+      const button = event.target.closest('button[data-member-action]');
+      if (!button || !isAdminUser()) return;
+
+      const memberUserId = Number(button.dataset.userId);
+      if (!Number.isFinite(memberUserId)) return;
+
+      const member = members.find((entry) => Number(entry.user_id) === memberUserId);
+      if (!member) return;
+
+      const action = button.dataset.memberAction;
+
+      if (action === 'remove') {
+        if (!window.confirm(`Remove ${member.fullName || member.email || 'this member'} from this box?`)) {
+          return;
+        }
+
+        try {
+          await apiRequest(`/api/box/${boxId}/members/${memberUserId}`, { method: 'DELETE' });
+          await loadGroupData();
+        } catch (error) {
+          alert(error.message || 'Unable to remove member');
+        }
+        return;
+      }
+
+      if (action === 'promote') {
+        if (!window.confirm(`Make ${member.fullName || member.email || 'this member'} an admin?`)) {
+          return;
+        }
+
+        try {
+          await apiRequest(`/api/box/${boxId}/members/${memberUserId}/role`, { method: 'PATCH' });
+          await loadGroupData();
+        } catch (error) {
+          alert(error.message || 'Unable to promote member');
+        }
       }
     });
 

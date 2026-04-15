@@ -23,6 +23,7 @@ router.get('/other-boxes', boxController.getOtherUsersBoxes);
 // Group member management
 router.get('/:boxId/members', boxController.listMembers);
 router.post('/:boxId/members', boxController.addMemberByEmail);
+router.patch('/:boxId/members/:memberUserId/role', boxController.promoteMember);
 router.delete('/:boxId/members/:memberUserId', boxController.removeMember);
 
 // Box content management

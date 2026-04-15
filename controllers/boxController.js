@@ -359,6 +359,15 @@ const ensureAdmin = async (boxId, userId) => {
     return membership && membership.role === 'admin';
 };
 
+const getBoxOwnerId = async (boxId) => {
+    const [rows] = await sql.query(
+        'SELECT user_id FROM boxes WHERE id = ? LIMIT 1',
+        [boxId]
+    );
+
+    return rows.length ? Number(rows[0].user_id) : null;
+};
+
 const inferContentType = (file) => {
     if (!file || !file.mimetype) return 'file';
     if (file.mimetype.startsWith('video/')) return 'video';
@@ -900,6 +909,7 @@ exports.addMemberByEmail = async (req, res) => {
 exports.removeMember = async (req, res) => {
     const { boxId, memberUserId } = req.params;
     const currentUserId = req.user.id;
+    const targetUserId = Number(memberUserId);
 
     try {
         await ensureCollaborationTables();
@@ -909,9 +919,14 @@ exports.removeMember = async (req, res) => {
             return res.status(403).json({ message: 'Only admin can remove members' });
         }
 
+        const ownerId = await getBoxOwnerId(boxId);
+        if (Number(ownerId) === targetUserId) {
+            return res.status(400).json({ message: 'Main admin cannot be removed' });
+        }
+
         const [memberRows] = await sql.query(
             'SELECT role FROM box_members WHERE box_id = ? AND user_id = ? LIMIT 1',
-            [boxId, memberUserId]
+            [boxId, targetUserId]
         );
 
         if (!memberRows.length) {
@@ -929,11 +944,58 @@ exports.removeMember = async (req, res) => {
             }
         }
 
-        await sql.query('DELETE FROM box_members WHERE box_id = ? AND user_id = ?', [boxId, memberUserId]);
+        await sql.query('DELETE FROM box_members WHERE box_id = ? AND user_id = ?', [boxId, targetUserId]);
 
         return res.json({ success: true, message: 'Member removed successfully' });
     } catch (err) {
         return res.status(500).json({ message: 'Unable to remove member', error: err.message });
+    }
+};
+
+exports.promoteMember = async (req, res) => {
+    const { boxId, memberUserId } = req.params;
+    const currentUserId = req.user.id;
+    const targetUserId = Number(memberUserId);
+
+    try {
+        await ensureCollaborationTables();
+
+        const isAdmin = await ensureAdmin(boxId, currentUserId);
+        if (!isAdmin) {
+            return res.status(403).json({ message: 'Only admin can promote members' });
+        }
+
+        const ownerId = await getBoxOwnerId(boxId);
+        if (!Number.isFinite(targetUserId)) {
+            return res.status(400).json({ message: 'Invalid member id' });
+        }
+
+        const [memberRows] = await sql.query(
+            'SELECT role FROM box_members WHERE box_id = ? AND user_id = ? LIMIT 1',
+            [boxId, targetUserId]
+        );
+
+        if (!memberRows.length) {
+            return res.status(404).json({ message: 'Member not found in this box' });
+        }
+
+        if (memberRows[0].role === 'admin') {
+            return res.json({ success: true, message: 'Member is already admin' });
+        }
+
+        await sql.query(
+            `INSERT INTO box_members (box_id, user_id, role, added_by)
+             VALUES (?, ?, 'admin', ?)
+             ON DUPLICATE KEY UPDATE role = 'admin', added_by = VALUES(added_by)`,
+            [boxId, targetUserId, currentUserId]
+        );
+
+        return res.json({
+            success: true,
+            message: Number(ownerId) === targetUserId ? 'Main admin already has admin access' : 'Member promoted to admin'
+        });
+    } catch (err) {
+        return res.status(500).json({ message: 'Unable to promote member', error: err.message });
     }
 };
 
@@ -949,9 +1011,11 @@ exports.listMembers = async (req, res) => {
         }
 
         const [members] = await sql.query(
-            `SELECT bm.user_id, u.fullName, u.email, bm.role, bm.created_at
+            `SELECT bm.user_id, u.fullName, u.email, bm.role, bm.created_at,
+                    CASE WHEN b.user_id = bm.user_id THEN 1 ELSE 0 END AS is_owner
              FROM box_members bm
              JOIN users u ON u.id = bm.user_id
+             JOIN boxes b ON b.id = bm.box_id
              WHERE bm.box_id = ?
              ORDER BY bm.role DESC, bm.created_at ASC`,
             [boxId]
