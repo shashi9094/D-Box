@@ -5,9 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>D-Box - Home</title>
   <link rel="stylesheet" href="/style.css" />
-  <script src="/auth-guard.js" defer></script>
+  <script src="/scripts/auth-guard.js" defer></script>
+  <script src="/scripts/back-nav.js" defer></script>
 </head>
-<body class="allow-scroll home-body">
+<body class="allow-scroll home-body" data-hide-back-nav="true">
 
   <header class="site-header">
     <div class="nav-inner">
@@ -100,6 +101,12 @@
         <input id="editProfileName" type="text" maxlength="255" required>
         <button type="submit" class="modal-submit-btn">Save profile</button>
       </form>
+
+      <div class="profile-capacity-section" id="profileCapacitySection" hidden>
+        <h4>Box Capacity</h4>
+        <div id="profileCapacityList"></div>
+        <p class="modal-help-text">Set the maximum members for each box you own. It cannot be lower than current members.</p>
+      </div>
 
       <button type="button" class="modal-submit-btn" id="showChangePasswordBtn">Change password</button>
 
@@ -330,6 +337,69 @@
         document.getElementById('profileJoined').textContent = formatDate(profile.joinedAt);
         document.getElementById('profileLastLogin').textContent = formatDate(profile.lastLoginAt);
         document.getElementById('editProfileName').value = profile.name || '';
+
+        const capacitySection = document.getElementById('profileCapacitySection');
+        const capacityList = document.getElementById('profileCapacityList');
+        capacityList.innerHTML = '';
+
+        const boxesRes = await fetch('/api/box/my-boxes', {
+          credentials: 'same-origin',
+          cache: 'no-store'
+        });
+        const boxesData = await boxesRes.json().catch(() => ({}));
+        const ownedBoxes = Array.isArray(boxesData.data)
+          ? boxesData.data.filter((box) => String(box.role || '').toLowerCase() === 'admin')
+          : [];
+
+        capacitySection.hidden = !ownedBoxes.length;
+
+        ownedBoxes.forEach((box) => {
+          const row = document.createElement('div');
+          row.className = 'profile-capacity-row';
+          row.innerHTML = `
+            <div class="profile-capacity-meta">
+              <strong>${box.title}</strong>
+              <span>${Number(box.memberCount || 0)} member(s) / capacity ${Number(box.capacity || 1)}</span>
+            </div>
+            <div class="profile-capacity-controls">
+              <input type="number" min="${Number(box.memberCount || 1)}" max="200" value="${Number(box.capacity || 1)}" data-box-capacity-input="${box.id}">
+              <button type="button" class="modal-submit-btn" data-box-capacity-save="${box.id}">Save</button>
+            </div>
+          `;
+          capacityList.appendChild(row);
+        });
+
+        capacityList.querySelectorAll('[data-box-capacity-save]').forEach((button) => {
+          button.addEventListener('click', async () => {
+            const boxId = button.getAttribute('data-box-capacity-save');
+            const input = capacityList.querySelector(`[data-box-capacity-input="${boxId}"]`);
+            const nextCapacity = Number(input?.value);
+
+            if (!Number.isFinite(nextCapacity) || nextCapacity < 1) {
+              messageEl.textContent = 'Please enter a valid capacity';
+              return;
+            }
+
+            try {
+              const res = await fetch(`/api/box/update/${boxId}`, {
+                method: 'PUT',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ capacity: nextCapacity })
+              });
+
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok) {
+                throw new Error(data.message || 'Unable to update capacity');
+              }
+
+              messageEl.textContent = data.message || 'Capacity updated';
+              await loadProfile();
+            } catch (error) {
+              messageEl.textContent = error.message || 'Capacity update failed';
+            }
+          });
+        });
       } catch (error) {
         messageEl.textContent = error.message || 'Profile load failed';
       }

@@ -2,6 +2,7 @@ const db = require('../db/connection');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
+const crypto = require('crypto');
 const { sendInvitationEmail } = require('../utils/emailService');
 
 const uploadsDir = path.join(__dirname, '..', 'uploads', 'boxes');
@@ -293,6 +294,7 @@ const ensureCollaborationTables = async () => {
             email VARCHAR(255) NOT NULL,
             role ENUM('admin', 'member') NOT NULL DEFAULT 'member',
             invited_by INT NOT NULL,
+            invite_token VARCHAR(128) NULL,
             status ENUM('pending', 'accepted', 'revoked') NOT NULL DEFAULT 'pending',
             accepted_by INT NULL,
             accepted_at TIMESTAMP NULL,
@@ -300,6 +302,14 @@ const ensureCollaborationTables = async () => {
             UNIQUE KEY uniq_box_email_status (box_id, email, status)
         )
     `);
+
+    try {
+        await sql.query('ALTER TABLE box_invites ADD COLUMN invite_token VARCHAR(128) NULL AFTER invited_by');
+    } catch (alterErr) {
+        if (alterErr && alterErr.code !== 'ER_DUP_FIELDNAME') {
+            throw alterErr;
+        }
+    }
 
     await sql.query(`
         CREATE TABLE IF NOT EXISTS box_files (
@@ -390,6 +400,35 @@ const resolvePublicBaseUrl = (req) => {
 
 const isInviteEmailEnabled = () => String(process.env.INVITE_EMAIL_ENABLED || 'true').toLowerCase() !== 'false';
 
+const createInviteToken = () => crypto.randomBytes(24).toString('hex');
+
+const getBoxCapacityAndUsage = async (boxId) => {
+    const [rows] = await sql.query(
+        `SELECT b.capacity,
+                COUNT(DISTINCT bm.user_id) AS memberCount,
+                COUNT(DISTINCT CASE WHEN bi.status = 'pending' THEN bi.email END) AS pendingInviteCount
+         FROM boxes b
+         LEFT JOIN box_members bm ON bm.box_id = b.id
+         LEFT JOIN box_invites bi ON bi.box_id = b.id
+         WHERE b.id = ?
+         GROUP BY b.id
+         LIMIT 1`,
+        [boxId]
+    );
+
+    const row = rows[0] || {};
+    const capacity = Number(row.capacity || 1);
+    const memberCount = Number(row.memberCount || 0);
+    const pendingInviteCount = Number(row.pendingInviteCount || 0);
+
+    return {
+        capacity,
+        memberCount,
+        pendingInviteCount,
+        reservedCount: memberCount + pendingInviteCount
+    };
+};
+
 const resolveUploadAbsolutePath = (filePathValue) => {
     const normalizedPath = String(filePathValue || '').replace(/^\/+/, '').replace(/\\/g, path.sep);
     return normalizedPath ? path.join(__dirname, '..', normalizedPath) : '';
@@ -417,20 +456,35 @@ const deriveRelativePathFromFilePath = (boxId, filePathValue) => {
     return normalized.slice(expectedPrefix.length);
 };
 
-exports.acceptPendingInvitesForUser = async (userId, email) => {
+exports.acceptPendingInvitesForUser = async (userId, email, inviteToken = null) => {
     await ensureCollaborationTables();
 
     const normalizedEmail = String(email || '').trim().toLowerCase();
     if (!normalizedEmail || !userId) return;
 
-    const [invites] = await sql.query(
-        `SELECT id, box_id, role, invited_by
+    const inviteParams = [normalizedEmail];
+    const inviteSqlParts = [
+        `SELECT id, box_id, role, invited_by, invite_token
          FROM box_invites
-         WHERE email = ? AND status = 'pending'`,
-        [normalizedEmail]
-    );
+         WHERE email = ? AND status = 'pending'`
+    ];
+
+    if (inviteToken) {
+        inviteSqlParts.push('AND invite_token = ?');
+        inviteParams.push(String(inviteToken));
+    }
+
+    const [invites] = await sql.query(inviteSqlParts.join(' '), inviteParams);
+    let acceptedCount = 0;
+    let skippedCount = 0;
 
     for (const invite of invites) {
+        const capacityState = await getBoxCapacityAndUsage(invite.box_id);
+        if (capacityState.memberCount >= capacityState.capacity) {
+            skippedCount += 1;
+            continue;
+        }
+
         await sql.query(
             `INSERT INTO box_members (box_id, user_id, role, added_by)
              VALUES (?, ?, ?, ?)
@@ -446,24 +500,34 @@ exports.acceptPendingInvitesForUser = async (userId, email) => {
              WHERE id = ?`,
             [userId, invite.id]
         );
+
+        acceptedCount += 1;
     }
+
+    return { acceptedCount, skippedCount };
 };
 
 // Create Box
 exports.createBox = async (req, res) => {
     const { title, description } = req.body;
     const userId = req.user.id;
+    const capacityValue = Number(req.body?.capacity);
+    const capacity = Number.isFinite(capacityValue) ? Math.floor(capacityValue) : 1;
 
     if (!title || !description) {
         return res.status(400).json({ message: 'Title and description are required' });
+    }
+
+    if (!Number.isFinite(capacity) || capacity < 1) {
+        return res.status(400).json({ message: 'Capacity must be at least 1' });
     }
 
     try {
         await ensureCollaborationTables();
 
         const [result] = await sql.query(
-            'INSERT INTO boxes (user_id, title, description) VALUES (?, ?, ?)',
-            [userId, title, description]
+            'INSERT INTO boxes (user_id, title, description, capacity) VALUES (?, ?, ?, ?)',
+            [userId, title, description, capacity]
         );
 
         await sql.query(
@@ -535,6 +599,7 @@ exports.updateBox = async (req, res) => {
     const { id } = req.params;
     const { title, description } = req.body;
     const userId = req.user.id;
+    const capacityValue = req.body?.capacity;
 
     try {
         await ensureCollaborationTables();
@@ -543,9 +608,45 @@ exports.updateBox = async (req, res) => {
             return res.status(403).json({ message: 'Only admin can update this box' });
         }
 
+        const updates = [];
+        const params = [];
+
+        if (typeof title === 'string' && title.trim()) {
+            updates.push('title = ?');
+            params.push(title.trim());
+        }
+
+        if (typeof description === 'string') {
+            updates.push('description = ?');
+            params.push(description.trim());
+        }
+
+        if (capacityValue !== undefined) {
+            const nextCapacity = Math.floor(Number(capacityValue));
+            if (!Number.isFinite(nextCapacity) || nextCapacity < 1) {
+                return res.status(400).json({ message: 'Capacity must be at least 1' });
+            }
+
+            const capacityState = await getBoxCapacityAndUsage(id);
+            if (nextCapacity < capacityState.memberCount) {
+                return res.status(400).json({
+                    message: `Capacity cannot be lower than current member count (${capacityState.memberCount})`
+                });
+            }
+
+            updates.push('capacity = ?');
+            params.push(nextCapacity);
+        }
+
+        if (!updates.length) {
+            return res.status(400).json({ message: 'Nothing to update' });
+        }
+
+        params.push(id);
+
         await sql.query(
-            'UPDATE boxes SET title = ?, description = ? WHERE id = ?',
-            [title, description, id]
+            `UPDATE boxes SET ${updates.join(', ')} WHERE id = ?`,
+            params
         );
 
         return res.json({ success: true, message: 'Box updated successfully' });
@@ -591,14 +692,15 @@ exports.getMyBoxes = async (req, res) => {
 
         const [rows] = await sql.query(
             `SELECT b.*,
+                    COUNT(DISTINCT bm_all.user_id) AS memberCount,
                     CASE
                         WHEN b.user_id = ? THEN 'admin'
-                        WHEN MAX(CASE WHEN bm.role = 'admin' THEN 1 ELSE 0 END) = 1 THEN 'admin'
+                        WHEN MAX(CASE WHEN bm_user.role = 'admin' THEN 1 ELSE 0 END) = 1 THEN 'admin'
                         ELSE 'member'
                     END AS role
              FROM boxes b
-             JOIN box_members bm ON bm.box_id = b.id
-             WHERE bm.user_id = ?
+             JOIN box_members bm_user ON bm_user.box_id = b.id AND bm_user.user_id = ?
+             LEFT JOIN box_members bm_all ON bm_all.box_id = b.id
              GROUP BY b.id
              ORDER BY b.id DESC`,
             [userId, userId]
@@ -667,6 +769,12 @@ exports.addMemberByEmail = async (req, res) => {
             return res.status(403).json({ message: 'Only admin can add members' });
         }
 
+        const boxState = await getBoxCapacityAndUsage(boxId);
+        const availableSlots = Math.max(0, boxState.capacity - boxState.reservedCount);
+        if (!availableSlots) {
+            return res.status(400).json({ message: 'Box capacity is full' });
+        }
+
         // Get box details and sender's name
         const [boxes] = await sql.query(
             'SELECT title FROM boxes WHERE id = ? LIMIT 1',
@@ -685,12 +793,20 @@ exports.addMemberByEmail = async (req, res) => {
             [normalizedEmails]
         );
 
+        const [memberRows] = await sql.query(
+            'SELECT user_id FROM box_members WHERE box_id = ?',
+            [boxId]
+        );
+        const currentMemberIds = new Set(memberRows.map((row) => String(row.user_id)));
+
         const foundEmails = new Set(users.map((item) => String(item.email).toLowerCase()));
         const missingEmails = normalizedEmails.filter((item) => !foundEmails.has(item));
         let skippedSelfCount = 0;
-        let addedCount = 0;
         let invitedCount = 0;
         let emailQueuedCount = 0;
+        let capacityReached = false;
+
+        const inviteTargets = [];
 
         for (const user of users) {
             if (Number(user.id) === Number(currentUserId)) {
@@ -698,45 +814,47 @@ exports.addMemberByEmail = async (req, res) => {
                 continue;
             }
 
-            await sql.query(
-                `INSERT INTO box_members (box_id, user_id, role, added_by)
-                 VALUES (?, ?, ?, ?)
-                 ON DUPLICATE KEY UPDATE
-                    role = CASE WHEN role = 'admin' THEN 'admin' ELSE VALUES(role) END,
-                    added_by = VALUES(added_by)`,
-                [boxId, user.id, safeRole, currentUserId]
-            );
+            if (currentMemberIds.has(String(user.id))) {
+                continue;
+            }
 
-            addedCount += 1;
+            inviteTargets.push({ email: String(user.email || '').trim().toLowerCase(), userId: user.id });
+        }
+
+        for (const missingEmail of missingEmails) {
+            inviteTargets.push({ email: String(missingEmail || '').trim().toLowerCase(), userId: null });
+        }
+
+        const uniqueInviteTargets = inviteTargets.filter((item, index, arr) => arr.findIndex((x) => x.email === item.email) === index);
+
+        if (uniqueInviteTargets.length > availableSlots) {
+            return res.status(400).json({
+                message: `Box capacity allows only ${availableSlots} more member${availableSlots === 1 ? '' : 's'}`
+            });
         }
 
         const inviteBaseUrl = resolvePublicBaseUrl(req);
         const inviteLinks = [];
         const emailNotifications = [];
 
-        for (const user of users) {
-            const userEmail = String(user.email || '').trim().toLowerCase();
-            if (!userEmail || Number(user.id) === Number(currentUserId)) {
-                continue;
-            }
+        for (const target of uniqueInviteTargets) {
+            const inviteToken = createInviteToken();
+            const joinUrl = `${inviteBaseUrl}/signup.html?invite=${boxId}&email=${encodeURIComponent(target.email)}&token=${inviteToken}`;
 
-            const loginJoinUrl = `${inviteBaseUrl}/login.html?invite=${boxId}&email=${encodeURIComponent(userEmail)}`;
-            inviteLinks.push({ email: userEmail, url: loginJoinUrl });
-            emailNotifications.push({ email: userEmail, url: loginJoinUrl });
-        }
-
-        for (const missingEmail of missingEmails) {
-            const joinUrl = `${inviteBaseUrl}/signup.html?invite=${boxId}&email=${encodeURIComponent(missingEmail)}`;
-            inviteLinks.push({ email: missingEmail, url: joinUrl });
-            emailNotifications.push({ email: missingEmail, url: joinUrl });
+            inviteLinks.push({ email: target.email, url: joinUrl, token: inviteToken });
+            emailNotifications.push({ email: target.email, url: joinUrl });
 
             await sql.query(
-                `INSERT INTO box_invites (box_id, email, role, invited_by, status)
-                 VALUES (?, ?, ?, ?, 'pending')
+                `INSERT INTO box_invites (box_id, email, role, invited_by, invite_token, status)
+                 VALUES (?, ?, ?, ?, ?, 'pending')
                  ON DUPLICATE KEY UPDATE
                     role = VALUES(role),
-                    invited_by = VALUES(invited_by)`,
-                [boxId, missingEmail, safeRole, currentUserId]
+                    invited_by = VALUES(invited_by),
+                    invite_token = VALUES(invite_token),
+                    status = 'pending',
+                    accepted_by = NULL,
+                    accepted_at = NULL`,
+                [boxId, target.email, safeRole, currentUserId, inviteToken]
             );
 
             invitedCount += 1;
@@ -759,21 +877,20 @@ exports.addMemberByEmail = async (req, res) => {
             }
         }
 
-        if (addedCount === 0 && invitedCount === 0) {
+        if (invitedCount === 0) {
             return res.status(400).json({
-                message: 'No users were added. You may have selected your own email only.'
+                message: 'No users were invited. You may have selected your own email only.'
             });
         }
 
         return res.json({
             success: true,
-            addedCount,
             invitedCount,
             emailQueuedCount,
             skippedSelfCount,
             missingEmails,
             inviteLinks,
-            message: `Added ${addedCount} member(s)${invitedCount ? `. Processed ${invitedCount} pending signup invite(s)` : ''}${isInviteEmailEnabled() ? `. Email dispatch queued ${emailQueuedCount}` : '. Email sending disabled'}${skippedSelfCount ? `. Skipped your own email` : ''}`
+            message: `Processed ${invitedCount} invite(s)${isInviteEmailEnabled() ? `. Email dispatch queued ${emailQueuedCount}` : '. Email sending disabled'}${skippedSelfCount ? `. Skipped your own email` : ''}`
         });
     } catch (err) {
         return res.status(500).json({ message: 'Unable to add member', error: err.message });

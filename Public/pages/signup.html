@@ -85,11 +85,11 @@
     const inviteParams = new URLSearchParams(window.location.search);
     const inviteEmail = String(inviteParams.get('email') || '').trim();
     const inviteBoxId = Number(inviteParams.get('invite'));
+    const inviteToken = String(inviteParams.get('token') || '').trim();
 
     if (inviteEmail) {
       const emailInput = document.getElementById('email');
       emailInput.value = inviteEmail;
-      emailInput.readOnly = true;
       emailInput.title = 'Invite email locked for joining shared box';
 
       const inviteNotice = document.getElementById('inviteNotice');
@@ -100,7 +100,8 @@
     if (Number.isFinite(inviteBoxId) && inviteBoxId > 0) {
       const signInLink = document.getElementById('signinLink');
       const extraEmail = inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : '';
-      signInLink.href = `login.html?invite=${inviteBoxId}${extraEmail}`;
+      const extraToken = inviteToken ? `&token=${encodeURIComponent(inviteToken)}` : '';
+      signInLink.href = `login.html?invite=${inviteBoxId}${extraEmail}${extraToken}`;
     }
 
     async function redirectIfLoggedInForInvite() {
@@ -127,7 +128,8 @@
           },
           body: JSON.stringify({
             inviteBoxId,
-            inviteEmail: inviteEmail || null
+            inviteEmail: inviteEmail || null,
+            inviteToken: inviteToken || null
           })
         });
 
@@ -164,8 +166,9 @@
         country: document.getElementById("country").value,
         capacity: document.getElementById("capacity").value,
         purpose: document.getElementById("purpose").value,
-      password: password,
-      inviteBoxId: Number.isFinite(inviteBoxId) && inviteBoxId > 0 ? inviteBoxId : null
+        password: password,
+        inviteBoxId: Number.isFinite(inviteBoxId) && inviteBoxId > 0 ? inviteBoxId : null,
+        inviteToken: inviteToken || null
     };
 
     try {

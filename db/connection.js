@@ -68,11 +68,20 @@ async function ensureCoreTables() {
             user_id INT NOT NULL,
             title VARCHAR(255) NOT NULL,
             description TEXT NULL,
+            capacity INT NOT NULL DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             KEY idx_boxes_user_id (user_id),
             CONSTRAINT boxes_ibfk_1 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
     `);
+
+    try {
+        await sql.query('ALTER TABLE boxes ADD COLUMN capacity INT NOT NULL DEFAULT 1 AFTER description');
+    } catch (alterErr) {
+        if (alterErr && alterErr.code !== 'ER_DUP_FIELDNAME') {
+            throw alterErr;
+        }
+    }
 }
 
 // Validate connection once on startup for faster error feedback.

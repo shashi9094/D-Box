@@ -49,13 +49,50 @@ function setNoStore(res) {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
 }
 
+app.get('/scripts/back-nav.js', isAuth, (req, res) => {
+    setNoStore(res);
+    return res.sendFile(path.join(__dirname, 'private', 'scripts', 'back-nav.js'));
+});
+
+app.get('/scripts/auth-guard.js', isAuth, (req, res) => {
+    setNoStore(res);
+    return res.sendFile(path.join(__dirname, 'private', 'scripts', 'auth-guard.js'));
+});
+
+app.get('/', (req, res) => {
+    if (req.session && req.session.user) {
+        return res.redirect('/home');
+    }
+
+    setNoStore(res);
+    return res.sendFile(path.join(__dirname, 'Public', 'pages', 'index.html'));
+});
+
+app.get('/index.html', (req, res) => {
+    if (req.session && req.session.user) {
+        return res.redirect('/home');
+    }
+
+    setNoStore(res);
+    return res.sendFile(path.join(__dirname, 'Public', 'pages', 'index.html'));
+});
+
 app.get('/login.html', (req, res) => {
     if (req.session && req.session.user) {
         return res.redirect('/home');
     }
 
     setNoStore(res);
-    return res.sendFile(path.join(__dirname, 'Public', 'login.html'));
+    return res.sendFile(path.join(__dirname, 'Public', 'pages', 'login.html'));
+});
+
+app.get('/signup.html', (req, res) => {
+    if (req.session && req.session.user) {
+        return res.redirect('/home');
+    }
+
+    setNoStore(res);
+    return res.sendFile(path.join(__dirname, 'Public', 'pages', 'signup.html'));
 });
 
 // Static
@@ -88,22 +125,22 @@ function isAuth(req, res, next) {
 // Private Pages
 app.get('/dashboard', isAuth, (req, res) => {
     setNoStore(res);
-    res.sendFile(path.join(__dirname, 'private', 'dashboard.html'));
+    res.sendFile(path.join(__dirname, 'private', 'pages', 'dashboard.html'));
 });
 
 app.get('/createbox', isAuth, (req, res) => {
     setNoStore(res);
-    res.sendFile(path.join(__dirname, 'private', 'createbox.html'));
+    res.sendFile(path.join(__dirname, 'private', 'pages', 'createbox.html'));
 });
 
 app.get('/home', isAuth, (req, res) => {
     setNoStore(res);
-    res.sendFile(path.join(__dirname, 'private', 'home.html'));
+    res.sendFile(path.join(__dirname, 'private', 'pages', 'home.html'));
 });
 
 app.get('/uploads', isAuth, (req, res) => {
     setNoStore(res);
-    res.sendFile(path.join(__dirname, 'private', 'uploads.html'));
+    res.sendFile(path.join(__dirname, 'private', 'pages', 'uploads.html'));
 });
 
 // Start

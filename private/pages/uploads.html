@@ -6,7 +6,8 @@
   <title>Box Uploads</title>
   <link rel="stylesheet" href="/style.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
-  <script src="/auth-guard.js" defer></script>
+  <script src="/scripts/auth-guard.js" defer></script>
+  <script src="/scripts/back-nav.js" defer></script>
 </head>
 <body class="dashboard-page">
   <div class="main-layout uploads-page-layout">
@@ -28,6 +29,7 @@
         </div>
         <div class="uploads-header-right">
           <span class="role-pill" id="groupRolePill">member</span>
+          <span class="capacity-pill" id="groupCapacityPill">0/0</span>
           <div class="uploads-admin-tools" id="adminTools" hidden>
             <button class="action-chip" id="addMemberBtn" data-tooltip="Add User"><i class="fa-solid fa-user-plus"></i></button>
             <button class="action-chip danger" id="removeMemberBtn" data-tooltip="Revoke User"><i class="fa-solid fa-user-minus"></i></button>
@@ -138,6 +140,10 @@
     let activeMenuContentId = null;
     let renameTarget = null;
 
+    function isAdminUser() {
+      return myRole === 'admin';
+    }
+
     function goToParentFolder() {
       currentFolderPath = getParentFolderPath(currentFolderPath);
       renderContents();
@@ -187,6 +193,7 @@
       document.getElementById('groupTitle').textContent = box.title || 'Untitled Box';
       document.getElementById('groupDescription').textContent = box.description || 'No description available.';
       document.getElementById('groupRolePill').textContent = myRole;
+      document.getElementById('groupCapacityPill').textContent = `${Number(box.memberCount || 0)}/${Number(box.capacity || 1)}`;
     }
 
     function renderMembers() {
@@ -484,8 +491,19 @@
     }
 
     function setAdminControlsVisible(isVisible) {
-      document.getElementById('adminTools').hidden = !isVisible;
-      document.getElementById('uploadsFab').hidden = false;
+      const adminTools = document.getElementById('adminTools');
+      const fab = document.getElementById('uploadsFab');
+      const menu = document.getElementById('fabMenu');
+
+      adminTools.hidden = !isVisible;
+      fab.hidden = false;
+      fab.disabled = !isVisible;
+      fab.setAttribute('aria-disabled', String(!isVisible));
+      fab.classList.toggle('is-disabled', !isVisible);
+
+      if (!isVisible) {
+        menu.hidden = true;
+      }
     }
 
     function closeModal() {
@@ -599,6 +617,10 @@
     });
 
     document.getElementById('uploadsFab').addEventListener('mouseenter', () => {
+      if (!isAdminUser()) {
+        document.getElementById('fabMenu').hidden = true;
+        return;
+      }
       document.getElementById('fabMenu').hidden = false;
     });
 
@@ -616,6 +638,11 @@
     });
 
     document.getElementById('fabMenu').addEventListener('click', (event) => {
+      if (!isAdminUser()) {
+        document.getElementById('fabMenu').hidden = true;
+        return;
+      }
+
       const actionButton = event.target.closest('button[data-action]');
       if (!actionButton) return;
 
@@ -706,6 +733,11 @@
     });
 
     document.getElementById('fileInput').addEventListener('change', async (event) => {
+      if (!isAdminUser()) {
+        event.target.value = '';
+        return;
+      }
+
       const file = event.target.files && event.target.files[0];
       if (!file) return;
 
@@ -720,6 +752,11 @@
     });
 
     document.getElementById('folderInput').addEventListener('change', async (event) => {
+      if (!isAdminUser()) {
+        event.target.value = '';
+        return;
+      }
+
       const files = Array.from(event.target.files || []);
       if (!files.length) return;
 
@@ -734,11 +771,13 @@
     });
 
     document.getElementById('addMemberBtn').addEventListener('click', () => {
+      if (!isAdminUser()) return;
       document.getElementById('memberEmailInput').value = '';
       openModal('add-member');
     });
 
     document.getElementById('removeMemberBtn').addEventListener('click', async () => {
+      if (!isAdminUser()) return;
       try {
         await openRemoveModal();
       } catch (error) {
@@ -795,6 +834,11 @@
 
     document.getElementById('newFolderForm').addEventListener('submit', async (event) => {
       event.preventDefault();
+      if (!isAdminUser()) {
+        document.getElementById('uploadsModalError').textContent = 'Only admin can create folders';
+        return;
+      }
+
       const folderName = document.getElementById('folderNameInput').value.trim();
       if (!folderName) {
         document.getElementById('uploadsModalError').textContent = 'Please provide folder name';

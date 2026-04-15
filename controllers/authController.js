@@ -18,7 +18,8 @@ exports.signup = async (req, res) => {
             capacity,
             purpose,
             password,
-            inviteBoxId
+            inviteBoxId,
+            inviteToken
         } = req.body;
 
         const safeInviteBoxId = Number(inviteBoxId);
@@ -66,7 +67,7 @@ exports.signup = async (req, res) => {
                     }
 
                     try {
-                        await boxController.acceptPendingInvitesForUser(result.insertId, email);
+                        await boxController.acceptPendingInvitesForUser(result.insertId, email, inviteToken);
                     } catch (inviteErr) {
                         console.error('Pending invite sync failed after signup:', inviteErr.message);
                     }
@@ -108,6 +109,7 @@ exports.login = async (req, res) => {
     const email = String(req.body.email || "").trim().toLowerCase();
     const password = String(req.body.password || "");
     const inviteBoxId = Number(req.body.inviteBoxId);
+    const inviteToken = String(req.body.inviteToken || '').trim();
     const redirectUrl = Number.isFinite(inviteBoxId) && inviteBoxId > 0
         ? `/uploads?boxId=${inviteBoxId}`
         : '/home';
@@ -153,7 +155,7 @@ exports.login = async (req, res) => {
         }
 
         try {
-            await boxController.acceptPendingInvitesForUser(user.id, user.email);
+            await boxController.acceptPendingInvitesForUser(user.id, user.email, inviteToken || null);
         } catch (inviteErr) {
             console.error('Pending invite sync failed after login:', inviteErr.message);
         }
@@ -217,6 +219,7 @@ exports.acceptInviteForSession = async (req, res) => {
 
     const inviteBoxId = Number(req.body && req.body.inviteBoxId);
     const inviteEmail = String(req.body && req.body.inviteEmail || '').trim().toLowerCase();
+    const inviteToken = String(req.body && req.body.inviteToken || '').trim();
     const sessionEmail = String(sessionUser.email || '').trim().toLowerCase();
 
     if (!Number.isFinite(inviteBoxId) || inviteBoxId <= 0) {
@@ -230,7 +233,13 @@ exports.acceptInviteForSession = async (req, res) => {
     }
 
     try {
-        await boxController.acceptPendingInvitesForUser(sessionUser.id, sessionUser.email);
+        const result = await boxController.acceptPendingInvitesForUser(sessionUser.id, sessionUser.email, inviteToken || null);
+
+        if (inviteToken && (!result || result.acceptedCount === 0)) {
+            return res.status(400).json({
+                message: 'Invite link is invalid, expired, or the box is already full'
+            });
+        }
 
         return res.json({
             success: true,

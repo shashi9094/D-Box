@@ -6,7 +6,8 @@
   <title>Exist Box</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-    <script src="/auth-guard.js" defer></script>
+        <script src="/scripts/auth-guard.js" defer></script>
+        <script src="/scripts/back-nav.js" defer></script>
 </head>
 
 <body class="dashboard-page">
@@ -17,6 +18,7 @@
     <div class="sidebar">
         <h3>D-Box</h3>
         <ul>
+            <li id="menuHome">Home</li>
             <li id="menudashboard">Dashboard</li>
             <li id="newMenu">New Box</li>
             <li id="menuSettings">Settings</li>
@@ -160,6 +162,11 @@ async function render() {
         const content = document.createElement('div');
         content.className = 'box-content';
         content.innerHTML = `<p class="box-description">${box.description || ''}</p>`;
+
+        const capacityRow = document.createElement('div');
+        capacityRow.className = 'item-line capacity-line';
+        capacityRow.innerHTML = `<strong>Capacity:</strong> ${Number(box.memberCount || 0)}/${Number(box.capacity || 1)} members used`;
+        content.appendChild(capacityRow);
 
         if (box.id === selectedBoxId) {
             const [members, contents] = await Promise.all([loadMembers(box.id), loadContents(box.id)]);
@@ -331,6 +338,10 @@ document.getElementById('menudashboard').onclick = function() {
     window.location.href = '/dashboard#existing';
 };
 
+document.getElementById('menuHome').onclick = function() {
+    window.location.href = '/home';
+};
+
 document.getElementById('newMenu').onclick = function() {
     window.location.href = '/createbox';
 };
@@ -383,7 +394,7 @@ async function loadSessionUser() {
 }
 
 function activateMenu(menuId) {
-    const menus = ['menudashboard', 'newMenu', 'menuSettings'];
+    const menus = ['menuHome', 'menudashboard', 'newMenu', 'menuSettings'];
     menus.forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.classList.remove('active');

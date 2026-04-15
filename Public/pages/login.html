@@ -46,6 +46,7 @@
   const inviteParams = new URLSearchParams(window.location.search);
   const inviteEmail = String(inviteParams.get('email') || '').trim();
   const inviteBoxId = Number(inviteParams.get('invite'));
+  const inviteToken = String(inviteParams.get('token') || '').trim();
 
   function showInviteNotice() {
     const inviteNotice = document.getElementById('inviteNotice');
@@ -79,7 +80,8 @@
         },
         body: JSON.stringify({
           inviteBoxId,
-          inviteEmail: inviteEmail || null
+          inviteEmail: inviteEmail || null,
+          inviteToken: inviteToken || null
         })
       });
 
@@ -158,7 +160,8 @@
         body: JSON.stringify({
           email,
           password,
-          inviteBoxId: Number.isFinite(inviteBoxId) && inviteBoxId > 0 ? inviteBoxId : null
+          inviteBoxId: Number.isFinite(inviteBoxId) && inviteBoxId > 0 ? inviteBoxId : null,
+          inviteToken: inviteToken || null
         })
       });
 
