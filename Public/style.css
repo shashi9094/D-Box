@@ -42,7 +42,7 @@ body.dashboard-page {
   background-clip: text; /* standard property for wider compatibility */
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  color: transparent;
+  color: #8ee8ff;
   animation: shine 3s infinite alternate;
 }
 
@@ -298,46 +298,148 @@ body.dashboard-page {
 }
 
 .nav-inner {
-  max-width: 1100px;
+  max-width: 1280px;
   margin: 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
-  padding: 14px 28px; /* Adjusted padding for a better look */
+  gap: clamp(14px, 2vw, 28px);
+  padding: 12px clamp(16px, 2.4vw, 32px); /* Adjusted padding for a better look */
   
   /* --- Add these new styles for the rounded effect --- */
   background: rgba(143, 22, 236, 0.438); /* Semi-transparent background */
-  border-radius: 40px; /* This makes it rounded */
+  border-radius: 42px; /* This makes it rounded */
   border: 1px solid rgba(127, 82, 255, 0.2); /* Subtle glowing border */
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3); /* Soft shadow for depth */
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3); /* Soft shadow for depth */
 }
 
-.logo, .footer-logo {
+.logo {
+  position: relative;
+  z-index: 1;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 2rem;
+  letter-spacing: 0.3px;
+  color: transparent;
+  line-height: 1;
+  padding: 7px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(123, 244, 255, 0.65);
+  background: linear-gradient(135deg, rgba(5, 10, 24, 0.95), rgba(9, 18, 42, 0.88));
+  text-shadow: 0 0 8px rgba(75, 222, 255, 0.5), 0 0 20px rgba(161, 88, 255, 0.35);
+  box-shadow:
+    0 0 0 1px rgba(90, 230, 255, 0.45),
+    0 0 20px rgba(42, 198, 255, 0.42),
+    0 0 34px rgba(134, 60, 255, 0.28),
+    inset 0 0 12px rgba(77, 214, 255, 0.18);
+  animation: logoFloat 3.2s ease-in-out infinite;
+}
+
+.logo::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 16px;
+  border: 1.6px solid rgba(133, 245, 255, 0.95);
+  box-shadow:
+    0 0 8px rgba(82, 224, 255, 0.7),
+    0 0 16px rgba(82, 224, 255, 0.55),
+    0 0 28px rgba(149, 67, 255, 0.42);
+  pointer-events: none;
+  animation: logoBorderBlink 1.2s ease-in-out infinite;
+}
+
+.logo::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 18px;
+  background: radial-gradient(circle, rgba(102, 241, 255, 0.35), rgba(102, 241, 255, 0));
+  filter: blur(6px);
+  z-index: -1;
+  pointer-events: none;
+  animation: logoAuraPulse 2.1s ease-in-out infinite;
+}
+
+.footer-logo {
   font-weight: 700;
-  font-size: 1.2rem;
+  font-size: 2rem;
   color: #fff;
-  box-shadow: rgb(0, 198, 255) -3px 1px 3px 4px;
-  border: 1px solid #0a0a0f;
-  border-radius: 11px;
+  line-height: 1;
+  box-shadow: rgb(0, 198, 255) 0 0 14px 2px;
+  border: 1px solid rgba(10, 10, 15, 0.7);
+  border-radius: 14px;
+  padding: 6px 10px;
+}
+
+@keyframes logoBorderBlink {
+  0%,
+  100% {
+    opacity: 0.55;
+    border-color: rgba(133, 245, 255, 0.7);
+    box-shadow:
+      0 0 6px rgba(82, 224, 255, 0.52),
+      0 0 12px rgba(82, 224, 255, 0.35),
+      0 0 20px rgba(149, 67, 255, 0.25);
   }
+  50% {
+    opacity: 1;
+    border-color: rgba(184, 252, 255, 1);
+    box-shadow:
+      0 0 10px rgba(82, 224, 255, 0.9),
+      0 0 22px rgba(82, 224, 255, 0.75),
+      0 0 34px rgba(149, 67, 255, 0.6);
+  }
+}
+
+@keyframes logoAuraPulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.03);
+  }
+}
+
+@keyframes logoFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-1px);
+  }
+}
+
+.main-nav {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 
 .main-nav ul {
   list-style: none;
   display: flex;
-  justify-content: space-evenly; /* Equal spacing */
+  justify-content: space-between; /* Equal spacing */
   align-items: center;
+  gap: clamp(12px, 1.8vw, 26px);
   margin: 0;
   padding: 0;
   width: 100%;
 }
 .main-nav li {
   position: relative;
-  padding: 8px 14px;
+  padding: 9px 16px;
   color: #cfeeff;
   cursor: pointer;
-  font-weight: 500;
-  border-radius: 6px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  border-radius: 999px;
   transition: all 0.3s ease;
 }
 
@@ -356,6 +458,14 @@ body.dashboard-page {
   color: #00e6ff;
   box-shadow: 0 0 15px rgba(123, 47, 247, 0.4), inset 0 0 10px rgba(123, 47, 247, 0.1);
   animation: menuBlink 0.6s ease-in-out;
+}
+
+.main-nav .nav-search-item,
+.main-nav .nav-search-item:hover {
+  background: transparent;
+  box-shadow: none;
+  animation: none;
+  padding: 0;
 }
 
 @keyframes menuBlink {
@@ -520,18 +630,25 @@ body.dashboard-page {
 .search input::placeholder { color: rgba(255,255,255,0.45); }
 /* Make sure search input fits neatly in navbar */
 .main-nav input[type="search"] {
-  padding: 8px 14px;
-  border-radius: 20px;
-  border: 1px solid rgba(9, 228, 221, 0.915);
-  background: rgba(255, 255, 255, 0.05);
+  width: clamp(190px, 22vw, 270px);
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(9, 228, 221, 0.72);
+  background: linear-gradient(135deg, rgba(24, 30, 64, 0.75), rgba(38, 16, 72, 0.68));
   color: #ffffff;
   outline: none;
-  box-shadow: rgb(0, 198, 255) 1px 0px 8px 0px;
-  
-  
+  box-shadow: rgb(0, 198, 255) 0 0 12px 0;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
 }
+
+.main-nav input[type="search"]:focus {
+  border-color: rgba(102, 250, 243, 0.95);
+  box-shadow: 0 0 0 2px rgba(8, 221, 255, 0.15), 0 0 16px rgba(8, 221, 255, 0.45);
+  transform: translateY(-1px);
+}
+
 .main-nav input[type="search"]::placeholder {
-  color: rgba(255,255,255,0.4);
+  color: rgba(255,255,255,0.58);
 }
 
 

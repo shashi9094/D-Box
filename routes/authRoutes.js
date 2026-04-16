@@ -280,69 +280,6 @@ router.post('/notifications/ask', requireSessionUser, async (req, res) => {
   }
 });
 
-router.get("/login-history", requireSessionUser, async (req, res) => {
-  const currentUserId = Number(req.session.user.id);
-  const limitValue = Number(req.query?.limit);
-  const limit = Number.isFinite(limitValue) ? Math.min(Math.max(Math.floor(limitValue), 1), 200) : 50;
-  const emailFilter = String(req.query?.email || "").trim().toLowerCase();
-
-  try {
-    const sql = db.promise();
-
-    const [roleRows] = await sql.query(
-      "SELECT role FROM users WHERE id = ? LIMIT 1",
-      [currentUserId]
-    );
-
-    if (!roleRows.length) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    if (String(roleRows[0].role || "User") !== "Admin") {
-      return res.status(403).json({ message: "Only admin can view login history" });
-    }
-
-    let query = `
-      SELECT lh.id, lh.user_id, lh.email, lh.login_at, lh.ip_address, lh.user_agent,
-             lh.device_type, lh.browser, lh.os, u.fullName
-      FROM login_history lh
-      LEFT JOIN users u ON u.id = lh.user_id
-    `;
-    const params = [];
-
-    if (emailFilter) {
-      query += " WHERE LOWER(lh.email) = LOWER(?)";
-      params.push(emailFilter);
-    }
-
-    query += ` ORDER BY lh.id DESC LIMIT ${limit}`;
-
-    const [rows] = await sql.query(query, params);
-
-    return res.json({
-      success: true,
-      data: rows,
-      limit,
-      totalFetched: rows.length,
-    });
-  } catch (error) {
-    if (error && error.code === "ER_NO_SUCH_TABLE") {
-      return res.json({
-        success: true,
-        data: [],
-        limit,
-        totalFetched: 0,
-        message: "login_history table not found yet",
-      });
-    }
-
-    return res.status(500).json({
-      message: "Unable to fetch login history",
-      error: error.message,
-    });
-  }
-});
-
 router.post("/logout", (req, res) => {
   req.session.destroy((err) => {
     if (err) {
@@ -411,6 +348,50 @@ router.post("/logout-all", requireSessionUser, (req, res) => {
       });
     });
   });
+});
+
+router.get("/profile", requireSessionUser, (req, res) => {
+  const currentUserId = Number(req.session.user.id);
+
+  db.query(
+    "SELECT id, fullName, email, role, created_at FROM users WHERE id = ? LIMIT 1",
+    [currentUserId],
+    (userErr, userRows) => {
+      if (userErr) {
+        return res.status(500).json({ message: "Unable to load profile" });
+      }
+
+      if (!userRows.length) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const user = userRows[0];
+
+      db.query(
+        "SELECT login_at FROM login_history WHERE user_id = ? ORDER BY id DESC LIMIT 1",
+        [currentUserId],
+        (historyErr, historyRows) => {
+          let lastLoginAt = null;
+
+          if (!historyErr && Array.isArray(historyRows) && historyRows.length) {
+            lastLoginAt = historyRows[0].login_at || null;
+          }
+
+          return res.json({
+            profile: {
+              id: Number(user.id),
+              name: String(user.fullName || "").trim(),
+              email: String(user.email || "").trim().toLowerCase(),
+              role: String(user.role || "User"),
+              joinedAt: user.created_at || null,
+              lastLoginAt,
+              profilePhoto: String(req.session?.user?.profilePhoto || "").trim(),
+            },
+          });
+        }
+      );
+    }
+  );
 });
 
 router.put("/profile", requireSessionUser, (req, res) => {

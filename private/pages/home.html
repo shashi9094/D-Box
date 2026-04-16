@@ -39,13 +39,12 @@
               <li>D-Box App</li>
             </ul>
           </li>
-          <li class="has-dropdown"><input type="search" placeholder="Search D-box" aria-label="Search D-box">          
+          <li class="has-dropdown nav-search-item"><input type="search" placeholder="Search D-box" aria-label="Search D-box">          
           </li>
           <li class="has-dropdown">Profile
             <ul class="dropdown">
               <li id="openProfileAction">Profile</li>
               <li id="openSettingsAction">Settings</li>
-              <li id="openLoginHistoryAction" hidden>Login History</li>
               <li id="openHelpAction">Help</li>
               <li id="openLogoutAction">Logout</li>
             </ul>
@@ -138,12 +137,6 @@
         <button type="submit" class="modal-submit-btn">Save profile</button>
       </form>
 
-      <div class="profile-capacity-section" id="profileCapacitySection" hidden>
-        <h4>Box Capacity</h4>
-        <div id="profileCapacityList"></div>
-        <p class="modal-help-text">Set the maximum members for each box you own. It cannot be lower than current members.</p>
-      </div>
-
       <button type="button" class="modal-submit-btn" id="showChangePasswordBtn">Change password</button>
 
       <form id="changePasswordForm" class="modal-form" hidden>
@@ -217,6 +210,12 @@
         </label>
       </div>
 
+      <div class="profile-capacity-section" id="settingsCapacitySection" hidden>
+        <h4>Box Capacity</h4>
+        <div id="settingsCapacityList"></div>
+        <p class="modal-help-text">Set the maximum members for each box you own. It cannot be lower than current members.</p>
+      </div>
+
       <button type="button" class="modal-submit-btn" id="saveSettingsBtn">Save settings</button>
       <p class="modal-error" id="settingsModalMessage"></p>
     </div>
@@ -263,40 +262,6 @@
         <button type="button" class="modal-submit-btn danger" id="logoutAllBtn">Logout all devices</button>
       </div>
       <p class="modal-error" id="logoutModalMessage"></p>
-    </div>
-  </div>
-
-  <div class="dashboard-modal" id="loginHistoryModal" aria-hidden="true">
-    <div class="dashboard-modal-card home-modal-card" role="dialog" aria-modal="true" aria-labelledby="loginHistoryModalTitle">
-      <div class="dashboard-modal-header">
-        <h3 id="loginHistoryModalTitle">Login History</h3>
-        <button type="button" class="modal-close-btn" data-close-modal="loginHistoryModal" aria-label="Close">
-          x
-        </button>
-      </div>
-
-      <p class="modal-help-text">Latest login sessions recorded in MySQL for admin audit.</p>
-      <div class="history-table-wrap">
-        <table class="history-table" id="loginHistoryTable">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>User</th>
-              <th>Email</th>
-              <th>Login Time</th>
-              <th>IP</th>
-              <th>Device</th>
-              <th>Browser</th>
-              <th>OS</th>
-            </tr>
-          </thead>
-          <tbody id="loginHistoryBody">
-            <tr><td colspan="8">No records yet</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <button type="button" class="modal-submit-btn" id="refreshLoginHistoryBtn">Refresh</button>
-      <p class="modal-error" id="loginHistoryMessage"></p>
     </div>
   </div>
 
@@ -726,11 +691,24 @@
         document.getElementById('profileJoined').textContent = formatDate(profile.joinedAt);
         document.getElementById('profileLastLogin').textContent = formatDate(profile.lastLoginAt);
         document.getElementById('editProfileName').value = profile.name || '';
+      } catch (error) {
+        messageEl.textContent = error.message || 'Profile load failed';
+      }
+    }
 
-        const capacitySection = document.getElementById('profileCapacitySection');
-        const capacityList = document.getElementById('profileCapacityList');
-        capacityList.innerHTML = '';
+    async function loadCapacitySettings() {
+      const messageEl = document.getElementById('settingsModalMessage');
+      const capacitySection = document.getElementById('settingsCapacitySection');
+      const capacityList = document.getElementById('settingsCapacityList');
 
+      if (!messageEl || !capacitySection || !capacityList) {
+        return;
+      }
+
+      messageEl.textContent = '';
+      capacityList.innerHTML = '';
+
+      try {
         const boxesRes = await fetch('/api/box/my-boxes', {
           credentials: 'same-origin',
           cache: 'no-store'
@@ -751,17 +729,17 @@
               <span>${Number(box.reservedCount || box.memberCount || 0)} member(s) / capacity ${Number(box.capacity || 1)}</span>
             </div>
             <div class="profile-capacity-controls">
-              <input type="number" min="${Math.max(Number(box.reservedCount || box.memberCount || 1), 1)}" max="200" value="${Number(box.capacity || 1)}" data-box-capacity-input="${box.id}">
-              <button type="button" class="modal-submit-btn" data-box-capacity-save="${box.id}">Save</button>
+              <input type="number" min="${Math.max(Number(box.reservedCount || box.memberCount || 1), 1)}" max="200" value="${Number(box.capacity || 1)}" data-settings-capacity-input="${box.id}">
+              <button type="button" class="modal-submit-btn" data-settings-capacity-save="${box.id}">Save</button>
             </div>
           `;
           capacityList.appendChild(row);
         });
 
-        capacityList.querySelectorAll('[data-box-capacity-save]').forEach((button) => {
+        capacityList.querySelectorAll('[data-settings-capacity-save]').forEach((button) => {
           button.addEventListener('click', async () => {
-            const boxId = button.getAttribute('data-box-capacity-save');
-            const input = capacityList.querySelector(`[data-box-capacity-input="${boxId}"]`);
+            const boxId = button.getAttribute('data-settings-capacity-save');
+            const input = capacityList.querySelector(`[data-settings-capacity-input="${boxId}"]`);
             const nextCapacity = Number(input?.value);
 
             if (!Number.isFinite(nextCapacity) || nextCapacity < 1) {
@@ -783,14 +761,14 @@
               }
 
               messageEl.textContent = data.message || 'Capacity updated';
-              await loadProfile();
+              await loadCapacitySettings();
             } catch (error) {
               messageEl.textContent = error.message || 'Capacity update failed';
             }
           });
         });
       } catch (error) {
-        messageEl.textContent = error.message || 'Profile load failed';
+        messageEl.textContent = error.message || 'Unable to load box capacities';
       }
     }
 
@@ -829,78 +807,6 @@
         window.location.replace('/login.html');
       } catch (error) {
         msgEl.textContent = error.message || 'Logout all devices failed';
-      }
-    }
-
-    async function loadLoginHistory() {
-      const body = document.getElementById('loginHistoryBody');
-      const messageEl = document.getElementById('loginHistoryMessage');
-      body.innerHTML = '<tr><td colspan="8">Loading...</td></tr>';
-      messageEl.textContent = '';
-
-      try {
-        const res = await fetch('/api/auth/login-history?limit=50', {
-          credentials: 'same-origin',
-          cache: 'no-store'
-        });
-        const payload = await res.json().catch(() => ({}));
-
-        if (!res.ok) {
-          throw new Error(payload.message || 'Unable to fetch login history');
-        }
-
-        const rows = Array.isArray(payload.data) ? payload.data : [];
-        if (!rows.length) {
-          body.innerHTML = '<tr><td colspan="8">No login history found</td></tr>';
-          if (payload.message) {
-            messageEl.textContent = payload.message;
-          }
-          return;
-        }
-
-        body.innerHTML = rows.map((entry) => {
-          const loginAt = formatDate(entry.login_at);
-          const fullName = entry.fullName || `User ${entry.user_id || '-'}`;
-          const ip = entry.ip_address || '-';
-          const device = entry.device_type || '-';
-          const browser = entry.browser || '-';
-          const os = entry.os || '-';
-          const safeEmail = String(entry.email || '-').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-          const safeName = String(fullName || '-').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-          return `
-            <tr>
-              <td>${entry.id || '-'}</td>
-              <td>${safeName}</td>
-              <td>${safeEmail}</td>
-              <td>${loginAt}</td>
-              <td>${ip}</td>
-              <td>${device}</td>
-              <td>${browser}</td>
-              <td>${os}</td>
-            </tr>
-          `;
-        }).join('');
-      } catch (error) {
-        body.innerHTML = '<tr><td colspan="8">Unable to load records</td></tr>';
-        messageEl.textContent = error.message || 'Unable to fetch login history';
-      }
-    }
-
-    async function resolveAdminMenuAccess() {
-      const historyItem = document.getElementById('openLoginHistoryAction');
-      if (!historyItem) return;
-
-      try {
-        const res = await fetch('/api/auth/profile', {
-          credentials: 'same-origin',
-          cache: 'no-store'
-        });
-        const payload = await res.json().catch(() => ({}));
-        const role = String(payload?.profile?.role || '').toLowerCase();
-        historyItem.hidden = role !== 'admin';
-      } catch (_) {
-        historyItem.hidden = true;
       }
     }
 
@@ -968,6 +874,10 @@
       const openSettingsModal = async () => {
         closeAllDropdowns();
         const googleSelect = document.getElementById('googleAccountSelect');
+        const settingsMessage = document.getElementById('settingsModalMessage');
+        if (settingsMessage) {
+          settingsMessage.textContent = '';
+        }
         try {
           const statusRes = await fetch('/api/auth/google/status', { credentials: 'same-origin' });
           const statusData = await statusRes.json().catch(() => ({}));
@@ -979,6 +889,7 @@
         } catch (_) {
           googleSelect.innerHTML = '<option value="unknown">Unknown</option>';
         }
+        await loadCapacitySettings();
         openModal('settingsModal');
       };
 
@@ -1065,12 +976,6 @@
       });
 
       document.getElementById('openSettingsAction')?.addEventListener('click', openSettingsModal);
-
-      document.getElementById('openLoginHistoryAction')?.addEventListener('click', async () => {
-        closeAllDropdowns();
-        openModal('loginHistoryModal');
-        await loadLoginHistory();
-      });
 
       document.getElementById('openHelpAction')?.addEventListener('click', () => {
         closeAllDropdowns();
@@ -1169,9 +1074,6 @@
 
       document.getElementById('logoutCurrentBtn')?.addEventListener('click', logoutCurrent);
       document.getElementById('logoutAllBtn')?.addEventListener('click', logoutAllDevices);
-      document.getElementById('refreshLoginHistoryBtn')?.addEventListener('click', loadLoginHistory);
-
-      await resolveAdminMenuAccess();
       await loadNotifications({ silent: true });
       startNotificationPolling(settings.notifications !== 'off');
 
@@ -1192,9 +1094,6 @@
         openModal('helpModal');
       } else if (openTarget === 'logout') {
         openModal('logoutModal');
-      } else if (openTarget === 'history') {
-        openModal('loginHistoryModal');
-        await loadLoginHistory();
       }
 
       if (openTarget) {
