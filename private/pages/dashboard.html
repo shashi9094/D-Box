@@ -58,7 +58,7 @@
             <input type="hidden" id="addMemberBoxId">
             <label for="memberEmailInput">User Email(s)</label>
             <input id="memberEmailInput" type="text" placeholder="user1@example.com, user2@example.com" required>
-            <small class="modal-help-text">Multiple emails add kar sakte ho: comma ya new line se separate karo.</small>
+            <small class="modal-help-text">You can add multiple email addresses, separated by commas or line breaks.</small>
             <button type="submit" class="modal-submit-btn">
                 <i class="fa-solid fa-user-plus"></i> Add User
             </button>
@@ -351,7 +351,7 @@ document.getElementById('newBoxCornerBtn').onclick = function() {
 };
 
 document.getElementById('menuSettings').onclick = function() {
-    window.location.href = '/settings';
+    window.location.href = '/home?open=settings&return=%2Fdashboard%23existing';
 };
 
 document.getElementById('modalCloseBtn').addEventListener('click', closeModal);

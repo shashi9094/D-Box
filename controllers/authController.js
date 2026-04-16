@@ -2,6 +2,7 @@ const db = require(`../db/connection`);
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");    
 const boxController = require('./boxController');
+const { logLoginHistory } = require('../utils/loginHistory');
 
 const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -51,13 +52,13 @@ exports.signup = async (req, res) => {
             // Step 3 → Database me insert karo
             const insertSql = `
                 INSERT INTO users 
-                (fullName, dob, email, country, capacity, purpose, password) 
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (fullName, dob, email, country, capacity, purpose, role, password) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             `;
 
             db.query(
                 insertSql,
-                [fullName, dob, email, country, capacity, purpose, hashedPassword],
+                [fullName, dob, email, country, capacity, purpose, 'User', hashedPassword],
                 async (err, result) => {
                     if (err) {
                         return res.status(500).json({
@@ -87,6 +88,12 @@ exports.signup = async (req, res) => {
                                 error: saveErr
                             });
                         }
+
+                        logLoginHistory({
+                            userId: result.insertId,
+                            email,
+                            req
+                        });
 
                         res.json({
                             message: "Signup successful",
@@ -174,6 +181,12 @@ exports.login = async (req, res) => {
             if (saveErr) {
                 return res.status(500).json({ message: "Session save failed" });
             }
+
+            logLoginHistory({
+                userId: user.id,
+                email: user.email,
+                req
+            });
 
             return res.json({
                 message: "Login successful",

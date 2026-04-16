@@ -57,10 +57,27 @@ async function ensureCoreTables() {
             country VARCHAR(100) NULL,
             capacity VARCHAR(100) NULL,
             purpose VARCHAR(255) NULL,
+            role ENUM('User','Admin') NOT NULL DEFAULT 'User',
             password VARCHAR(255) NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     `);
+
+    try {
+        await sql.query("ALTER TABLE users ADD COLUMN role ENUM('User','Admin') NOT NULL DEFAULT 'User' AFTER purpose");
+    } catch (alterErr) {
+        if (alterErr && alterErr.code !== 'ER_DUP_FIELDNAME') {
+            throw alterErr;
+        }
+    }
+
+    try {
+        await sql.query('ALTER TABLE users ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP AFTER password');
+    } catch (alterErr) {
+        if (alterErr && alterErr.code !== 'ER_DUP_FIELDNAME') {
+            throw alterErr;
+        }
+    }
 
     await sql.query(`
         CREATE TABLE IF NOT EXISTS boxes (

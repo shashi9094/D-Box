@@ -32,6 +32,7 @@
           <span class="capacity-pill" id="groupCapacityPill">0/0</span>
           <div class="uploads-admin-tools" id="adminTools" hidden>
             <button class="action-chip" id="addMemberBtn" data-tooltip="Add User"><i class="fa-solid fa-user-plus"></i></button>
+            <button class="action-chip debug-trigger" id="debugDbBtn" data-tooltip="Debug DB" hidden><i class="fa-solid fa-bug"></i></button>
           </div>
         </div>
       </section>
@@ -126,6 +127,20 @@
         <input id="renameUploadInput" type="text" placeholder="Enter new file or folder name" required />
         <button type="submit" class="modal-submit-btn"><i class="fa-solid fa-pen-to-square"></i> Save name</button>
       </form>
+    </div>
+  </div>
+
+  <div class="dashboard-modal" id="debugDbModal" aria-hidden="true">
+    <div class="dashboard-modal-card upload-debug-modal" role="dialog" aria-modal="true" aria-labelledby="debugDbModalTitle">
+      <div class="dashboard-modal-header">
+        <h3 id="debugDbModalTitle">Database Debug Context</h3>
+        <button type="button" class="modal-close-btn" id="debugDbModalClose" aria-label="Close">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <p class="modal-help-text">Current connected DB, session user, owner boxes, and member boxes.</p>
+      <pre class="debug-db-output" id="debugDbOutput">Loading...</pre>
+      <button type="button" class="modal-submit-btn" id="debugDbRefreshBtn"><i class="fa-solid fa-rotate"></i> Refresh</button>
     </div>
   </div>
 
@@ -344,6 +359,17 @@
       };
     }
 
+    function getImportantNoteText(item) {
+      const text = String(item.admin_note || '').trim();
+      return text || 'No extra important note';
+    }
+
+    function canManageImportantNote(item) {
+      if (!item || item.is_virtual_folder) return false;
+      if (item.content_type === 'note') return false;
+      return true;
+    }
+
     function renderContents() {
       const grid = document.getElementById('uploadsGrid');
       grid.innerHTML = '';
@@ -378,6 +404,8 @@
         const isOpenable = Boolean(safePath && !item.is_virtual_folder);
         const isFolder = Boolean(item.is_virtual_folder);
         const canManage = myRole === 'admin';
+        const canEditImportantNote = canManage && canManageImportantNote(item);
+        const safeImportantNote = escapeHtml(getImportantNoteText(item));
 
         const actionsMarkup = canManage
           ? `
@@ -386,6 +414,7 @@
                 <i class="fa-solid fa-ellipsis-vertical"></i>
               </button>
               <div class="upload-card-menu" data-menu="${item.id}">
+                ${canEditImportantNote ? `<button type="button" data-action="important-note" data-content-id="${item.id}"><i class="fa-solid fa-bullhorn"></i> Important note</button>` : ''}
                 <button type="button" data-action="rename" data-content-id="${item.id}"><i class="fa-solid fa-pen-to-square"></i> Rename</button>
                 <button type="button" class="danger" data-action="delete" data-content-id="${item.id}"><i class="fa-solid fa-trash"></i> Delete</button>
               </div>
@@ -446,6 +475,9 @@
             <h3 title="${safeName}">${safeName}</h3>
             <p class="upload-meta">By ${safeUploadedBy}</p>
             <p class="upload-meta">${formatDate(item.created_at)}</p>
+            <div class="upload-important-note" title="${safeImportantNote}">
+              <span><strong>Important:</strong> ${safeImportantNote}</span>
+            </div>
           </div>
         `;
 
@@ -491,11 +523,40 @@
       document.getElementById('renameUploadInput').value = '';
     }
 
+    async function loadDebugDbContext() {
+      const outputEl = document.getElementById('debugDbOutput');
+      outputEl.textContent = 'Loading...';
+
+      try {
+        const payload = await apiRequest('/api/auth/db-context', { cache: 'no-store' });
+        outputEl.textContent = JSON.stringify(payload, null, 2);
+      } catch (error) {
+        outputEl.textContent = `Unable to load debug context\n${error.message || error}`;
+      }
+    }
+
+    function openDebugDbModal() {
+      document.getElementById('debugDbModal').setAttribute('aria-hidden', 'false');
+      loadDebugDbContext();
+    }
+
+    function closeDebugDbModal() {
+      document.getElementById('debugDbModal').setAttribute('aria-hidden', 'true');
+    }
+
     async function renameUpload(contentId, name) {
       await apiRequest(`/api/box/${boxId}/content/${contentId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name })
+      });
+    }
+
+    async function updateImportantNote(contentId, adminNote) {
+      await apiRequest(`/api/box/${boxId}/content/${contentId}/admin-note`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminNote })
       });
     }
 
@@ -509,8 +570,12 @@
       const adminTools = document.getElementById('adminTools');
       const fab = document.getElementById('uploadsFab');
       const menu = document.getElementById('fabMenu');
+      const debugBtn = document.getElementById('debugDbBtn');
 
       adminTools.hidden = !isVisible;
+      if (debugBtn) {
+        debugBtn.hidden = !isVisible;
+      }
       fab.hidden = false;
       fab.disabled = !isVisible;
       fab.setAttribute('aria-disabled', String(!isVisible));
@@ -547,10 +612,11 @@
       document.getElementById('uploadsModal').setAttribute('aria-hidden', 'false');
     }
 
-    async function uploadFile(file) {
+    async function uploadFile(file, adminNote = '') {
       const formData = new FormData();
       formData.append('folderPath', currentFolderPath);
       formData.append('file', file);
+      formData.append('adminNote', String(adminNote || ''));
 
       await apiRequest(`/api/box/${boxId}/content`, {
         method: 'POST',
@@ -558,9 +624,9 @@
       });
     }
 
-    async function uploadFolder(files) {
+    async function uploadFolder(files, adminNote = '') {
       for (const file of files) {
-        await uploadFile(file);
+        await uploadFile(file, adminNote);
       }
     }
 
@@ -626,7 +692,7 @@
 
     document.getElementById('menudashboard').onclick = () => { window.location.href = '/dashboard#existing'; };
     document.getElementById('newMenu').onclick = () => { window.location.href = '/createbox'; };
-    document.getElementById('menuSettings').onclick = () => { window.location.href = '/settings'; };
+    document.getElementById('menuSettings').onclick = () => { window.location.href = '/home?open=settings'; };
 
     document.getElementById('backToParentBtn').addEventListener('click', () => {
       goToParentFolder();
@@ -705,6 +771,20 @@
         return;
       }
 
+      if (action === 'important-note') {
+        const currentValue = String(item.admin_note || '').trim();
+        const nextValue = window.prompt('Important note for this upload (leave empty for default):', currentValue);
+        if (nextValue === null) return;
+
+        try {
+          await updateImportantNote(contentId, nextValue);
+          await loadGroupData();
+        } catch (error) {
+          alert(error.message || 'Unable to update important note');
+        }
+        return;
+      }
+
       if (action === 'delete') {
         const confirmed = window.confirm(`Delete ${item.original_name || item.note_text || 'this upload'}?`);
         if (!confirmed) return;
@@ -758,7 +838,9 @@
       if (!file) return;
 
       try {
-        await uploadFile(file);
+        const noteInput = window.prompt('Important note for this upload (optional):', '');
+        const adminNote = noteInput === null ? '' : noteInput;
+        await uploadFile(file, adminNote);
         await loadGroupData();
       } catch (error) {
         alert(error.message || 'Upload failed');
@@ -777,7 +859,9 @@
       if (!files.length) return;
 
       try {
-        await uploadFolder(files);
+        const noteInput = window.prompt('Important note for selected uploads (optional):', '');
+        const adminNote = noteInput === null ? '' : noteInput;
+        await uploadFolder(files, adminNote);
         await loadGroupData();
       } catch (error) {
         alert(error.message || 'Folder upload failed');
@@ -790,6 +874,11 @@
       if (!isAdminUser()) return;
       document.getElementById('memberEmailInput').value = '';
       openModal('add-member');
+    });
+
+    document.getElementById('debugDbBtn').addEventListener('click', () => {
+      if (!isAdminUser()) return;
+      openDebugDbModal();
     });
 
     document.getElementById('membersStrip').addEventListener('click', async (event) => {
@@ -905,6 +994,14 @@
     document.getElementById('uploadsModal').addEventListener('click', (event) => {
       if (event.target.id === 'uploadsModal') {
         closeModal();
+      }
+    });
+
+    document.getElementById('debugDbModalClose').addEventListener('click', closeDebugDbModal);
+    document.getElementById('debugDbRefreshBtn').addEventListener('click', loadDebugDbContext);
+    document.getElementById('debugDbModal').addEventListener('click', (event) => {
+      if (event.target.id === 'debugDbModal') {
+        closeDebugDbModal();
       }
     });
 

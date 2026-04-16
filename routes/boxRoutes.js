@@ -30,6 +30,7 @@ router.delete('/:boxId/members/:memberUserId', boxController.removeMember);
 router.get('/:boxId/content', boxController.getBoxContents);
 router.post('/:boxId/content', boxController.uploadBoxContent);
 router.patch('/:boxId/content/:contentId', boxController.renameBoxContent);
+router.patch('/:boxId/content/:contentId/admin-note', boxController.updateContentAdminNote);
 router.delete('/:boxId/content/:contentId', boxController.deleteBoxContent);
 
 //Get Single Box

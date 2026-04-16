@@ -27,6 +27,12 @@ const sanitizeFolderPath = (value) => {
 
 const sanitizeFileName = (value) => path.basename(String(value || '').trim()).replace(/[^a-zA-Z0-9._ -]/g, '_');
 
+const sanitizeAdminNote = (value) => {
+    const text = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!text) return null;
+    return text.slice(0, 300);
+};
+
 const getBoxUploadsRoot = (boxId) => path.join(uploadsDir, String(boxId));
 
 const ensureDirExists = (dirPath) => {
@@ -123,6 +129,7 @@ const readFsContentsForBox = (boxId) => {
                 file_path: `/uploads/boxes/${boxId}/${relativePosixPath}`,
                 original_name: originalName || fileName,
                 note_text: null,
+                admin_note: null,
                 folder_path: folderPath || null,
                 created_at: stats.birthtime || stats.mtime,
                 uploaded_by: null,
@@ -272,6 +279,7 @@ const ensureCollaborationTables = async () => {
             file_path VARCHAR(500) NULL,
             original_name VARCHAR(255) NULL,
             note_text TEXT NULL,
+            admin_note VARCHAR(300) NULL,
             folder_path VARCHAR(500) NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -282,6 +290,14 @@ const ensureCollaborationTables = async () => {
         await sql.query('ALTER TABLE box_contents ADD COLUMN folder_path VARCHAR(500) NULL AFTER note_text');
     } catch (alterErr) {
         // ER_DUP_FIELDNAME means column already exists.
+        if (alterErr && alterErr.code !== 'ER_DUP_FIELDNAME') {
+            throw alterErr;
+        }
+    }
+
+    try {
+        await sql.query('ALTER TABLE box_contents ADD COLUMN admin_note VARCHAR(300) NULL AFTER note_text');
+    } catch (alterErr) {
         if (alterErr && alterErr.code !== 'ER_DUP_FIELDNAME') {
             throw alterErr;
         }
@@ -546,6 +562,11 @@ exports.createBox = async (req, res) => {
             [result.insertId, userId, userId]
         );
 
+        await sql.query(
+            "UPDATE users SET role = 'Admin' WHERE id = ?",
+            [userId]
+        );
+
         return res.json({
             success: true,
             message: 'Box created successfully',
@@ -676,9 +697,32 @@ exports.deleteBox = async (req, res) => {
             return res.status(403).json({ message: 'Only admin can delete this box' });
         }
 
+        const [boxRows] = await sql.query(
+            'SELECT user_id FROM boxes WHERE id = ? LIMIT 1',
+            [id]
+        );
+
+        if (!boxRows.length) {
+            return res.status(404).json({ message: 'Box not found' });
+        }
+
+        const ownerUserId = Number(boxRows[0].user_id);
+
         await sql.query('DELETE FROM box_contents WHERE box_id = ?', [id]);
         await sql.query('DELETE FROM box_members WHERE box_id = ?', [id]);
         await sql.query('DELETE FROM boxes WHERE id = ?', [id]);
+
+        const [remainingOwnedBoxes] = await sql.query(
+            'SELECT COUNT(*) AS total FROM boxes WHERE user_id = ?',
+            [ownerUserId]
+        );
+
+        if (!Number(remainingOwnedBoxes[0]?.total || 0)) {
+            await sql.query(
+                "UPDATE users SET role = 'User' WHERE id = ?",
+                [ownerUserId]
+            );
+        }
 
         const boxUploadsRoot = getBoxUploadsRoot(id);
         if (fs.existsSync(boxUploadsRoot)) {
@@ -1042,7 +1086,7 @@ exports.uploadBoxContent = [
     async (req, res) => {
         const { boxId } = req.params;
         const userId = req.user.id;
-        const { note, folderPath } = req.body;
+        const { note, folderPath, adminNote } = req.body;
         const cleanupUploadedFile = () => {
             if (req.file && req.file.path && fs.existsSync(req.file.path)) {
                 fs.unlink(req.file.path, () => {});
@@ -1067,6 +1111,7 @@ exports.uploadBoxContent = [
             let filePath = null;
             let originalName = null;
             const safeFolderPath = String(folderPath || '').trim().replace(/^\/+|\/+$/g, '');
+            const safeAdminNote = sanitizeAdminNote(adminNote);
 
             if (req.file) {
                 contentType = inferContentType(req.file);
@@ -1087,9 +1132,9 @@ exports.uploadBoxContent = [
 
             const [result] = await sql.query(
                 `INSERT INTO box_contents
-                (box_id, uploaded_by, content_type, file_name, file_path, original_name, note_text, folder_path)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                [boxId, userId, contentType, fileName, filePath, originalName, note || null, safeFolderPath || null]
+                (box_id, uploaded_by, content_type, file_name, file_path, original_name, note_text, admin_note, folder_path)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [boxId, userId, contentType, fileName, filePath, originalName, note || null, safeAdminNote, safeFolderPath || null]
             );
 
             if (req.file) {
@@ -1130,7 +1175,7 @@ exports.getBoxContents = async (req, res) => {
         }
 
         const [dbRows] = await sql.query(
-            `SELECT bc.id, bc.content_type, bc.file_name, bc.file_path, bc.original_name, bc.note_text, bc.folder_path,
+                `SELECT bc.id, bc.content_type, bc.file_name, bc.file_path, bc.original_name, bc.note_text, bc.admin_note, bc.folder_path,
                     bc.created_at, bc.uploaded_by, u.fullName AS uploaded_by_name
              FROM box_contents bc
              LEFT JOIN users u ON u.id = bc.uploaded_by
@@ -1180,6 +1225,7 @@ exports.getBoxContents = async (req, res) => {
                     file_path: row.file_path,
                     original_name: row.file_name,
                     note_text: null,
+                    admin_note: null,
                     folder_path: deriveFolderPathFromFilePath(boxId, row.file_path),
                     created_at: row.uploaded_at,
                     uploaded_by: row.user_id,
@@ -1386,6 +1432,54 @@ exports.deleteBoxContent = async (req, res) => {
         return res.json({ success: true, message: 'Upload deleted successfully' });
     } catch (err) {
         return res.status(500).json({ message: 'Unable to delete upload', error: err.message });
+    }
+};
+
+exports.updateContentAdminNote = async (req, res) => {
+    const { boxId, contentId } = req.params;
+    const userId = req.user.id;
+    const safeAdminNote = sanitizeAdminNote(req.body?.adminNote);
+
+    try {
+        await ensureCollaborationTables();
+
+        const isAdmin = await ensureAdmin(boxId, userId);
+        if (!isAdmin) {
+            return res.status(403).json({ message: 'Only admin can update upload notes' });
+        }
+
+        const fsRelativePath = decodeFsContentId(contentId);
+        if (fsRelativePath) {
+            return res.status(400).json({ message: 'Admin note is unavailable for this upload source' });
+        }
+
+        const [rows] = await sql.query(
+            'SELECT id, content_type, note_text FROM box_contents WHERE id = ? AND box_id = ? LIMIT 1',
+            [contentId, boxId]
+        );
+
+        if (!rows.length) {
+            return res.status(404).json({ message: 'Upload not found' });
+        }
+
+        const item = rows[0];
+        const noteText = String(item.note_text || '').trim();
+        if (item.content_type === 'note' || noteText.startsWith('[Folder]')) {
+            return res.status(400).json({ message: 'Admin note can be set only on uploaded files/videos' });
+        }
+
+        await sql.query(
+            'UPDATE box_contents SET admin_note = ? WHERE id = ? AND box_id = ?',
+            [safeAdminNote, contentId, boxId]
+        );
+
+        return res.json({
+            success: true,
+            message: 'Important note updated successfully',
+            adminNote: safeAdminNote
+        });
+    } catch (err) {
+        return res.status(500).json({ message: 'Unable to update important note', error: err.message });
     }
 };
 

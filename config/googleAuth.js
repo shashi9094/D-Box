@@ -41,8 +41,8 @@ if (clientID && clientSecret && isValidGoogleClientId(clientID)) {
 
             const sql = `
               INSERT INTO users
-              (fullName, dob, email, country, capacity, purpose, password)
-              VALUES (?, ?, ?, ?, ?, ?, ?)
+              (fullName, dob, email, country, capacity, purpose, role, password)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             `;
 
             db.query(
@@ -54,6 +54,7 @@ if (clientID && clientSecret && isValidGoogleClientId(clientID)) {
                 "Google",
                 "Solo",
                 "Google Login",
+                "User",
                 "google_auth",
               ],
               (err, result) => {

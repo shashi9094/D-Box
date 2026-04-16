@@ -45,6 +45,7 @@
             <ul class="dropdown">
               <li id="openProfileAction">Profile</li>
               <li id="openSettingsAction">Settings</li>
+              <li id="openLoginHistoryAction" hidden>Login History</li>
               <li id="openHelpAction">Help</li>
               <li id="openLogoutAction">Logout</li>
             </ul>
@@ -230,8 +231,43 @@
     </div>
   </div>
 
+  <div class="dashboard-modal" id="loginHistoryModal" aria-hidden="true">
+    <div class="dashboard-modal-card home-modal-card" role="dialog" aria-modal="true" aria-labelledby="loginHistoryModalTitle">
+      <div class="dashboard-modal-header">
+        <h3 id="loginHistoryModalTitle">Login History</h3>
+        <button type="button" class="modal-close-btn" data-close-modal="loginHistoryModal" aria-label="Close">
+          x
+        </button>
+      </div>
+
+      <p class="modal-help-text">Latest login sessions recorded in MySQL for admin audit.</p>
+      <div class="history-table-wrap">
+        <table class="history-table" id="loginHistoryTable">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>User</th>
+              <th>Email</th>
+              <th>Login Time</th>
+              <th>IP</th>
+              <th>Device</th>
+              <th>Browser</th>
+              <th>OS</th>
+            </tr>
+          </thead>
+          <tbody id="loginHistoryBody">
+            <tr><td colspan="8">No records yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <button type="button" class="modal-submit-btn" id="refreshLoginHistoryBtn">Refresh</button>
+      <p class="modal-error" id="loginHistoryMessage"></p>
+    </div>
+  </div>
+
   <script>
     const SETTINGS_STORAGE_KEY = 'dbox.settings';
+    let settingsReturnTarget = null;
 
     function updateModalOpenState() {
       const hasOpenModal = Array.from(document.querySelectorAll('.dashboard-modal'))
@@ -260,6 +296,12 @@
 
       modal.setAttribute('aria-hidden', 'true');
       updateModalOpenState();
+
+      if (modalId === 'settingsModal' && settingsReturnTarget) {
+        const target = settingsReturnTarget;
+        settingsReturnTarget = null;
+        window.location.href = target;
+      }
     }
 
     function closeAllDropdowns() {
@@ -443,6 +485,78 @@
       }
     }
 
+    async function loadLoginHistory() {
+      const body = document.getElementById('loginHistoryBody');
+      const messageEl = document.getElementById('loginHistoryMessage');
+      body.innerHTML = '<tr><td colspan="8">Loading...</td></tr>';
+      messageEl.textContent = '';
+
+      try {
+        const res = await fetch('/api/auth/login-history?limit=50', {
+          credentials: 'same-origin',
+          cache: 'no-store'
+        });
+        const payload = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          throw new Error(payload.message || 'Unable to fetch login history');
+        }
+
+        const rows = Array.isArray(payload.data) ? payload.data : [];
+        if (!rows.length) {
+          body.innerHTML = '<tr><td colspan="8">No login history found</td></tr>';
+          if (payload.message) {
+            messageEl.textContent = payload.message;
+          }
+          return;
+        }
+
+        body.innerHTML = rows.map((entry) => {
+          const loginAt = formatDate(entry.login_at);
+          const fullName = entry.fullName || `User ${entry.user_id || '-'}`;
+          const ip = entry.ip_address || '-';
+          const device = entry.device_type || '-';
+          const browser = entry.browser || '-';
+          const os = entry.os || '-';
+          const safeEmail = String(entry.email || '-').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          const safeName = String(fullName || '-').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+          return `
+            <tr>
+              <td>${entry.id || '-'}</td>
+              <td>${safeName}</td>
+              <td>${safeEmail}</td>
+              <td>${loginAt}</td>
+              <td>${ip}</td>
+              <td>${device}</td>
+              <td>${browser}</td>
+              <td>${os}</td>
+            </tr>
+          `;
+        }).join('');
+      } catch (error) {
+        body.innerHTML = '<tr><td colspan="8">Unable to load records</td></tr>';
+        messageEl.textContent = error.message || 'Unable to fetch login history';
+      }
+    }
+
+    async function resolveAdminMenuAccess() {
+      const historyItem = document.getElementById('openLoginHistoryAction');
+      if (!historyItem) return;
+
+      try {
+        const res = await fetch('/api/auth/profile', {
+          credentials: 'same-origin',
+          cache: 'no-store'
+        });
+        const payload = await res.json().catch(() => ({}));
+        const role = String(payload?.profile?.role || '').toLowerCase();
+        historyItem.hidden = role !== 'admin';
+      } catch (_) {
+        historyItem.hidden = true;
+      }
+    }
+
     async function initHomePage() {
       const navItems = document.querySelectorAll('.main-nav .has-dropdown');
       const settings = {
@@ -480,6 +594,31 @@
         applyTheme(themeModeSelect.value);
       });
 
+      const openProfileModal = async () => {
+        closeAllDropdowns();
+        await loadProfile();
+        document.getElementById('changePasswordForm')?.setAttribute('hidden', 'hidden');
+        document.getElementById('profileModalMessage').textContent = '';
+        openModal('profileModal');
+      };
+
+      const openSettingsModal = async () => {
+        closeAllDropdowns();
+        const googleSelect = document.getElementById('googleAccountSelect');
+        try {
+          const statusRes = await fetch('/api/auth/google/status', { credentials: 'same-origin' });
+          const statusData = await statusRes.json().catch(() => ({}));
+          googleSelect.innerHTML = '';
+          const option = document.createElement('option');
+          option.value = statusData.googleAuthEnabled ? 'connected' : 'not-connected';
+          option.textContent = statusData.googleAuthEnabled ? 'Connected' : 'Not connected';
+          googleSelect.appendChild(option);
+        } catch (_) {
+          googleSelect.innerHTML = '<option value="unknown">Unknown</option>';
+        }
+        openModal('settingsModal');
+      };
+
       navItems.forEach((item) => {
         item.addEventListener('mouseenter', function () {
           closeAllDropdowns();
@@ -494,13 +633,7 @@
         }
       });
 
-      document.getElementById('openProfileAction')?.addEventListener('click', async () => {
-        closeAllDropdowns();
-        await loadProfile();
-        document.getElementById('changePasswordForm')?.setAttribute('hidden', 'hidden');
-        document.getElementById('profileModalMessage').textContent = '';
-        openModal('profileModal');
-      });
+      document.getElementById('openProfileAction')?.addEventListener('click', openProfileModal);
 
       document.getElementById('showChangePasswordBtn')?.addEventListener('click', () => {
         const passwordForm = document.getElementById('changePasswordForm');
@@ -526,21 +659,12 @@
         }, 40);
       });
 
-      document.getElementById('openSettingsAction')?.addEventListener('click', async () => {
+      document.getElementById('openSettingsAction')?.addEventListener('click', openSettingsModal);
+
+      document.getElementById('openLoginHistoryAction')?.addEventListener('click', async () => {
         closeAllDropdowns();
-        const googleSelect = document.getElementById('googleAccountSelect');
-        try {
-          const statusRes = await fetch('/api/auth/google/status', { credentials: 'same-origin' });
-          const statusData = await statusRes.json().catch(() => ({}));
-          googleSelect.innerHTML = '';
-          const option = document.createElement('option');
-          option.value = statusData.googleAuthEnabled ? 'connected' : 'not-connected';
-          option.textContent = statusData.googleAuthEnabled ? 'Connected' : 'Not connected';
-          googleSelect.appendChild(option);
-        } catch (_) {
-          googleSelect.innerHTML = '<option value="unknown">Unknown</option>';
-        }
-        openModal('settingsModal');
+        openModal('loginHistoryModal');
+        await loadLoginHistory();
       });
 
       document.getElementById('openHelpAction')?.addEventListener('click', () => {
@@ -560,7 +684,7 @@
       document.querySelectorAll('.dashboard-modal').forEach((modal) => {
         modal.addEventListener('click', (e) => {
           if (e.target === modal) {
-            modal.setAttribute('aria-hidden', 'true');
+            closeModal(modal.id);
           }
         });
       });
@@ -639,6 +763,35 @@
 
       document.getElementById('logoutCurrentBtn')?.addEventListener('click', logoutCurrent);
       document.getElementById('logoutAllBtn')?.addEventListener('click', logoutAllDevices);
+      document.getElementById('refreshLoginHistoryBtn')?.addEventListener('click', loadLoginHistory);
+
+      await resolveAdminMenuAccess();
+
+      const queryOpen = new URLSearchParams(window.location.search).get('open');
+      const queryReturn = new URLSearchParams(window.location.search).get('return');
+      const hashOpen = window.location.hash ? window.location.hash.slice(1) : '';
+      const openTarget = String(queryOpen || hashOpen || '').toLowerCase();
+
+      if (queryReturn && queryReturn.startsWith('/') && !queryReturn.startsWith('//')) {
+        settingsReturnTarget = queryReturn;
+      }
+
+      if (openTarget === 'settings') {
+        await openSettingsModal();
+      } else if (openTarget === 'profile') {
+        await openProfileModal();
+      } else if (openTarget === 'help') {
+        openModal('helpModal');
+      } else if (openTarget === 'logout') {
+        openModal('logoutModal');
+      } else if (openTarget === 'history') {
+        openModal('loginHistoryModal');
+        await loadLoginHistory();
+      }
+
+      if (openTarget) {
+        window.history.replaceState({}, document.title, '/home');
+      }
     }
 
    // Footer typing: expands D -> Distributed then back to D-Box and loops

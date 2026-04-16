@@ -4,6 +4,7 @@ const passport = require("passport");
 const bcrypt = require("bcryptjs");
 const authController = require("../controllers/authController");
 const db = require("../db/connection");
+const { logLoginHistory } = require("../utils/loginHistory");
 const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function requireSessionUser(req, res, next) {
@@ -98,6 +99,111 @@ router.get("/status", async (req, res) => {
   });
 });
 
+router.get("/db-context", requireSessionUser, async (req, res) => {
+  const currentUserId = Number(req.session.user.id);
+
+  try {
+    const sql = db.promise();
+
+    const [dbNameRows] = await sql.query("SELECT DATABASE() AS dbName");
+    const [ownerRows] = await sql.query(
+      `SELECT b.id, b.title, b.user_id
+       FROM boxes b
+       WHERE b.user_id = ?
+       ORDER BY b.id DESC`,
+      [currentUserId]
+    );
+    const [memberRows] = await sql.query(
+      `SELECT bm.box_id, bm.role, b.title
+       FROM box_members bm
+       JOIN boxes b ON b.id = bm.box_id
+       WHERE bm.user_id = ?
+       ORDER BY bm.box_id DESC`,
+      [currentUserId]
+    );
+
+    return res.json({
+      connectedDatabase: dbNameRows[0]?.dbName || process.env.DB_NAME || null,
+      dbHost: process.env.DB_HOST || "localhost",
+      dbPort: Number(process.env.DB_PORT || 3306),
+      sessionUser: {
+        id: currentUserId,
+        email: req.session.user.email || null,
+      },
+      ownerBoxes: ownerRows,
+      memberBoxes: memberRows,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Unable to resolve db context",
+      error: error.message,
+    });
+  }
+});
+
+router.get("/login-history", requireSessionUser, async (req, res) => {
+  const currentUserId = Number(req.session.user.id);
+  const limitValue = Number(req.query?.limit);
+  const limit = Number.isFinite(limitValue) ? Math.min(Math.max(Math.floor(limitValue), 1), 200) : 50;
+  const emailFilter = String(req.query?.email || "").trim().toLowerCase();
+
+  try {
+    const sql = db.promise();
+
+    const [roleRows] = await sql.query(
+      "SELECT role FROM users WHERE id = ? LIMIT 1",
+      [currentUserId]
+    );
+
+    if (!roleRows.length) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (String(roleRows[0].role || "User") !== "Admin") {
+      return res.status(403).json({ message: "Only admin can view login history" });
+    }
+
+    let query = `
+      SELECT lh.id, lh.user_id, lh.email, lh.login_at, lh.ip_address, lh.user_agent,
+             lh.device_type, lh.browser, lh.os, u.fullName
+      FROM login_history lh
+      LEFT JOIN users u ON u.id = lh.user_id
+    `;
+    const params = [];
+
+    if (emailFilter) {
+      query += " WHERE LOWER(lh.email) = LOWER(?)";
+      params.push(emailFilter);
+    }
+
+    query += ` ORDER BY lh.id DESC LIMIT ${limit}`;
+
+    const [rows] = await sql.query(query, params);
+
+    return res.json({
+      success: true,
+      data: rows,
+      limit,
+      totalFetched: rows.length,
+    });
+  } catch (error) {
+    if (error && error.code === "ER_NO_SUCH_TABLE") {
+      return res.json({
+        success: true,
+        data: [],
+        limit,
+        totalFetched: 0,
+        message: "login_history table not found yet",
+      });
+    }
+
+    return res.status(500).json({
+      message: "Unable to fetch login history",
+      error: error.message,
+    });
+  }
+});
+
 router.post("/logout", (req, res) => {
   req.session.destroy((err) => {
     if (err) {
@@ -171,7 +277,7 @@ router.get("/profile", requireSessionUser, (req, res) => {
   const currentUserId = Number(req.session.user.id);
   const loginAt = Number(req.session.user.loginAt || 0);
 
-  const userSql = "SELECT id, fullName, email, created_at FROM users WHERE id = ? LIMIT 1";
+  const userSql = "SELECT id, fullName, email, role, created_at FROM users WHERE id = ? LIMIT 1";
   db.query(userSql, [currentUserId], (userErr, userRows) => {
     if (userErr) {
       return res.status(500).json({ message: "Unable to fetch profile" });
@@ -182,24 +288,18 @@ router.get("/profile", requireSessionUser, (req, res) => {
     }
 
     const user = userRows[0];
-    db.query("SELECT 1 FROM boxes WHERE user_id = ? LIMIT 1", [currentUserId], (roleErr, roleRows) => {
-      if (roleErr) {
-        return res.status(500).json({ message: "Unable to resolve role" });
-      }
+    const role = String(user.role || 'User');
+    const emailHash = require("crypto").createHash("md5").update(String(user.email || "").trim().toLowerCase()).digest("hex");
 
-      const role = roleRows.length ? "Admin" : "User";
-      const emailHash = require("crypto").createHash("md5").update(String(user.email || "").trim().toLowerCase()).digest("hex");
-
-      return res.json({
-        profile: {
-          name: user.fullName,
-          email: user.email,
-          role,
-          joinedAt: user.created_at,
-          lastLoginAt: Number.isFinite(loginAt) && loginAt > 0 ? new Date(loginAt).toISOString() : null,
-          profilePhoto: `https://www.gravatar.com/avatar/${emailHash}?d=identicon&s=160`,
-        },
-      });
+    return res.json({
+      profile: {
+        name: user.fullName,
+        email: user.email,
+        role,
+        joinedAt: user.created_at,
+        lastLoginAt: Number.isFinite(loginAt) && loginAt > 0 ? new Date(loginAt).toISOString() : null,
+        profilePhoto: `https://www.gravatar.com/avatar/${emailHash}?d=identicon&s=160`,
+      },
     });
   });
 });
@@ -301,6 +401,12 @@ router.get("/google/callback", (req, res, next) => {
     req.session.cookie.maxAge = SESSION_MAX_AGE_MS;
 
     req.session.save(() => {
+      logLoginHistory({
+        userId: req.user.id,
+        email: req.user.email,
+        req,
+      });
+
       res.redirect("/home");
     });
   }
