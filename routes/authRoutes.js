@@ -2,6 +2,10 @@ const express = require("express");
 const router = express.Router();
 const passport = require("passport");
 const bcrypt = require("bcryptjs");
+const fs = require("fs");
+const path = require("path");
+const multer = require("multer");
+const sharp = require("sharp");
 const authController = require("../controllers/authController");
 const db = require("../db/connection");
 const { logLoginHistory, isNewDeviceLogin } = require("../utils/loginHistory");
@@ -14,6 +18,36 @@ const {
   createNotificationsForUsers,
 } = require("../utils/notifications");
 const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const profileUploadsDir = path.join(__dirname, '..', 'uploads', 'profiles');
+
+if (!fs.existsSync(profileUploadsDir)) {
+  fs.mkdirSync(profileUploadsDir, { recursive: true });
+}
+
+const profilePhotoStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, profileUploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const userId = Number(req?.session?.user?.id || 0) || Date.now();
+    const extension = path.extname(String(file.originalname || '')).toLowerCase() || '.jpg';
+    const safeExt = ['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(extension) ? extension : '.jpg';
+    cb(null, `profile-${userId}-${Date.now()}${safeExt}`);
+  },
+});
+
+const profilePhotoUpload = multer({
+  storage: profilePhotoStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const mime = String(file?.mimetype || '').toLowerCase();
+    if (mime.startsWith('image/')) {
+      return cb(null, true);
+    }
+
+    return cb(new Error('Only image files are allowed'));
+  },
+});
 
 function requireSessionUser(req, res, next) {
   if (!req.session?.user?.id) {
@@ -354,7 +388,7 @@ router.get("/profile", requireSessionUser, (req, res) => {
   const currentUserId = Number(req.session.user.id);
 
   db.query(
-    "SELECT id, fullName, email, role, created_at FROM users WHERE id = ? LIMIT 1",
+    "SELECT id, fullName, email, role, profilePhoto, created_at FROM users WHERE id = ? LIMIT 1",
     [currentUserId],
     (userErr, userRows) => {
       if (userErr) {
@@ -385,7 +419,7 @@ router.get("/profile", requireSessionUser, (req, res) => {
               role: String(user.role || "User"),
               joinedAt: user.created_at || null,
               lastLoginAt,
-              profilePhoto: String(req.session?.user?.profilePhoto || "").trim(),
+              profilePhoto: String(user.profilePhoto || "").trim(),
             },
           });
         }
@@ -394,9 +428,63 @@ router.get("/profile", requireSessionUser, (req, res) => {
   );
 });
 
+router.post('/profile-photo', requireSessionUser, (req, res) => {
+  profilePhotoUpload.single('profilePhotoFile')(req, res, async (uploadErr) => {
+    if (uploadErr) {
+      return res.status(400).json({
+        message: uploadErr.message || 'Unable to upload photo',
+      });
+    }
+
+    const currentUserId = Number(req.session.user.id);
+    const fileName = String(req.file?.filename || '').trim();
+    const uploadedAbsolutePath = String(req.file?.path || '').trim();
+
+    if (!fileName || !uploadedAbsolutePath) {
+      return res.status(400).json({ message: 'No file uploaded' });
+    }
+
+    const optimizedFileName = `profile-${currentUserId}.webp`;
+    const optimizedAbsolutePath = path.join(profileUploadsDir, optimizedFileName);
+    const profilePhotoUrl = `/uploads/profiles/${optimizedFileName}`;
+
+    try {
+      await sharp(uploadedAbsolutePath)
+        .rotate()
+        .resize(320, 320, { fit: 'cover', position: 'attention' })
+        .webp({ quality: 82 })
+        .toFile(optimizedAbsolutePath);
+    } catch (processErr) {
+      await fs.promises.unlink(uploadedAbsolutePath).catch(() => {});
+      return res.status(500).json({ message: 'Unable to process profile photo' });
+    }
+
+    await fs.promises.unlink(uploadedAbsolutePath).catch(() => {});
+
+    db.query(
+      'UPDATE users SET profilePhoto = ? WHERE id = ?',
+      [profilePhotoUrl, currentUserId],
+      (err) => {
+        if (err) {
+          return res.status(500).json({ message: 'Unable to save profile photo' });
+        }
+
+        req.session.user.profilePhoto = profilePhotoUrl;
+        return res.json({
+          success: true,
+          message: 'Profile photo uploaded and optimized successfully',
+          photoUrl: profilePhotoUrl,
+          photoUrlVersioned: `${profilePhotoUrl}?v=${Date.now()}`,
+        });
+      }
+    );
+  });
+});
+
 router.put("/profile", requireSessionUser, (req, res) => {
   const currentUserId = Number(req.session.user.id);
   const fullName = String(req.body?.fullName || "").trim();
+  const profilePhoto = String(req.body?.profilePhoto || "").trim();
 
   if (!fullName) {
     return res.status(400).json({ message: "Name is required" });
@@ -406,14 +494,23 @@ router.put("/profile", requireSessionUser, (req, res) => {
     return res.status(400).json({ message: "Name is too long" });
   }
 
-  db.query("UPDATE users SET fullName = ? WHERE id = ?", [fullName, currentUserId], (err) => {
+  if (profilePhoto.length > 1000) {
+    return res.status(400).json({ message: "Profile photo URL is too long" });
+  }
+
+  db.query(
+    "UPDATE users SET fullName = ?, profilePhoto = ? WHERE id = ?",
+    [fullName, profilePhoto || null, currentUserId],
+    (err) => {
     if (err) {
       return res.status(500).json({ message: "Unable to update profile" });
     }
 
     req.session.user.fullName = fullName;
+    req.session.user.profilePhoto = profilePhoto || '';
     return res.json({ message: "Profile updated successfully" });
-  });
+    }
+  );
 });
 
 router.post("/change-password", requireSessionUser, async (req, res) => {

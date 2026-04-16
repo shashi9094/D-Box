@@ -117,25 +117,25 @@
         </button>
       </div>
       <div class="home-profile-head">
-        <img id="profileAvatar" class="home-profile-avatar" alt="Profile photo" src="" />
+        <img id="profileAvatar" class="home-profile-avatar" alt="Profile photo" src="" role="button" tabindex="0" title="Tap to upload profile photo" />
         <div>
           <p id="profileNameText" class="home-profile-name">-</p>
           <p id="profileRoleText" class="home-profile-role">-</p>
         </div>
       </div>
       <div class="home-modal-grid">
-        <p><strong>Name:</strong> <span id="profileName">-</span></p>
+        <p class="profile-name-inline"><strong>Name:</strong> <span id="profileName">-</span>
+          <button type="button" id="editProfileNameBtn" class="inline-edit-btn" aria-label="Edit profile name" title="Edit profile name">&#9998;</button>
+        </p>
         <p><strong>Email:</strong> <span id="profileEmail">-</span></p>
         <p><strong>Role:</strong> <span id="profileRole">-</span></p>
         <p><strong>Joined date:</strong> <span id="profileJoined">-</span></p>
         <p><strong>Last login:</strong> <span id="profileLastLogin">-</span></p>
       </div>
 
-      <form id="editProfileForm" class="modal-form">
-        <label for="editProfileName">Edit profile name</label>
-        <input id="editProfileName" type="text" maxlength="255" required>
-        <button type="submit" class="modal-submit-btn">Save profile</button>
-      </form>
+      <input id="editProfilePhoto" type="hidden" maxlength="1000">
+      <input id="editProfilePhotoFile" type="file" accept="image/*" hidden>
+      <p class="modal-help-text">Tap profile photo to upload. If not uploaded, auto-generated avatar will be used.</p>
 
       <button type="button" class="modal-submit-btn" id="showChangePasswordBtn">Change password</button>
 
@@ -289,6 +289,7 @@
     let notificationPollTimer = null;
     let notificationsById = new Map();
     let lastUnreadCount = 0;
+    let navDropdownCloseTimer = null;
 
     function updateModalOpenState() {
       const hasOpenModal = Array.from(document.querySelectorAll('.dashboard-modal'))
@@ -329,11 +330,54 @@
       document.querySelectorAll('.main-nav .dropdown').forEach((d) => d.classList.remove('active'));
     }
 
+    function cancelDropdownCloseTimer() {
+      if (navDropdownCloseTimer) {
+        clearTimeout(navDropdownCloseTimer);
+        navDropdownCloseTimer = null;
+      }
+    }
+
+    function scheduleDropdownClose(delayMs = 700) {
+      cancelDropdownCloseTimer();
+      navDropdownCloseTimer = setTimeout(() => {
+        closeAllDropdowns();
+        navDropdownCloseTimer = null;
+      }, delayMs);
+    }
+
     function formatDate(value) {
       if (!value) return '-';
       const date = new Date(value);
       if (Number.isNaN(date.getTime())) return '-';
       return date.toLocaleString();
+    }
+
+    function buildAutoAvatarUrl(name, email) {
+      const seed = String(name || email || 'D-Box').trim() || 'D-Box';
+      return `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(seed)}&backgroundColor=6c2cf0,8b5cf6&textColor=ffffff&fontSize=46`;
+    }
+
+    function resolveProfileAvatarUrl(profile) {
+      const customPhoto = String(profile?.profilePhoto || '').trim();
+      if (customPhoto) {
+        return customPhoto;
+      }
+
+      return buildAutoAvatarUrl(profile?.name, profile?.email);
+    }
+
+    function setProfileAvatar(imageUrl, fallbackUrl) {
+      const avatarEl = document.getElementById('profileAvatar');
+      if (!avatarEl) return;
+
+      avatarEl.onerror = () => {
+        if (fallbackUrl && avatarEl.src !== fallbackUrl) {
+          avatarEl.onerror = null;
+          avatarEl.src = fallbackUrl;
+        }
+      };
+
+      avatarEl.src = imageUrl || fallbackUrl || '';
     }
 
     function getSavedSettings() {
@@ -682,7 +726,8 @@
         }
 
         const profile = data.profile || {};
-        document.getElementById('profileAvatar').src = profile.profilePhoto || '';
+        const avatarUrl = resolveProfileAvatarUrl(profile);
+        setProfileAvatar(avatarUrl, buildAutoAvatarUrl(profile.name, profile.email));
         document.getElementById('profileName').textContent = profile.name || '-';
         document.getElementById('profileNameText').textContent = profile.name || '-';
         document.getElementById('profileEmail').textContent = profile.email || '-';
@@ -690,7 +735,11 @@
         document.getElementById('profileRoleText').textContent = profile.role || 'User';
         document.getElementById('profileJoined').textContent = formatDate(profile.joinedAt);
         document.getElementById('profileLastLogin').textContent = formatDate(profile.lastLoginAt);
-        document.getElementById('editProfileName').value = profile.name || '';
+        document.getElementById('editProfilePhoto').value = profile.profilePhoto || '';
+        const photoFileInput = document.getElementById('editProfilePhotoFile');
+        if (photoFileInput) {
+          photoFileInput.value = '';
+        }
       } catch (error) {
         messageEl.textContent = error.message || 'Profile load failed';
       }
@@ -895,14 +944,27 @@
 
       navItems.forEach((item) => {
         item.addEventListener('mouseenter', function () {
+          cancelDropdownCloseTimer();
           closeAllDropdowns();
           this.querySelector('.dropdown')?.classList.add('active');
         });
+
+        item.addEventListener('mouseleave', () => {
+          scheduleDropdownClose(700);
+        });
       });
 
-      document.querySelector('.main-nav')?.addEventListener('mouseleave', closeAllDropdowns);
+      document.querySelectorAll('.main-nav .dropdown').forEach((dropdown) => {
+        dropdown.addEventListener('mouseenter', cancelDropdownCloseTimer);
+        dropdown.addEventListener('mouseleave', () => scheduleDropdownClose(700));
+      });
+
+      document.querySelector('.main-nav')?.addEventListener('mouseleave', () => {
+        scheduleDropdownClose(700);
+      });
       document.addEventListener('click', (e) => {
         if (!e.target.closest('.main-nav')) {
+          cancelDropdownCloseTimer();
           closeAllDropdowns();
         }
 
@@ -999,10 +1061,23 @@
         });
       });
 
-      document.getElementById('editProfileForm')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
+      document.getElementById('editProfileNameBtn')?.addEventListener('click', async () => {
         const messageEl = document.getElementById('profileModalMessage');
         messageEl.textContent = '';
+        const currentName = (document.getElementById('profileName')?.textContent || '').trim();
+        const nextName = window.prompt('Edit profile name', currentName === '-' ? '' : currentName);
+
+        if (nextName === null) {
+          return;
+        }
+
+        const normalizedName = nextName.trim();
+        if (!normalizedName) {
+          messageEl.textContent = 'Name is required';
+          return;
+        }
+
+        const photoInput = document.getElementById('editProfilePhoto');
 
         try {
           const res = await fetch('/api/auth/profile', {
@@ -1010,7 +1085,8 @@
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              fullName: document.getElementById('editProfileName').value.trim()
+                fullName: normalizedName,
+                profilePhoto: photoInput.value.trim()
             })
           });
 
@@ -1025,6 +1101,63 @@
           messageEl.textContent = error.message || 'Profile update failed';
         }
       });
+
+        const profileAvatarEl = document.getElementById('profileAvatar');
+        const profilePhotoFileInput = document.getElementById('editProfilePhotoFile');
+
+        const openPhotoPicker = () => {
+          profilePhotoFileInput?.click();
+        };
+
+        profileAvatarEl?.addEventListener('click', openPhotoPicker);
+        profileAvatarEl?.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            openPhotoPicker();
+          }
+        });
+
+        document.getElementById('editProfilePhotoFile')?.addEventListener('change', async (event) => {
+          const messageEl = document.getElementById('profileModalMessage');
+          const fileInput = event.currentTarget;
+          const file = fileInput?.files?.[0];
+
+          if (!file) {
+            return;
+          }
+
+          const formData = new FormData();
+          formData.append('profilePhotoFile', file);
+
+          messageEl.textContent = 'Uploading photo...';
+
+          try {
+            const res = await fetch('/api/auth/profile-photo', {
+              method: 'POST',
+              credentials: 'same-origin',
+              body: formData,
+            });
+
+            const payload = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              throw new Error(payload.message || 'Unable to upload profile photo');
+            }
+
+            const uploadedPhotoUrl = String(payload.photoUrl || '').trim();
+            const uploadedPreviewUrl = String(payload.photoUrlVersioned || uploadedPhotoUrl).trim();
+            if (uploadedPhotoUrl) {
+              document.getElementById('editProfilePhoto').value = uploadedPhotoUrl;
+              const name = document.getElementById('profileName')?.textContent?.trim();
+              const email = document.getElementById('profileEmail')?.textContent || '';
+              setProfileAvatar(uploadedPreviewUrl, buildAutoAvatarUrl(name, email));
+            }
+
+            messageEl.textContent = payload.message || 'Profile photo uploaded successfully';
+            fileInput.value = '';
+          } catch (error) {
+            messageEl.textContent = error.message || 'Profile photo upload failed';
+          }
+        });
 
       document.getElementById('changePasswordForm')?.addEventListener('submit', async (e) => {
         e.preventDefault();

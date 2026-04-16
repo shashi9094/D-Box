@@ -714,6 +714,9 @@ body.dashboard-page {
   border-radius: 50%;
   border: 1px solid rgba(149, 229, 255, 0.45);
   box-shadow: 0 0 20px rgba(123, 47, 247, 0.35);
+  object-fit: cover;
+  background: linear-gradient(135deg, rgba(11, 24, 56, 0.95), rgba(28, 15, 62, 0.95));
+  cursor: pointer;
   transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
 }
 
@@ -754,6 +757,32 @@ body.dashboard-page {
   padding: 10px 12px;
   background: rgba(255, 255, 255, 0.03);
   transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.profile-name-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inline-edit-btn {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(149, 229, 255, 0.45);
+  background: rgba(149, 229, 255, 0.08);
+  color: #d9f7ff;
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.inline-edit-btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(163, 241, 255, 0.9);
+  background: rgba(149, 229, 255, 0.18);
 }
 
 .home-modal-grid p:hover {
@@ -1779,6 +1808,41 @@ body.modal-open {
   font-size: 0.9rem;
 }
 
+.modal-help-text-inline {
+  font-size: 0.8rem;
+  color: #9bdfff;
+  font-weight: 400;
+}
+
+.modal-form input[type="url"] {
+  padding: 10px 12px;
+  font-size: 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(196, 28, 238, 0.459);
+  background: rgba(131, 17, 231, 0.055);
+  color: #35d1f0;
+  outline: none;
+}
+
+.modal-form input[type="file"] {
+  padding: 8px 10px;
+  font-size: 0.92rem;
+  border-radius: 8px;
+  border: 1px solid rgba(196, 28, 238, 0.459);
+  background: rgba(131, 17, 231, 0.055);
+  color: #d8f6ff;
+}
+
+.modal-form input[type="url"]:focus {
+  box-shadow: 0 0 12px rgba(47,200,247,0.12);
+  border-color: rgba(15, 140, 242, 0.906);
+}
+
+.modal-form input[type="file"]:focus {
+  box-shadow: 0 0 12px rgba(47,200,247,0.12);
+  border-color: rgba(15, 140, 242, 0.906);
+}
+
 .profile-capacity-section {
   margin-top: 16px;
   padding-top: 14px;
@@ -2243,6 +2307,23 @@ body{
   align-items: center;
   gap: 10px;
   min-height: 32px;
+}
+
+.uploads-batch-status {
+  margin: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(109, 241, 255, 0.45);
+  background: rgba(109, 241, 255, 0.12);
+  color: #bdf5ff;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.uploads-batch-status.is-error {
+  border-color: rgba(255, 157, 157, 0.55);
+  background: rgba(255, 105, 105, 0.15);
+  color: #ffd6d6;
 }
 
 .uploads-parent-icon-btn {

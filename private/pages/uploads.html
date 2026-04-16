@@ -50,6 +50,7 @@
           <h2 id="uploadsGridTitle">All Uploads</h2>
           <div class="uploads-path-controls" id="uploadsPathControls">
             <p id="uploadsGridSubtitle">Read and access all files shared in this group.</p>
+            <p id="uploadsBatchStatus" class="uploads-batch-status" hidden></p>
             <button
               type="button"
               class="uploads-parent-icon-btn"
@@ -77,7 +78,7 @@
     <button type="button" data-action="folder-upload"><i class="fa-regular fa-folder-open"></i> Folder upload</button>
   </div>
 
-  <input id="fileInput" type="file" accept=".pdf,.doc,.docx,video/*" hidden />
+  <input id="fileInput" type="file" accept=".pdf,.doc,.docx,video/*" multiple hidden />
   <input id="folderInput" type="file" webkitdirectory directory multiple hidden />
 
   <div class="dashboard-modal" id="uploadsModal" aria-hidden="true">
@@ -286,6 +287,25 @@
       const parentPath = `/${getParentFolderPath(currentFolderPath) || ''}`;
       backBtn.setAttribute('aria-label', `Back to parent: ${parentPath || '/'}`);
       backBtn.setAttribute('title', `Back to ${parentPath || '/'}`);
+    }
+
+    function setBatchStatus(message = '', isError = false) {
+      const statusEl = document.getElementById('uploadsBatchStatus');
+      if (!statusEl) {
+        return;
+      }
+
+      const safeMessage = String(message || '').trim();
+      if (!safeMessage) {
+        statusEl.hidden = true;
+        statusEl.classList.remove('is-error');
+        statusEl.textContent = '';
+        return;
+      }
+
+      statusEl.textContent = safeMessage;
+      statusEl.hidden = false;
+      statusEl.classList.toggle('is-error', Boolean(isError));
     }
 
     function getFileExtension(name) {
@@ -590,6 +610,38 @@
       }
     }
 
+    async function uploadSelectedFiles(files, adminNote = '', onProgress) {
+      let successCount = 0;
+      const failedFiles = [];
+      const totalFiles = Array.isArray(files) ? files.length : 0;
+      let completedCount = 0;
+
+      if (typeof onProgress === 'function' && totalFiles > 0) {
+        onProgress({ completedCount, totalFiles, successCount, failedCount: failedFiles.length });
+      }
+
+      for (const file of files) {
+        try {
+          await uploadFile(file, adminNote);
+          successCount += 1;
+        } catch (error) {
+          failedFiles.push(`${file.name}: ${error.message || 'Upload failed'}`);
+        } finally {
+          completedCount += 1;
+          if (typeof onProgress === 'function') {
+            onProgress({
+              completedCount,
+              totalFiles,
+              successCount,
+              failedCount: failedFiles.length
+            });
+          }
+        }
+      }
+
+      return { successCount, failedFiles };
+    }
+
     async function addNote(noteText) {
       const formData = new FormData();
       formData.append('note', noteText);
@@ -794,15 +846,27 @@
         return;
       }
 
-      const file = event.target.files && event.target.files[0];
-      if (!file) return;
+      const files = Array.from(event.target.files || []);
+      if (!files.length) return;
 
       try {
-        const noteInput = window.prompt('Important note for this upload (optional):', '');
+        setBatchStatus(`Uploaded 0 of ${files.length}`);
+        const noteInput = window.prompt('Important note for selected uploads (optional):', '');
         const adminNote = noteInput === null ? '' : noteInput;
-        await uploadFile(file, adminNote);
+
+        const { successCount, failedFiles } = await uploadSelectedFiles(files, adminNote, ({ completedCount, totalFiles }) => {
+          setBatchStatus(`Uploaded ${completedCount} of ${totalFiles}`);
+        });
         await loadGroupData();
+
+        if (failedFiles.length) {
+          setBatchStatus(`${successCount} uploaded, ${failedFiles.length} failed`, true);
+          alert(`${successCount} file(s) uploaded. ${failedFiles.length} failed.\n\n${failedFiles.join('\n')}`);
+        } else {
+          setBatchStatus('All selected files uploaded successfully');
+        }
       } catch (error) {
+        setBatchStatus('Upload failed. Please try again.', true);
         alert(error.message || 'Upload failed');
       } finally {
         event.target.value = '';
@@ -819,11 +883,22 @@
       if (!files.length) return;
 
       try {
+        setBatchStatus(`Uploaded 0 of ${files.length}`);
         const noteInput = window.prompt('Important note for selected uploads (optional):', '');
         const adminNote = noteInput === null ? '' : noteInput;
-        await uploadFolder(files, adminNote);
+        const { successCount, failedFiles } = await uploadSelectedFiles(files, adminNote, ({ completedCount, totalFiles }) => {
+          setBatchStatus(`Uploaded ${completedCount} of ${totalFiles}`);
+        });
         await loadGroupData();
+
+        if (failedFiles.length) {
+          setBatchStatus(`${successCount} uploaded, ${failedFiles.length} failed`, true);
+          alert(`${successCount} file(s) uploaded. ${failedFiles.length} failed.\n\n${failedFiles.join('\n')}`);
+        } else {
+          setBatchStatus('All selected files uploaded successfully');
+        }
       } catch (error) {
+        setBatchStatus('Folder upload failed. Please try again.', true);
         alert(error.message || 'Folder upload failed');
       } finally {
         event.target.value = '';

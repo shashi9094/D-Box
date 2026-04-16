@@ -59,6 +59,7 @@ async function ensureCoreTables() {
             purpose VARCHAR(255) NULL,
             role ENUM('User','Admin') NOT NULL DEFAULT 'User',
             password VARCHAR(255) NOT NULL,
+            profilePhoto VARCHAR(1000) NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     `);
@@ -73,6 +74,14 @@ async function ensureCoreTables() {
 
     try {
         await sql.query('ALTER TABLE users ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP AFTER password');
+    } catch (alterErr) {
+        if (alterErr && alterErr.code !== 'ER_DUP_FIELDNAME') {
+            throw alterErr;
+        }
+    }
+
+    try {
+        await sql.query('ALTER TABLE users ADD COLUMN profilePhoto VARCHAR(1000) NULL AFTER created_at');
     } catch (alterErr) {
         if (alterErr && alterErr.code !== 'ER_DUP_FIELDNAME') {
             throw alterErr;
