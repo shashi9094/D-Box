@@ -93,7 +93,9 @@
       emailInput.title = 'Invite email locked for joining shared box';
 
       const inviteNotice = document.getElementById('inviteNotice');
-      inviteNotice.textContent = `You were invited as ${inviteEmail}. Sign up with this email to auto-join the shared group.`;
+      inviteNotice.textContent = Number.isFinite(inviteBoxId) && inviteBoxId > 0
+        ? `No account found for ${inviteEmail}. Create this account to auto-join the shared group.`
+        : `You were invited as ${inviteEmail}. Sign up with this email to auto-join the shared group.`;
       inviteNotice.hidden = false;
     }
 

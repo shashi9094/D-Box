@@ -37,7 +37,7 @@
           Continue with Google 
       </a>
 
-      <p class="muted">Don't have an account? <a href="signup.html">Sign up</a></p>
+      <p class="muted">Don't have an account? <a id="signupLink" href="signup.html">Sign up</a></p>
       
     </div>
   </div>
@@ -47,6 +47,26 @@
   const inviteEmail = String(inviteParams.get('email') || '').trim();
   const inviteBoxId = Number(inviteParams.get('invite'));
   const inviteToken = String(inviteParams.get('token') || '').trim();
+  let inviteAccountExists = null;
+
+  function getInviteSignupUrl() {
+    const params = new URLSearchParams();
+
+    if (Number.isFinite(inviteBoxId) && inviteBoxId > 0) {
+      params.set('invite', String(inviteBoxId));
+    }
+
+    if (inviteEmail) {
+      params.set('email', inviteEmail);
+    }
+
+    if (inviteToken) {
+      params.set('token', inviteToken);
+    }
+
+    const query = params.toString();
+    return query ? `signup.html?${query}` : 'signup.html';
+  }
 
   function showInviteNotice() {
     const inviteNotice = document.getElementById('inviteNotice');
@@ -61,8 +81,43 @@
       emailInput.title = 'Invite email locked for joining shared box';
     }
 
-    inviteNotice.textContent = 'Invite link detected. Sign in with this invited email to join the shared group instantly.';
+    if (inviteAccountExists === false) {
+      inviteNotice.textContent = 'No account found for this invited email. Please create an account first.';
+    } else {
+      inviteNotice.textContent = 'Invite link detected. Sign in with this invited email to join the shared group instantly.';
+    }
+
     inviteNotice.hidden = false;
+  }
+
+  async function checkInviteAccount() {
+    if (!inviteEmail) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/auth/account-exists?email=${encodeURIComponent(inviteEmail)}`, {
+        credentials: 'same-origin'
+      });
+
+      const data = await res.json().catch(() => ({}));
+      inviteAccountExists = Boolean(data.exists);
+
+      const signupLink = document.getElementById('signupLink');
+      signupLink.href = getInviteSignupUrl();
+
+      showInviteNotice();
+
+      if (!inviteAccountExists) {
+        alert('No account found for this invite email. Please sign up first.');
+        window.location.replace(getInviteSignupUrl());
+      }
+    } catch (error) {
+      console.error('Invite account check failed:', error);
+      const signupLink = document.getElementById('signupLink');
+      signupLink.href = getInviteSignupUrl();
+      showInviteNotice();
+    }
   }
 
   async function consumeInviteForLoggedInUser() {
@@ -136,6 +191,7 @@
   showGoogleDisabledNotice();
   showSessionExpiredNotice();
   showInviteNotice();
+  checkInviteAccount();
   window.addEventListener('pageshow', redirectIfLoggedIn);
   window.addEventListener('focus', redirectIfLoggedIn);
   document.addEventListener('visibilitychange', () => {
@@ -175,7 +231,11 @@
       }
 
       if (!res.ok){
-        alert(data.message || `Invalid login`);
+        if (data.message === 'User not found' && inviteEmail) {
+          alert('No account found for this invite email. Please sign up first.');
+        } else {
+          alert(data.message || `Invalid login`);
+        }
         return; //wrong: stay on login page
       }
 

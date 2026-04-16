@@ -52,6 +52,41 @@
           </li>
         </ul>
       </nav>
+
+      <div class="header-actions">
+        <button type="button" id="notificationBell" class="notification-bell" aria-label="Notifications" title="Notifications">
+          <span class="notification-bell-icon">&#128276;</span>
+          <span id="notificationBadge" class="notification-badge" hidden>0</span>
+        </button>
+
+        <div id="notificationPanel" class="notification-panel" hidden>
+          <div class="notification-panel-head">
+            <h4>Notifications</h4>
+            <button type="button" id="markAllNotificationsReadBtn" class="notification-link-btn">Mark all read</button>
+          </div>
+
+          <div id="notificationList" class="notification-list">
+            <p class="notification-empty">No notifications yet</p>
+          </div>
+
+          <button type="button" id="askAdminToggleBtn" class="notification-ask-toggle">
+            Ask admin a question
+          </button>
+
+          <form id="askAdminForm" class="notification-ask-form" hidden>
+            <label for="askAdminBoxSelect">Select course/box</label>
+            <div class="select-wrapper">
+              <select id="askAdminBoxSelect" required>
+                <option value="">Loading boxes...</option>
+              </select>
+              <span class="select-arrow">▼</span>
+            </div>
+            <label for="askAdminInput">Have a question? Ask here</label>
+            <textarea id="askAdminInput" maxlength="1000" rows="2" placeholder="Type your question..."></textarea>
+            <button type="submit" class="modal-submit-btn">Send question</button>
+          </form>
+        </div>
+      </div>
       </div>
     </div>
   </header>
@@ -60,7 +95,7 @@
     <section class="hero">
       <h1 class="headline">Let's Get Started</h1>
       <a class="btn create-box" style ="text-decoration: none" href="/createbox">Create Box</a>
-      <a class="btn view existing-box" style ="text-decoration: none" href="/dashboard#existing">View Existing Box</a>
+      <a class="btn view existing-box" style ="text-decoration: none" href="/dashboard#dashboard">Dashboard</a>
     </section>
   </main>
 
@@ -171,7 +206,7 @@
         </label>
         <label>Default dashboard view
           <select id="defaultDashboardViewSelect">
-            <option value="existing">Existing Boxes</option>
+            <option value="dashboard">Dashboard</option>
             <option value="new">Create Box</option>
           </select>
         </label>
@@ -265,9 +300,30 @@
     </div>
   </div>
 
+  <div class="dashboard-modal" id="notificationDetailModal" aria-hidden="true">
+    <div class="dashboard-modal-card home-modal-card" role="dialog" aria-modal="true" aria-labelledby="notificationDetailTitle">
+      <div class="dashboard-modal-header">
+        <h3 id="notificationDetailTitle">Notification Detail</h3>
+        <button type="button" class="modal-close-btn" data-close-modal="notificationDetailModal" aria-label="Close">
+          x
+        </button>
+      </div>
+      <div class="home-modal-grid">
+        <p><strong>Type:</strong> <span id="notificationDetailType">-</span></p>
+        <p><strong>When:</strong> <span id="notificationDetailTime">-</span></p>
+        <p><strong>Title:</strong> <span id="notificationDetailHeading">-</span></p>
+        <p><strong>Message:</strong> <span id="notificationDetailMessage">-</span></p>
+        <p><strong>Details:</strong> <span id="notificationDetailMeta">-</span></p>
+      </div>
+    </div>
+  </div>
+
   <script>
     const SETTINGS_STORAGE_KEY = 'dbox.settings';
     let settingsReturnTarget = null;
+    let notificationPollTimer = null;
+    let notificationsById = new Map();
+    let lastUnreadCount = 0;
 
     function updateModalOpenState() {
       const hasOpenModal = Array.from(document.querySelectorAll('.dashboard-modal'))
@@ -354,6 +410,297 @@
       }, 2000);
     }
 
+    function formatNotificationMeta(details) {
+      if (!details || typeof details !== 'object') {
+        return '-';
+      }
+
+      const parts = [];
+      Object.entries(details).forEach(([key, value]) => {
+        if (value === null || value === undefined || value === '') return;
+        parts.push(`${key}: ${value}`);
+      });
+
+      return parts.length ? parts.join(' | ') : '-';
+    }
+
+    function setNotificationBellState(unreadCount) {
+      const bell = document.getElementById('notificationBell');
+      const badge = document.getElementById('notificationBadge');
+      const safeUnreadCount = Number(unreadCount || 0);
+
+      if (!bell || !badge) return;
+
+      if (safeUnreadCount > 0) {
+        bell.classList.add('has-unread');
+        badge.hidden = false;
+        badge.textContent = safeUnreadCount > 99 ? '99+' : String(safeUnreadCount);
+      } else {
+        bell.classList.remove('has-unread');
+        badge.hidden = true;
+        badge.textContent = '0';
+      }
+    }
+
+    function openNotificationDetail(notificationId) {
+      const entry = notificationsById.get(Number(notificationId));
+      if (!entry) return;
+
+      document.getElementById('notificationDetailType').textContent = entry.type || '-';
+      document.getElementById('notificationDetailTime').textContent = formatDate(entry.createdAt);
+      document.getElementById('notificationDetailHeading').textContent = entry.title || '-';
+      document.getElementById('notificationDetailMessage').textContent = entry.message || '-';
+      document.getElementById('notificationDetailMeta').textContent = formatNotificationMeta(entry.details);
+      openModal('notificationDetailModal');
+    }
+
+    async function deleteNotificationById(notificationId) {
+      const numericId = Number(notificationId);
+      if (!Number.isFinite(numericId) || numericId <= 0) {
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/auth/notifications/${numericId}`, {
+          method: 'DELETE',
+          credentials: 'same-origin',
+        });
+
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(payload.message || 'Unable to delete notification');
+        }
+
+        await loadNotifications({ silent: true });
+      } catch (error) {
+        showAppToast(error.message || 'Unable to delete notification');
+      }
+    }
+
+    function renderNotificationList(items) {
+      const listEl = document.getElementById('notificationList');
+      if (!listEl) return;
+
+      listEl.innerHTML = '';
+
+      if (!Array.isArray(items) || !items.length) {
+        const empty = document.createElement('p');
+        empty.className = 'notification-empty';
+        empty.textContent = 'No notifications yet';
+        listEl.appendChild(empty);
+        return;
+      }
+
+      items.forEach((item) => {
+        const row = document.createElement('div');
+        row.className = `notification-item${item.isRead ? '' : ' unread'}`;
+        row.dataset.id = String(item.id);
+
+        const content = document.createElement('button');
+        content.type = 'button';
+        content.className = 'notification-item-content';
+
+        const titleEl = document.createElement('strong');
+        titleEl.textContent = String(item.title || 'Notification');
+
+        const messageEl = document.createElement('span');
+        messageEl.textContent = String(item.message || '');
+
+        const timeEl = document.createElement('small');
+        timeEl.textContent = formatDate(item.createdAt);
+
+        content.appendChild(titleEl);
+        content.appendChild(messageEl);
+        content.appendChild(timeEl);
+        content.addEventListener('click', () => openNotificationDetail(item.id));
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'notification-delete-btn';
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          deleteNotificationById(item.id);
+        });
+
+        row.appendChild(content);
+        row.appendChild(deleteBtn);
+        listEl.appendChild(row);
+      });
+    }
+
+    async function loadNotifications({ silent = false } = {}) {
+      try {
+        const res = await fetch('/api/auth/notifications?limit=40', {
+          credentials: 'same-origin',
+          cache: 'no-store',
+        });
+
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(payload.message || 'Unable to load notifications');
+        }
+
+        const items = Array.isArray(payload.data) ? payload.data : [];
+        notificationsById = new Map(items.map((item) => [Number(item.id), item]));
+        renderNotificationList(items);
+
+        const unreadCount = Number(payload.unreadCount || 0);
+        if (!silent && unreadCount > lastUnreadCount) {
+          showAppToast('New notification received');
+        }
+
+        lastUnreadCount = unreadCount;
+        setNotificationBellState(unreadCount);
+      } catch (error) {
+        if (!silent) {
+          showAppToast(error.message || 'Unable to load notifications');
+        }
+      }
+    }
+
+    async function markAllNotificationsRead() {
+      try {
+        const res = await fetch('/api/auth/notifications/read', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(payload.message || 'Unable to mark notifications');
+        }
+
+        await loadNotifications({ silent: true });
+      } catch (error) {
+        showAppToast(error.message || 'Unable to mark notifications');
+      }
+    }
+
+    function closeNotificationPanel() {
+      const panel = document.getElementById('notificationPanel');
+      if (!panel) return;
+      panel.hidden = true;
+    }
+
+    async function toggleNotificationPanel() {
+      const panel = document.getElementById('notificationPanel');
+      if (!panel) return;
+
+      const willOpen = panel.hidden;
+      panel.hidden = !panel.hidden;
+
+      if (willOpen) {
+        await loadNotifications({ silent: true });
+        await markAllNotificationsRead();
+      }
+    }
+
+    function startNotificationPolling(enabled) {
+      if (notificationPollTimer) {
+        clearInterval(notificationPollTimer);
+        notificationPollTimer = null;
+      }
+
+      if (!enabled) {
+        return;
+      }
+
+      notificationPollTimer = setInterval(() => {
+        loadNotifications({ silent: true });
+      }, 15000);
+    }
+
+    async function loadUserBoxes() {
+      const select = document.getElementById('askAdminBoxSelect');
+      if (!select) return;
+
+      try {
+        const res = await fetch('/api/box/my-boxes', {
+          credentials: 'same-origin',
+          cache: 'no-store'
+        });
+        const data = await res.json().catch(() => ({}));
+        const boxes = Array.isArray(data.data) ? data.data : [];
+
+        select.innerHTML = '';
+
+        if (!boxes.length) {
+          const option = document.createElement('option');
+          option.value = '';
+          option.textContent = 'No courses available';
+          option.disabled = true;
+          select.appendChild(option);
+          return;
+        }
+
+        boxes.forEach((box) => {
+          const option = document.createElement('option');
+          option.value = String(box.id);
+          option.textContent = String(box.title || `Course ${box.id}`);
+          select.appendChild(option);
+        });
+      } catch (error) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'Unable to load courses';
+        option.disabled = true;
+        select.appendChild(option);
+      }
+    }
+
+    async function sendQuestionToAdmins() {
+      const boxSelect = document.getElementById('askAdminBoxSelect');
+      const input = document.getElementById('askAdminInput');
+      const askAdminForm = document.getElementById('askAdminForm');
+      const askAdminToggleBtn = document.getElementById('askAdminToggleBtn');
+      const boxId = String(boxSelect?.value || '').trim();
+      const text = String(input?.value || '').trim();
+
+      if (!boxId) {
+        showAppToast('Please select a course first');
+        return;
+      }
+
+      if (!text) {
+        showAppToast('Please type your question first');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/auth/notifications/ask', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text, boxId: Number(boxId) }),
+        });
+
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(payload.message || 'Unable to send question');
+        }
+
+        if (input) {
+          input.value = '';
+        }
+
+        if (askAdminForm) {
+          askAdminForm.hidden = true;
+        }
+
+        if (askAdminToggleBtn) {
+          askAdminToggleBtn.textContent = 'Ask admin a question';
+        }
+
+        showAppToast(payload.message || 'Question sent');
+        await loadNotifications({ silent: true });
+      } catch (error) {
+        showAppToast(error.message || 'Unable to send question');
+      }
+    }
+
     async function loadProfile() {
       const messageEl = document.getElementById('profileModalMessage');
       messageEl.textContent = '';
@@ -401,10 +748,10 @@
           row.innerHTML = `
             <div class="profile-capacity-meta">
               <strong>${box.title}</strong>
-              <span>${Number(box.memberCount || 0)} member(s) / capacity ${Number(box.capacity || 1)}</span>
+              <span>${Number(box.reservedCount || box.memberCount || 0)} member(s) / capacity ${Number(box.capacity || 1)}</span>
             </div>
             <div class="profile-capacity-controls">
-              <input type="number" min="${Number(box.memberCount || 1)}" max="200" value="${Number(box.capacity || 1)}" data-box-capacity-input="${box.id}">
+              <input type="number" min="${Math.max(Number(box.reservedCount || box.memberCount || 1), 1)}" max="200" value="${Number(box.capacity || 1)}" data-box-capacity-input="${box.id}">
               <button type="button" class="modal-submit-btn" data-box-capacity-save="${box.id}">Save</button>
             </div>
           `;
@@ -566,9 +913,13 @@
         privacy: 'private',
         sessionManagement: 'strict',
         autoLogout: '7d',
-        defaultDashboardView: 'existing',
+        defaultDashboardView: 'dashboard',
         ...getSavedSettings(),
       };
+
+      if (settings.defaultDashboardView === 'existing') {
+        settings.defaultDashboardView = 'dashboard';
+      }
 
       saveSettings(settings);
 
@@ -581,6 +932,18 @@
       const sessionManagementSelect = document.getElementById('sessionManagementSelect');
       const autoLogoutTimerSelect = document.getElementById('autoLogoutTimerSelect');
       const defaultDashboardViewSelect = document.getElementById('defaultDashboardViewSelect');
+      const notificationBell = document.getElementById('notificationBell');
+      const askAdminForm = document.getElementById('askAdminForm');
+      const askAdminToggleBtn = document.getElementById('askAdminToggleBtn');
+      const notificationPanel = document.getElementById('notificationPanel');
+
+      if (notificationPanel) {
+        notificationPanel.hidden = true;
+      }
+
+      if (askAdminForm) {
+        askAdminForm.hidden = true;
+      }
 
       themeModeSelect.value = settings.theme;
       notificationToggle.value = settings.notifications;
@@ -631,6 +994,48 @@
         if (!e.target.closest('.main-nav')) {
           closeAllDropdowns();
         }
+
+        if (!e.target.closest('.header-actions')) {
+          closeNotificationPanel();
+        }
+      });
+
+      notificationBell?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleNotificationPanel();
+      });
+
+      await loadUserBoxes();
+
+      document.getElementById('markAllNotificationsReadBtn')?.addEventListener('click', markAllNotificationsRead);
+      
+      const boxSelect = document.getElementById('askAdminBoxSelect');
+      if (boxSelect) {
+        boxSelect.addEventListener('mouseenter', function() {
+          if (document.activeElement !== this) {
+            this.focus();
+          }
+        });
+        boxSelect.addEventListener('mouseleave', function() {
+          this.blur();
+        });
+      }
+
+      askAdminToggleBtn?.addEventListener('click', () => {
+        if (!askAdminForm) return;
+
+        const willOpen = askAdminForm.hidden;
+        askAdminForm.hidden = !askAdminForm.hidden;
+        askAdminToggleBtn.textContent = willOpen ? 'Hide question form' : 'Ask admin a question';
+
+        if (willOpen) {
+          document.getElementById('askAdminInput')?.focus();
+        }
+      });
+      
+      askAdminForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        await sendQuestionToAdmins();
       });
 
       document.getElementById('openProfileAction')?.addEventListener('click', openProfileModal);
@@ -756,6 +1161,7 @@
         };
         saveSettings(newSettings);
         applyTheme(newSettings.theme);
+        startNotificationPolling(newSettings.notifications !== 'off');
         document.getElementById('settingsModalMessage').textContent = '';
         closeModal('settingsModal');
         showAppToast('Settings saved successfully');
@@ -766,6 +1172,8 @@
       document.getElementById('refreshLoginHistoryBtn')?.addEventListener('click', loadLoginHistory);
 
       await resolveAdminMenuAccess();
+      await loadNotifications({ silent: true });
+      startNotificationPolling(settings.notifications !== 'off');
 
       const queryOpen = new URLSearchParams(window.location.search).get('open');
       const queryReturn = new URLSearchParams(window.location.search).get('return');
@@ -853,6 +1261,11 @@
       tick();
     })();
     document.addEventListener('DOMContentLoaded', initHomePage);
+    window.addEventListener('beforeunload', () => {
+      if (notificationPollTimer) {
+        clearInterval(notificationPollTimer);
+      }
+    });
 
   </script>
 </body>

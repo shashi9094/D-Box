@@ -4,7 +4,15 @@ const passport = require("passport");
 const bcrypt = require("bcryptjs");
 const authController = require("../controllers/authController");
 const db = require("../db/connection");
-const { logLoginHistory } = require("../utils/loginHistory");
+const { logLoginHistory, isNewDeviceLogin } = require("../utils/loginHistory");
+const {
+  listUserNotifications,
+  getUnreadNotificationCount,
+  markNotificationsRead,
+  deleteNotification,
+  createNotification,
+  createNotificationsForUsers,
+} = require("../utils/notifications");
 const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function requireSessionUser(req, res, next) {
@@ -99,43 +107,174 @@ router.get("/status", async (req, res) => {
   });
 });
 
-router.get("/db-context", requireSessionUser, async (req, res) => {
+router.get('/account-exists', authController.checkAccountExists);
+
+router.get('/notifications', requireSessionUser, async (req, res) => {
   const currentUserId = Number(req.session.user.id);
+  const limitValue = Number(req.query?.limit);
+  const limit = Number.isFinite(limitValue)
+    ? Math.min(Math.max(Math.floor(limitValue), 1), 200)
+    : 30;
+
+  try {
+    const [items, unreadCount] = await Promise.all([
+      listUserNotifications(currentUserId, limit),
+      getUnreadNotificationCount(currentUserId),
+    ]);
+
+    return res.json({
+      success: true,
+      data: items,
+      unreadCount,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Unable to load notifications',
+      error: error.message,
+    });
+  }
+});
+
+router.post('/notifications/read', requireSessionUser, async (req, res) => {
+  const currentUserId = Number(req.session.user.id);
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : null;
+
+  try {
+    const updated = await markNotificationsRead(currentUserId, ids);
+    const unreadCount = await getUnreadNotificationCount(currentUserId);
+
+    return res.json({
+      success: true,
+      updated,
+      unreadCount,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Unable to mark notifications as read',
+      error: error.message,
+    });
+  }
+});
+
+router.delete('/notifications/:id', requireSessionUser, async (req, res) => {
+  const currentUserId = Number(req.session.user.id);
+  const notificationId = Number(req.params?.id);
+
+  try {
+    const deleted = await deleteNotification(currentUserId, notificationId);
+    const unreadCount = await getUnreadNotificationCount(currentUserId);
+
+    if (!deleted) {
+      return res.status(404).json({ message: 'Notification not found' });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Notification deleted',
+      unreadCount,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Unable to delete notification',
+      error: error.message,
+    });
+  }
+});
+
+router.post('/notifications/ask', requireSessionUser, async (req, res) => {
+  const currentUserId = Number(req.session.user.id);
+  const questionText = String(req.body?.message || '').trim();
+  const boxId = Number(req.body?.boxId);
+
+  if (!questionText) {
+    return res.status(400).json({ message: 'Question is required' });
+  }
+
+  if (questionText.length > 1000) {
+    return res.status(400).json({ message: 'Question is too long' });
+  }
+
+  if (!Number.isFinite(boxId) || boxId <= 0) {
+    return res.status(400).json({ message: 'Valid box ID is required' });
+  }
 
   try {
     const sql = db.promise();
 
-    const [dbNameRows] = await sql.query("SELECT DATABASE() AS dbName");
-    const [ownerRows] = await sql.query(
-      `SELECT b.id, b.title, b.user_id
-       FROM boxes b
-       WHERE b.user_id = ?
-       ORDER BY b.id DESC`,
-      [currentUserId]
-    );
-    const [memberRows] = await sql.query(
-      `SELECT bm.box_id, bm.role, b.title
-       FROM box_members bm
-       JOIN boxes b ON b.id = bm.box_id
-       WHERE bm.user_id = ?
-       ORDER BY bm.box_id DESC`,
+    const [senderRows] = await sql.query(
+      'SELECT id, fullName, email FROM users WHERE id = ? LIMIT 1',
       [currentUserId]
     );
 
-    return res.json({
-      connectedDatabase: dbNameRows[0]?.dbName || process.env.DB_NAME || null,
-      dbHost: process.env.DB_HOST || "localhost",
-      dbPort: Number(process.env.DB_PORT || 3306),
-      sessionUser: {
-        id: currentUserId,
-        email: req.session.user.email || null,
+    if (!senderRows.length) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const sender = senderRows[0];
+    const senderName = String(sender.fullName || sender.email || `User ${currentUserId}`).trim();
+    const senderEmail = String(sender.email || '').trim().toLowerCase();
+
+    // Get box details
+    const [boxRows] = await sql.query(
+      'SELECT id, title FROM boxes WHERE id = ? LIMIT 1',
+      [boxId]
+    );
+
+    if (!boxRows.length) {
+      return res.status(404).json({ message: 'Box not found' });
+    }
+
+    const boxTitle = String(boxRows[0].title || `Box ${boxId}`).trim();
+
+    // Get box owner and admin members
+    const [adminRows] = await sql.query(
+      `SELECT DISTINCT bm.user_id FROM box_members bm
+       WHERE bm.box_id = ? AND bm.role IN ('Admin', 'admin')
+       UNION
+       SELECT b.user_id FROM boxes b WHERE b.id = ?`,
+      [boxId, boxId]
+    );
+
+    const adminIds = adminRows
+      .map((row) => Number(row.user_id))
+      .filter((id) => Number.isFinite(id) && id !== currentUserId);
+
+    const uniqueAdminIds = [...new Set(adminIds)];
+
+    await createNotificationsForUsers(uniqueAdminIds, {
+      type: 'user_question',
+      title: `New question in ${boxTitle}`,
+      message: `${senderName} asked: ${questionText}`,
+      details: {
+        fromUserId: currentUserId,
+        fromName: senderName,
+        fromEmail: senderEmail,
+        boxId: boxId,
+        boxTitle: boxTitle,
+        question: questionText,
       },
-      ownerBoxes: ownerRows,
-      memberBoxes: memberRows,
+    });
+
+    await createNotification({
+      userId: currentUserId,
+      type: 'question_sent',
+      title: `Question sent in ${boxTitle}`,
+      message: 'Your question has been sent to admins. They will review it soon.',
+      details: {
+        boxId: boxId,
+        boxTitle: boxTitle,
+        question: questionText,
+      },
+    });
+
+    return res.json({
+      success: true,
+      notifiedAdmins: uniqueAdminIds.length,
+      message: 'Question sent successfully',
     });
   } catch (error) {
     return res.status(500).json({
-      message: "Unable to resolve db context",
+      message: 'Unable to send question',
       error: error.message,
     });
   }
@@ -259,47 +398,17 @@ router.post("/logout-all", requireSessionUser, (req, res) => {
         if (destroyErr) {
           failed = true;
         }
-
         pending -= 1;
+
         if (pending === 0) {
-          res.clearCookie("connect.sid");
           if (failed) {
-            return res.status(500).json({ message: "Some sessions could not be terminated" });
+            return res.status(500).json({ message: "Logout failed" });
           }
-          return res.json({ message: "Logged out from all active devices" });
+
+          res.clearCookie("connect.sid");
+          return res.json({ message: "Logout successful" });
         }
       });
-    });
-  });
-});
-
-router.get("/profile", requireSessionUser, (req, res) => {
-  const currentUserId = Number(req.session.user.id);
-  const loginAt = Number(req.session.user.loginAt || 0);
-
-  const userSql = "SELECT id, fullName, email, role, created_at FROM users WHERE id = ? LIMIT 1";
-  db.query(userSql, [currentUserId], (userErr, userRows) => {
-    if (userErr) {
-      return res.status(500).json({ message: "Unable to fetch profile" });
-    }
-
-    if (!userRows.length) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    const user = userRows[0];
-    const role = String(user.role || 'User');
-    const emailHash = require("crypto").createHash("md5").update(String(user.email || "").trim().toLowerCase()).digest("hex");
-
-    return res.json({
-      profile: {
-        name: user.fullName,
-        email: user.email,
-        role,
-        joinedAt: user.created_at,
-        lastLoginAt: Number.isFinite(loginAt) && loginAt > 0 ? new Date(loginAt).toISOString() : null,
-        profilePhoto: `https://www.gravatar.com/avatar/${emailHash}?d=identicon&s=160`,
-      },
     });
   });
 });
@@ -391,7 +500,7 @@ router.get("/google/callback", (req, res, next) => {
 
   return passport.authenticate("google", { failureRedirect: "/login.html" })(req, res, next);
 },
-  (req, res) => {
+  async (req, res) => {
     req.session.user = {
       id: req.user.id,
       email: req.user.email,
@@ -400,12 +509,42 @@ router.get("/google/callback", (req, res, next) => {
 
     req.session.cookie.maxAge = SESSION_MAX_AGE_MS;
 
+    let shouldNotifyNewDevice = false;
+    try {
+      shouldNotifyNewDevice = await isNewDeviceLogin({ userId: req.user.id, req });
+    } catch (deviceErr) {
+      console.warn('Unable to evaluate device novelty for Google login:', deviceErr.message);
+    }
+
     req.session.save(() => {
       logLoginHistory({
         userId: req.user.id,
         email: req.user.email,
         req,
       });
+
+      if (shouldNotifyNewDevice) {
+        const ipAddress = String(req?.headers?.['x-forwarded-for'] || '').split(',')[0].trim()
+          || req?.ip
+          || req?.socket?.remoteAddress
+          || 'Unknown IP';
+
+        const userAgent = String(req?.headers?.['user-agent'] || '').trim() || 'Unknown device';
+
+        createNotification({
+          userId: req.user.id,
+          type: 'new_device_login',
+          title: 'New device login detected',
+          message: 'Your account was logged in from a new device/browser.',
+          details: {
+            ipAddress,
+            userAgent,
+            email: String(req.user.email || '').trim().toLowerCase(),
+          },
+        }).catch((notifyErr) => {
+          console.warn('Google login device notification failed:', notifyErr.message);
+        });
+      }
 
       res.redirect("/home");
     });

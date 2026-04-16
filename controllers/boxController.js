@@ -4,6 +4,7 @@ const path = require('path');
 const multer = require('multer');
 const crypto = require('crypto');
 const { sendInvitationEmail } = require('../utils/emailService');
+const { createNotificationsForUsers } = require('../utils/notifications');
 
 const uploadsDir = path.join(__dirname, '..', 'uploads', 'boxes');
 if (!fs.existsSync(uploadsDir)) {
@@ -384,6 +385,22 @@ const getBoxOwnerId = async (boxId) => {
     return rows.length ? Number(rows[0].user_id) : null;
 };
 
+const getAdminRecipientsForBox = async (boxId) => {
+    const [rows] = await sql.query(
+        `SELECT DISTINCT user_id
+         FROM (
+            SELECT user_id FROM boxes WHERE id = ?
+            UNION ALL
+            SELECT user_id FROM box_members WHERE box_id = ? AND role = 'admin'
+         ) admin_users`,
+        [boxId, boxId]
+    );
+
+    return rows
+        .map((row) => Number(row.user_id))
+        .filter((value) => Number.isFinite(value) && value > 0);
+};
+
 const inferContentType = (file) => {
     if (!file || !file.mimetype) return 'file';
     if (file.mimetype.startsWith('video/')) return 'video';
@@ -500,6 +517,14 @@ exports.acceptPendingInvitesForUser = async (userId, email, inviteToken = null) 
     }
 
     const [invites] = await sql.query(inviteSqlParts.join(' '), inviteParams);
+    const [joinerRows] = await sql.query(
+        'SELECT fullName, email FROM users WHERE id = ? LIMIT 1',
+        [userId]
+    );
+
+    const joinerProfile = joinerRows[0] || {};
+    const joinerName = String(joinerProfile.fullName || normalizedEmail || `User ${userId}`).trim();
+    const joinerEmail = String(joinerProfile.email || normalizedEmail || '').trim().toLowerCase();
     let acceptedCount = 0;
     let skippedCount = 0;
 
@@ -525,6 +550,31 @@ exports.acceptPendingInvitesForUser = async (userId, email, inviteToken = null) 
              WHERE id = ?`,
             [userId, invite.id]
         );
+
+        const [boxRows] = await sql.query(
+            'SELECT title FROM boxes WHERE id = ? LIMIT 1',
+            [invite.box_id]
+        );
+        const boxTitle = String(boxRows[0]?.title || `Box ${invite.box_id}`);
+
+        const adminRecipients = await getAdminRecipientsForBox(invite.box_id);
+        const recipients = adminRecipients.filter((adminId) => Number(adminId) !== Number(userId));
+
+        if (recipients.length) {
+            await createNotificationsForUsers(recipients, {
+                type: 'member_joined_via_link',
+                title: 'Member joined via invite link',
+                message: `${joinerName} (${joinerEmail}) joined "${boxTitle}" using invite link.`,
+                details: {
+                    boxId: Number(invite.box_id),
+                    boxTitle,
+                    joinedUserId: Number(userId),
+                    joinedUserName: joinerName,
+                    joinedEmail: joinerEmail,
+                    inviteId: Number(invite.id),
+                },
+            });
+        }
 
         acceptedCount += 1;
     }
@@ -586,6 +636,21 @@ exports.getAllBoxes = async (req, res) => {
 
         const [results] = await sql.query(
             `SELECT b.*,
+                    (SELECT COUNT(DISTINCT bm.user_id)
+                     FROM box_members bm
+                     WHERE bm.box_id = b.id) AS memberCount,
+                    (SELECT COUNT(DISTINCT bi.email)
+                     FROM box_invites bi
+                     WHERE bi.box_id = b.id AND bi.status = 'pending') AS pendingInviteCount,
+                    (
+                        (SELECT COUNT(DISTINCT bm.user_id)
+                         FROM box_members bm
+                         WHERE bm.box_id = b.id)
+                        +
+                        (SELECT COUNT(DISTINCT bi.email)
+                         FROM box_invites bi
+                         WHERE bi.box_id = b.id AND bi.status = 'pending')
+                    ) AS reservedCount,
                     CASE
                         WHEN b.user_id = ? THEN 'admin'
                         WHEN MAX(CASE WHEN bm.role = 'admin' THEN 1 ELSE 0 END) = 1 THEN 'admin'
@@ -658,9 +723,9 @@ exports.updateBox = async (req, res) => {
             }
 
             const capacityState = await getBoxCapacityAndUsage(id);
-            if (nextCapacity < capacityState.memberCount) {
+            if (nextCapacity < capacityState.reservedCount) {
                 return res.status(400).json({
-                    message: `Capacity cannot be lower than current member count (${capacityState.memberCount})`
+                    message: `Capacity cannot be lower than current reserved members (${capacityState.reservedCount})`
                 });
             }
 
@@ -746,6 +811,8 @@ exports.getMyBoxes = async (req, res) => {
         const [rows] = await sql.query(
             `SELECT b.*,
                     COUNT(DISTINCT bm_all.user_id) AS memberCount,
+                    COUNT(DISTINCT CASE WHEN bi.status = 'pending' THEN bi.email END) AS pendingInviteCount,
+                    COUNT(DISTINCT bm_all.user_id) + COUNT(DISTINCT CASE WHEN bi.status = 'pending' THEN bi.email END) AS reservedCount,
                     CASE
                         WHEN b.user_id = ? THEN 'admin'
                         WHEN MAX(CASE WHEN bm_user.role = 'admin' THEN 1 ELSE 0 END) = 1 THEN 'admin'
@@ -754,6 +821,7 @@ exports.getMyBoxes = async (req, res) => {
              FROM boxes b
              JOIN box_members bm_user ON bm_user.box_id = b.id AND bm_user.user_id = ?
              LEFT JOIN box_members bm_all ON bm_all.box_id = b.id
+             LEFT JOIN box_invites bi ON bi.box_id = b.id
              GROUP BY b.id
              ORDER BY b.id DESC`,
             [userId, userId]
@@ -892,7 +960,7 @@ exports.addMemberByEmail = async (req, res) => {
 
         for (const target of uniqueInviteTargets) {
             const inviteToken = createInviteToken();
-            const joinUrl = `${inviteBaseUrl}/signup.html?invite=${boxId}&email=${encodeURIComponent(target.email)}&token=${inviteToken}`;
+            const joinUrl = `${inviteBaseUrl}/login.html?invite=${boxId}&email=${encodeURIComponent(target.email)}&token=${inviteToken}`;
 
             inviteLinks.push({ email: target.email, url: joinUrl, token: inviteToken });
             emailNotifications.push({ email: target.email, url: joinUrl });

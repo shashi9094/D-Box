@@ -165,7 +165,7 @@ async function render() {
 
         const capacityRow = document.createElement('div');
         capacityRow.className = 'item-line capacity-line';
-        capacityRow.innerHTML = `<strong>Capacity:</strong> ${Number(box.memberCount || 0)}/${Number(box.capacity || 1)} members used`;
+        capacityRow.innerHTML = `<strong>Capacity:</strong> ${Number(box.reservedCount || box.memberCount || 0)}/${Number(box.capacity || 1)} members used`;
         content.appendChild(capacityRow);
 
         if (box.id === selectedBoxId) {
@@ -181,7 +181,6 @@ async function render() {
                 adminTools.className = 'item-line admin-tools';
                 adminTools.innerHTML = `
                     <button class="action-chip" data-action="add-member" data-id="${box.id}"><i class="fa-solid fa-user-plus"></i> Add User by Email</button>
-                    <button class="action-chip danger" data-action="remove-member" data-id="${box.id}"><i class="fa-solid fa-user-minus"></i> Revoke User</button>
                 `;
                 content.appendChild(adminTools);
             }
@@ -335,7 +334,7 @@ document.querySelector('.box-list').addEventListener('click', async (event) => {
 });
 
 document.getElementById('menudashboard').onclick = function() {
-    window.location.href = '/dashboard#existing';
+    window.location.href = '/dashboard#dashboard';
 };
 
 document.getElementById('menuHome').onclick = function() {
@@ -351,7 +350,7 @@ document.getElementById('newBoxCornerBtn').onclick = function() {
 };
 
 document.getElementById('menuSettings').onclick = function() {
-    window.location.href = '/home?open=settings&return=%2Fdashboard%23existing';
+    window.location.href = '/home?open=settings&return=%2Fdashboard%23dashboard';
 };
 
 document.getElementById('modalCloseBtn').addEventListener('click', closeModal);

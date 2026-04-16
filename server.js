@@ -49,6 +49,10 @@ function setNoStore(res) {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
 }
 
+function hasInviteQuery(req) {
+    return Boolean(req.query && (req.query.invite || req.query.email || req.query.token));
+}
+
 app.get('/scripts/back-nav.js', isAuth, (req, res) => {
     setNoStore(res);
     return res.sendFile(path.join(__dirname, 'private', 'scripts', 'back-nav.js'));
@@ -78,7 +82,7 @@ app.get('/index.html', (req, res) => {
 });
 
 app.get('/login.html', (req, res) => {
-    if (req.session && req.session.user) {
+    if (req.session && req.session.user && !hasInviteQuery(req)) {
         return res.redirect('/home');
     }
 
@@ -87,7 +91,7 @@ app.get('/login.html', (req, res) => {
 });
 
 app.get('/signup.html', (req, res) => {
-    if (req.session && req.session.user) {
+    if (req.session && req.session.user && !hasInviteQuery(req)) {
         return res.redirect('/home');
     }
 

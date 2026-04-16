@@ -32,7 +32,6 @@
           <span class="capacity-pill" id="groupCapacityPill">0/0</span>
           <div class="uploads-admin-tools" id="adminTools" hidden>
             <button class="action-chip" id="addMemberBtn" data-tooltip="Add User"><i class="fa-solid fa-user-plus"></i></button>
-            <button class="action-chip debug-trigger" id="debugDbBtn" data-tooltip="Debug DB" hidden><i class="fa-solid fa-bug"></i></button>
           </div>
         </div>
       </section>
@@ -130,20 +129,6 @@
     </div>
   </div>
 
-  <div class="dashboard-modal" id="debugDbModal" aria-hidden="true">
-    <div class="dashboard-modal-card upload-debug-modal" role="dialog" aria-modal="true" aria-labelledby="debugDbModalTitle">
-      <div class="dashboard-modal-header">
-        <h3 id="debugDbModalTitle">Database Debug Context</h3>
-        <button type="button" class="modal-close-btn" id="debugDbModalClose" aria-label="Close">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
-      </div>
-      <p class="modal-help-text">Current connected DB, session user, owner boxes, and member boxes.</p>
-      <pre class="debug-db-output" id="debugDbOutput">Loading...</pre>
-      <button type="button" class="modal-submit-btn" id="debugDbRefreshBtn"><i class="fa-solid fa-rotate"></i> Refresh</button>
-    </div>
-  </div>
-
   <script>
     let boxId = null;
     let myRole = 'member';
@@ -208,7 +193,7 @@
       document.getElementById('groupTitle').textContent = box.title || 'Untitled Box';
       document.getElementById('groupDescription').textContent = box.description || 'No description available.';
       document.getElementById('groupRolePill').textContent = myRole;
-      document.getElementById('groupCapacityPill').textContent = `${Number(box.memberCount || 0)}/${Number(box.capacity || 1)}`;
+      document.getElementById('groupCapacityPill').textContent = `${Number(box.reservedCount || box.memberCount || 0)}/${Number(box.capacity || 1)}`;
     }
 
     function renderMembers() {
@@ -523,27 +508,6 @@
       document.getElementById('renameUploadInput').value = '';
     }
 
-    async function loadDebugDbContext() {
-      const outputEl = document.getElementById('debugDbOutput');
-      outputEl.textContent = 'Loading...';
-
-      try {
-        const payload = await apiRequest('/api/auth/db-context', { cache: 'no-store' });
-        outputEl.textContent = JSON.stringify(payload, null, 2);
-      } catch (error) {
-        outputEl.textContent = `Unable to load debug context\n${error.message || error}`;
-      }
-    }
-
-    function openDebugDbModal() {
-      document.getElementById('debugDbModal').setAttribute('aria-hidden', 'false');
-      loadDebugDbContext();
-    }
-
-    function closeDebugDbModal() {
-      document.getElementById('debugDbModal').setAttribute('aria-hidden', 'true');
-    }
-
     async function renameUpload(contentId, name) {
       await apiRequest(`/api/box/${boxId}/content/${contentId}`, {
         method: 'PATCH',
@@ -570,12 +534,8 @@
       const adminTools = document.getElementById('adminTools');
       const fab = document.getElementById('uploadsFab');
       const menu = document.getElementById('fabMenu');
-      const debugBtn = document.getElementById('debugDbBtn');
 
       adminTools.hidden = !isVisible;
-      if (debugBtn) {
-        debugBtn.hidden = !isVisible;
-      }
       fab.hidden = false;
       fab.disabled = !isVisible;
       fab.setAttribute('aria-disabled', String(!isVisible));
@@ -690,7 +650,7 @@
       openModal('remove-member');
     }
 
-    document.getElementById('menudashboard').onclick = () => { window.location.href = '/dashboard#existing'; };
+    document.getElementById('menudashboard').onclick = () => { window.location.href = '/dashboard#dashboard'; };
     document.getElementById('newMenu').onclick = () => { window.location.href = '/createbox'; };
     document.getElementById('menuSettings').onclick = () => { window.location.href = '/home?open=settings'; };
 
@@ -876,11 +836,6 @@
       openModal('add-member');
     });
 
-    document.getElementById('debugDbBtn').addEventListener('click', () => {
-      if (!isAdminUser()) return;
-      openDebugDbModal();
-    });
-
     document.getElementById('membersStrip').addEventListener('click', async (event) => {
       const button = event.target.closest('button[data-member-action]');
       if (!button || !isAdminUser()) return;
@@ -997,19 +952,11 @@
       }
     });
 
-    document.getElementById('debugDbModalClose').addEventListener('click', closeDebugDbModal);
-    document.getElementById('debugDbRefreshBtn').addEventListener('click', loadDebugDbContext);
-    document.getElementById('debugDbModal').addEventListener('click', (event) => {
-      if (event.target.id === 'debugDbModal') {
-        closeDebugDbModal();
-      }
-    });
-
     window.addEventListener('load', async () => {
       boxId = getBoxIdFromQuery();
       if (!boxId) {
         alert('Box not selected. Redirecting to dashboard.');
-        window.location.href = '/dashboard#existing';
+        window.location.href = '/dashboard#dashboard';
         return;
       }
 
@@ -1018,7 +965,7 @@
         await loadGroupData();
       } catch (error) {
         alert(error.message || 'Unable to open this group uploads');
-        window.location.href = '/dashboard#existing';
+        window.location.href = '/dashboard#dashboard';
       }
     });
   </script>

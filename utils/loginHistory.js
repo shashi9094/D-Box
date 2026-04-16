@@ -87,6 +87,31 @@ const logLoginHistory = async ({ userId, email, req }) => {
   }
 };
 
+const isNewDeviceLogin = async ({ userId, req }) => {
+  const numericUserId = Number(userId);
+  if (!Number.isFinite(numericUserId) || numericUserId <= 0) {
+    return false;
+  }
+
+  await ensureLoginHistoryTable();
+
+  const userAgent = String(req?.headers?.['user-agent'] || '').trim() || '';
+  const ipAddress = String(getClientIp(req) || '').trim();
+
+  const [rows] = await db.promise().query(
+    `SELECT id
+     FROM login_history
+     WHERE user_id = ?
+       AND COALESCE(ip_address, '') = ?
+       AND COALESCE(user_agent, '') = ?
+     LIMIT 1`,
+    [numericUserId, ipAddress, userAgent]
+  );
+
+  return rows.length === 0;
+};
+
 module.exports = {
   logLoginHistory,
+  isNewDeviceLogin,
 };

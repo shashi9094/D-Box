@@ -2,7 +2,8 @@ const db = require(`../db/connection`);
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");    
 const boxController = require('./boxController');
-const { logLoginHistory } = require('../utils/loginHistory');
+const { logLoginHistory, isNewDeviceLogin } = require('../utils/loginHistory');
+const { createNotification } = require('../utils/notifications');
 
 const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -167,6 +168,13 @@ exports.login = async (req, res) => {
             console.error('Pending invite sync failed after login:', inviteErr.message);
         }
 
+        let shouldNotifyNewDevice = false;
+        try {
+            shouldNotifyNewDevice = await isNewDeviceLogin({ userId: user.id, req });
+        } catch (deviceErr) {
+            console.warn('Unable to evaluate device novelty:', deviceErr.message);
+        }
+
         // SESSION SET KARO (MOST IMPORTANT)
         req.session.user = {
             id: user.id,
@@ -187,6 +195,29 @@ exports.login = async (req, res) => {
                 email: user.email,
                 req
             });
+
+            if (shouldNotifyNewDevice) {
+                const ipAddress = String(req?.headers?.['x-forwarded-for'] || '').split(',')[0].trim()
+                    || req?.ip
+                    || req?.socket?.remoteAddress
+                    || 'Unknown IP';
+
+                const userAgent = String(req?.headers?.['user-agent'] || '').trim() || 'Unknown device';
+
+                createNotification({
+                    userId: user.id,
+                    type: 'new_device_login',
+                    title: 'New device login detected',
+                    message: 'Your account was logged in from a new device/browser.',
+                    details: {
+                        ipAddress,
+                        userAgent,
+                        email: String(user.email || '').trim().toLowerCase(),
+                    },
+                }).catch((notifyErr) => {
+                    console.warn('New device notification failed:', notifyErr.message);
+                });
+            }
 
             return res.json({
                 message: "Login successful",
@@ -221,6 +252,29 @@ exports.resetPassword = async (req, res) => {
     } catch (err) {
         return res.status(500).json({ message: "Error hashing password", error: err });
     }
+};
+
+exports.checkAccountExists = async (req, res) => {
+    const email = String(req.query?.email || '').trim().toLowerCase();
+
+    if (!email) {
+        return res.status(400).json({ message: 'Email is required' });
+    }
+
+    db.query(
+        'SELECT id FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1',
+        [email],
+        (err, rows) => {
+            if (err) {
+                return res.status(500).json({ message: 'Unable to check account' });
+            }
+
+            return res.json({
+                exists: rows.length > 0,
+                email
+            });
+        }
+    );
 };
 
 // Accept invite from link for currently logged-in user.
