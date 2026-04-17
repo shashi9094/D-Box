@@ -32,6 +32,17 @@
           <span class="capacity-pill" id="groupCapacityPill">0/0</span>
           <div class="uploads-admin-tools" id="adminTools" hidden>
             <button class="action-chip" id="addMemberBtn" data-tooltip="Add User"><i class="fa-solid fa-user-plus"></i></button>
+            <div class="uploads-member-dropdown" id="memberDropdownWrap">
+              <button class="action-chip danger member-dropdown-trigger" id="removeMemberBtn" data-tooltip="Remove User" aria-label="Toggle remove users list">
+                <i class="fa-solid fa-user-minus"></i>
+                <i class="fa-solid fa-chevron-down"></i>
+              </button>
+              <div class="uploads-member-dropdown-panel" id="memberDropdownPanel" hidden>
+                <p class="uploads-member-dropdown-title">Select users to remove</p>
+                <div class="uploads-member-dropdown-list" id="memberDropdownList"></div>
+                <button type="button" class="modal-submit-btn danger" id="removeSelectedMembersBtn"><i class="fa-solid fa-user-minus"></i> Remove Selected</button>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -51,6 +62,8 @@
           <div class="uploads-path-controls" id="uploadsPathControls">
             <p id="uploadsGridSubtitle">Read and access all files shared in this group.</p>
             <p id="uploadsBatchStatus" class="uploads-batch-status" hidden></p>
+            <p id="deleteModeIndicator" class="uploads-delete-mode-indicator" hidden>Delete selection mode ON</p>
+            <button type="button" id="deleteSelectedUploadsBtn" class="uploads-delete-selected-btn" hidden>Delete Selected</button>
             <button
               type="button"
               class="uploads-parent-icon-btn"
@@ -76,6 +89,7 @@
     <button type="button" data-action="new-folder"><i class="fa-regular fa-folder"></i> New folder</button>
     <button type="button" data-action="file-upload"><i class="fa-regular fa-file"></i> File upload</button>
     <button type="button" data-action="folder-upload"><i class="fa-regular fa-folder-open"></i> Folder upload</button>
+    <button type="button" id="deleteSelectModeBtn" data-action="select-delete"><i class="fa-solid fa-check-double"></i> Select to delete</button>
   </div>
 
   <input id="fileInput" type="file" accept=".pdf,.doc,.docx,video/*" multiple hidden />
@@ -93,7 +107,7 @@
       <form id="addMemberForm" class="modal-form" hidden>
         <label for="memberEmailInput">User Email(s)</label>
         <input id="memberEmailInput" type="text" placeholder="user1@example.com, user2@example.com" required />
-        <small class="modal-help-text">Multiple emails add kar sakte ho: comma ya new line se separate karo.</small>
+        <small class="modal-help-text">You can add multiple emails: separate them with commas or new lines.</small>
         <button type="submit" class="modal-submit-btn"><i class="fa-solid fa-user-plus"></i> Add User</button>
       </form>
 
@@ -140,6 +154,10 @@
     let activeMenuContentId = null;
     let renameTarget = null;
     let currentBoxOwnerId = null;
+    let uploadingItems = [];
+    let selectedUploadIds = new Set();
+    let isDeleteSelectMode = false;
+    const MAX_UPLOAD_FILES_PER_BATCH = 25;
 
     function isAdminUser() {
       return myRole === 'admin';
@@ -262,6 +280,10 @@
       return parts.join('/');
     }
 
+    function nextPaint() {
+      return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+    }
+
     function buildChildFolderPath(folderName) {
       const safeName = String(folderName || '').replace(/[\\/]/g, '').trim();
       if (!safeName) return currentFolderPath;
@@ -306,6 +328,39 @@
       statusEl.textContent = safeMessage;
       statusEl.hidden = false;
       statusEl.classList.toggle('is-error', Boolean(isError));
+    }
+
+    function syncDeleteModeButtonLabel() {
+      const modeBtn = document.getElementById('deleteSelectModeBtn');
+      if (!modeBtn) return;
+
+      modeBtn.innerHTML = isDeleteSelectMode
+        ? '<i class="fa-solid fa-xmark"></i> Cancel delete selection'
+        : '<i class="fa-solid fa-check-double"></i> Select to delete';
+    }
+
+    function syncDeleteModeIndicator() {
+      const indicator = document.getElementById('deleteModeIndicator');
+      if (!indicator) return;
+
+      const selectedCount = selectedUploadIds.size;
+      const shouldShow = isAdminUser() && isDeleteSelectMode;
+
+      indicator.hidden = !shouldShow;
+      indicator.textContent = selectedCount > 0
+        ? `Delete selection mode ON (${selectedCount} selected)`
+        : 'Delete selection mode ON';
+    }
+
+    function syncDeleteSelectedButton() {
+      const deleteBtn = document.getElementById('deleteSelectedUploadsBtn');
+      if (!deleteBtn) return;
+
+      const selectedCount = selectedUploadIds.size;
+      deleteBtn.textContent = selectedCount > 0 ? `Delete Selected (${selectedCount})` : 'Delete Selected';
+      deleteBtn.hidden = !isAdminUser() || !isDeleteSelectMode;
+      deleteBtn.disabled = selectedCount === 0;
+      syncDeleteModeIndicator();
     }
 
     function getFileExtension(name) {
@@ -385,7 +440,36 @@
         .map((rawItem) => mapDisplayItem(rawItem))
         .filter((item) => item.folder_path === currentFolderPath);
 
-      if (!visibleItems.length) {
+      const visibleItemIds = new Set(visibleItems.map((item) => String(item.id)));
+      selectedUploadIds.forEach((id) => {
+        if (!visibleItemIds.has(String(id))) {
+          selectedUploadIds.delete(String(id));
+        }
+      });
+      syncDeleteSelectedButton();
+
+      const visibleUploads = uploadingItems.filter((item) => item.folderPath === currentFolderPath);
+
+      visibleUploads.forEach((upload) => {
+        const uploadCard = document.createElement('article');
+        uploadCard.className = 'upload-item-card upload-item-card-uploading';
+        uploadCard.innerHTML = `
+          <div class="upload-preview upload-preview-uploading">
+            <div class="upload-preview-fallback upload-preview-spinner"><i class="fa-solid fa-cloud-arrow-up"></i></div>
+          </div>
+          <div class="upload-item-body">
+            <div class="upload-item-head">
+              <span class="upload-type-pill">UPLOADING</span>
+            </div>
+            <h3 title="${escapeHtml(upload.name)}">${escapeHtml(upload.name)}</h3>
+            <p class="upload-meta">Uploading now...</p>
+            <p class="upload-meta upload-progress-text">${escapeHtml(upload.message || 'Please wait')}</p>
+          </div>
+        `;
+        grid.appendChild(uploadCard);
+      });
+
+      if (!visibleItems.length && !visibleUploads.length) {
         const emptyCard = document.createElement('div');
         emptyCard.className = 'uploads-empty-card';
         emptyCard.textContent = 'No files, videos, or notes uploaded in this folder.';
@@ -401,6 +485,7 @@
         const name = item.displayName;
         const extension = getFileExtension(name);
         const safePath = sanitizeFilePath(item.file_path);
+        const isPdfFile = extension === 'pdf';
 
         const uploadedBy = item.uploaded_by_name || `User ${item.uploaded_by || '-'}`;
         const safeName = escapeHtml(name);
@@ -411,6 +496,16 @@
         const canManage = myRole === 'admin';
         const canEditImportantNote = canManage && canManageImportantNote(item);
         const safeImportantNote = escapeHtml(getImportantNoteText(item));
+        const isSelected = selectedUploadIds.has(String(item.id));
+
+        const selectMarkup = canManage && isDeleteSelectMode
+          ? `
+            <label class="upload-select-toggle" aria-label="Select ${safeName} for delete">
+              <input type="checkbox" data-select-upload="${item.id}" ${isSelected ? 'checked' : ''} />
+              <span></span>
+            </label>
+          `
+          : '';
 
         const actionsMarkup = canManage
           ? `
@@ -437,7 +532,7 @@
             renderContents();
           };
           card.addEventListener('click', (event) => {
-            if (event.target.closest('.upload-card-actions')) return;
+            if (event.target.closest('.upload-card-actions') || event.target.closest('.upload-select-toggle')) return;
             openFolder();
           });
           card.addEventListener('keydown', (event) => {
@@ -452,7 +547,7 @@
           card.setAttribute('role', 'link');
           card.setAttribute('aria-label', `Open ${name}`);
           card.addEventListener('click', (event) => {
-            if (event.target.closest('.upload-card-actions')) return;
+            if (event.target.closest('.upload-card-actions') || event.target.closest('.upload-select-toggle')) return;
             window.open(safePath, '_blank', 'noopener');
           });
           card.addEventListener('keydown', (event) => {
@@ -465,13 +560,15 @@
 
         const previewMarkup = safePath && isImageExtension(extension) && !item.is_virtual_folder
           ? `<img src="${safePathHtml}" alt="${safeName}" loading="lazy" />`
-          : `<div class="upload-preview-fallback"><i class="${getFallbackIcon(item, extension)}"></i></div>`;
+          : (safePath && isPdfFile && !item.is_virtual_folder)
+            ? `<iframe class="upload-preview-pdf" src="${safePathHtml}#toolbar=0&navpanes=0&view=FitH" title="${safeName}"></iframe>`
+            : `<div class="upload-preview-fallback"><i class="${getFallbackIcon(item, extension)}"></i></div>`;
 
         card.innerHTML = `
+          ${selectMarkup}
           ${actionsMarkup}
-          <div class="upload-preview">
+          <div class="upload-preview ${(isOpenable || isFolder) ? 'is-tap-open' : ''}">
             ${previewMarkup}
-            <span class="upload-preview-badge">${escapeHtml(getFileBadge(item, extension))}</span>
           </div>
           <div class="upload-item-body">
             <div class="upload-item-head">
@@ -563,7 +660,12 @@
 
       if (!isVisible) {
         menu.hidden = true;
+        selectedUploadIds = new Set();
+        isDeleteSelectMode = false;
       }
+
+      syncDeleteModeButtonLabel();
+      syncDeleteSelectedButton();
     }
 
     function closeModal() {
@@ -615,29 +717,73 @@
       const failedFiles = [];
       const totalFiles = Array.isArray(files) ? files.length : 0;
       let completedCount = 0;
+      const maxConcurrency = Math.min(4, totalFiles || 1);
+      let queueIndex = 0;
+
+      if (totalFiles > MAX_UPLOAD_FILES_PER_BATCH) {
+        throw new Error(`You cannot upload more than ${MAX_UPLOAD_FILES_PER_BATCH} files at one time.`);
+      }
 
       if (typeof onProgress === 'function' && totalFiles > 0) {
         onProgress({ completedCount, totalFiles, successCount, failedCount: failedFiles.length });
       }
 
-      for (const file of files) {
-        try {
-          await uploadFile(file, adminNote);
-          successCount += 1;
-        } catch (error) {
-          failedFiles.push(`${file.name}: ${error.message || 'Upload failed'}`);
-        } finally {
-          completedCount += 1;
+      const workers = Array.from({ length: maxConcurrency }, async () => {
+        while (queueIndex < totalFiles) {
+          const localIndex = queueIndex;
+          queueIndex += 1;
+
+          const file = files[localIndex];
+          const tempId = `${Date.now()}-${localIndex}-${Math.random().toString(36).slice(2)}`;
+          const currentIndex = completedCount + 1;
+
+          uploadingItems.push({
+            tempId,
+            name: file.name,
+            folderPath: currentFolderPath,
+            message: 'Uploading file...'
+          });
+          renderContents();
+
           if (typeof onProgress === 'function') {
             onProgress({
               completedCount,
               totalFiles,
               successCount,
-              failedCount: failedFiles.length
+              failedCount: failedFiles.length,
+              currentFile: file.name,
+              currentState: 'uploading',
+              currentIndex
             });
           }
+
+          try {
+            await uploadFile(file, adminNote);
+            successCount += 1;
+          } catch (error) {
+            failedFiles.push(`${file.name}: ${error.message || 'Upload failed'}`);
+          } finally {
+            completedCount += 1;
+
+            if (typeof onProgress === 'function') {
+              onProgress({
+                completedCount,
+                totalFiles,
+                successCount,
+                failedCount: failedFiles.length,
+                currentFile: file.name,
+                currentState: 'done',
+                currentIndex: completedCount
+              });
+            }
+
+            uploadingItems = uploadingItems.filter((item) => item.tempId !== tempId);
+            renderContents();
+          }
         }
-      }
+      });
+
+      await Promise.all(workers);
 
       return { successCount, failedFiles };
     }
@@ -702,6 +848,40 @@
       openModal('remove-member');
     }
 
+    function getRemovableMembers() {
+      return members.filter((member) => {
+        const isOwner = Boolean(member.is_owner) || Number(member.user_id) === Number(currentBoxOwnerId);
+        const isSelf = Number(member.user_id) === Number(reqUserId);
+        return !isOwner && !isSelf;
+      });
+    }
+
+    function renderRemoveDropdownList() {
+      const list = document.getElementById('memberDropdownList');
+      const removable = getRemovableMembers();
+      list.innerHTML = '';
+
+      if (!removable.length) {
+        list.innerHTML = '<p class="uploads-member-dropdown-empty">No removable users found.</p>';
+        return;
+      }
+
+      removable.forEach((member) => {
+        const row = document.createElement('label');
+        row.className = 'uploads-member-dropdown-item';
+        row.innerHTML = `
+          <input type="checkbox" value="${member.user_id}" />
+          <span>${escapeHtml(member.email || 'Unknown email')} (${escapeHtml(member.role || 'member')})</span>
+        `;
+        list.appendChild(row);
+      });
+    }
+
+    function setRemoveDropdownOpen(isOpen) {
+      const panel = document.getElementById('memberDropdownPanel');
+      panel.hidden = !isOpen;
+    }
+
     document.getElementById('menudashboard').onclick = () => { window.location.href = '/dashboard#dashboard'; };
     document.getElementById('newMenu').onclick = () => { window.location.href = '/createbox'; };
     document.getElementById('menuSettings').onclick = () => { window.location.href = '/home?open=settings'; };
@@ -755,9 +935,24 @@
         document.getElementById('folderNameInput').value = '';
         openModal('new-folder');
       }
+
+      if (action === 'select-delete') {
+        isDeleteSelectMode = !isDeleteSelectMode;
+        if (!isDeleteSelectMode) {
+          selectedUploadIds = new Set();
+        }
+        syncDeleteModeButtonLabel();
+        syncDeleteSelectedButton();
+        renderContents();
+      }
     });
 
     document.getElementById('uploadsGrid').addEventListener('click', async (event) => {
+      if (event.target.closest('.upload-select-toggle')) {
+        event.stopPropagation();
+        return;
+      }
+
       const menuToggle = event.target.closest('button[data-menu-toggle]');
       if (menuToggle) {
         event.preventDefault();
@@ -810,6 +1005,66 @@
       }
     });
 
+    document.getElementById('uploadsGrid').addEventListener('change', (event) => {
+      const selectInput = event.target.closest('input[data-select-upload]');
+      if (!selectInput) {
+        return;
+      }
+
+      const contentId = String(selectInput.dataset.selectUpload || '').trim();
+      if (!contentId) {
+        return;
+      }
+
+      if (selectInput.checked) {
+        selectedUploadIds.add(contentId);
+      } else {
+        selectedUploadIds.delete(contentId);
+      }
+
+      syncDeleteSelectedButton();
+    });
+
+    document.getElementById('deleteSelectedUploadsBtn').addEventListener('click', async () => {
+      if (!isAdminUser()) {
+        return;
+      }
+
+      const selectedIds = Array.from(selectedUploadIds);
+      if (!selectedIds.length) {
+        alert('Please select at least one file to delete.');
+        return;
+      }
+
+      const confirmed = window.confirm(`Delete ${selectedIds.length} selected file(s)?`);
+      if (!confirmed) {
+        return;
+      }
+
+      let deletedCount = 0;
+      const failedDeletes = [];
+
+      for (const contentId of selectedIds) {
+        try {
+          await deleteUpload(contentId);
+          deletedCount += 1;
+        } catch (error) {
+          failedDeletes.push(error.message || `Failed to delete item ${contentId}`);
+        }
+      }
+
+      selectedUploadIds = new Set();
+      syncDeleteSelectedButton();
+      await loadGroupData();
+
+      if (failedDeletes.length) {
+        setBatchStatus(`Deleted ${deletedCount}, failed ${failedDeletes.length}`, true);
+        alert(`Deleted ${deletedCount} file(s). ${failedDeletes.length} failed.\n\n${failedDeletes.join('\n')}`);
+      } else {
+        setBatchStatus(`Deleted ${deletedCount} selected file(s)`);
+      }
+    });
+
     document.addEventListener('click', (event) => {
       if (!event.target.closest('.upload-item-card')) {
         closeActiveMenu();
@@ -849,12 +1104,24 @@
       const files = Array.from(event.target.files || []);
       if (!files.length) return;
 
+      if (files.length > MAX_UPLOAD_FILES_PER_BATCH) {
+        setBatchStatus(`You cannot upload more than ${MAX_UPLOAD_FILES_PER_BATCH} files at one time.`, true);
+        alert(`You cannot upload more than ${MAX_UPLOAD_FILES_PER_BATCH} files at one time.`);
+        event.target.value = '';
+        return;
+      }
+
       try {
         setBatchStatus(`Uploaded 0 of ${files.length}`);
         const noteInput = window.prompt('Important note for selected uploads (optional):', '');
         const adminNote = noteInput === null ? '' : noteInput;
 
-        const { successCount, failedFiles } = await uploadSelectedFiles(files, adminNote, ({ completedCount, totalFiles }) => {
+        const { successCount, failedFiles } = await uploadSelectedFiles(files, adminNote, ({ completedCount, totalFiles, currentState }) => {
+          if (currentState === 'uploading') {
+            setBatchStatus(`Uploading ${completedCount + 1} of ${totalFiles}`);
+            return;
+          }
+
           setBatchStatus(`Uploaded ${completedCount} of ${totalFiles}`);
         });
         await loadGroupData();
@@ -882,11 +1149,23 @@
       const files = Array.from(event.target.files || []);
       if (!files.length) return;
 
+      if (files.length > MAX_UPLOAD_FILES_PER_BATCH) {
+        setBatchStatus(`You cannot upload more than ${MAX_UPLOAD_FILES_PER_BATCH} files at one time.`, true);
+        alert(`You cannot upload more than ${MAX_UPLOAD_FILES_PER_BATCH} files at one time.`);
+        event.target.value = '';
+        return;
+      }
+
       try {
         setBatchStatus(`Uploaded 0 of ${files.length}`);
         const noteInput = window.prompt('Important note for selected uploads (optional):', '');
         const adminNote = noteInput === null ? '' : noteInput;
-        const { successCount, failedFiles } = await uploadSelectedFiles(files, adminNote, ({ completedCount, totalFiles }) => {
+        const { successCount, failedFiles } = await uploadSelectedFiles(files, adminNote, ({ completedCount, totalFiles, currentState }) => {
+          if (currentState === 'uploading') {
+            setBatchStatus(`Uploading ${completedCount + 1} of ${totalFiles}`);
+            return;
+          }
+
           setBatchStatus(`Uploaded ${completedCount} of ${totalFiles}`);
         });
         await loadGroupData();
@@ -909,6 +1188,50 @@
       if (!isAdminUser()) return;
       document.getElementById('memberEmailInput').value = '';
       openModal('add-member');
+    });
+
+    document.getElementById('removeMemberBtn').addEventListener('click', () => {
+      if (!isAdminUser()) return;
+      const panel = document.getElementById('memberDropdownPanel');
+      const shouldOpen = panel.hidden;
+      if (shouldOpen) {
+        renderRemoveDropdownList();
+      }
+      setRemoveDropdownOpen(shouldOpen);
+    });
+
+    document.getElementById('removeSelectedMembersBtn').addEventListener('click', async () => {
+      const selected = Array.from(document.querySelectorAll('#memberDropdownList input[type="checkbox"]:checked'))
+        .map((input) => Number(input.value))
+        .filter((value) => Number.isFinite(value));
+
+      if (!selected.length) {
+        alert('Please select at least one user to remove.');
+        return;
+      }
+
+      const confirmRemove = window.confirm(`Remove ${selected.length} selected user(s) from this box?`);
+      if (!confirmRemove) {
+        return;
+      }
+
+      try {
+        for (const memberUserId of selected) {
+          await apiRequest(`/api/box/${boxId}/members/${memberUserId}`, { method: 'DELETE' });
+        }
+
+        setRemoveDropdownOpen(false);
+        await loadGroupData();
+      } catch (error) {
+        alert(error.message || 'Unable to remove selected users');
+      }
+    });
+
+    document.addEventListener('click', (event) => {
+      const dropdownWrap = document.getElementById('memberDropdownWrap');
+      if (!dropdownWrap) return;
+      if (dropdownWrap.contains(event.target)) return;
+      setRemoveDropdownOpen(false);
     });
 
     document.getElementById('membersStrip').addEventListener('click', async (event) => {
@@ -963,20 +1286,7 @@
           body: JSON.stringify({ email })
         });
 
-        const inviteLinks = Array.isArray(result.inviteLinks) ? result.inviteLinks : [];
-        if (inviteLinks.length) {
-          const shareText = inviteLinks
-            .map((entry) => `${entry.email}: ${entry.url}`)
-            .join('\n');
-
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(shareText).catch(() => {});
-          }
-
-          alert(`${result.message || 'Invite processed'}\n\nJoin link copied. Share this if email not received:\n${shareText}`);
-        } else if (result.message) {
-          alert(result.message);
-        }
+        alert(result.message || 'Invite processed. Invitation email queued.');
         closeModal();
         await loadGroupData();
       } catch (error) {
@@ -1029,6 +1339,7 @@
 
     window.addEventListener('load', async () => {
       boxId = getBoxIdFromQuery();
+      syncDeleteModeButtonLabel();
       if (!boxId) {
         alert('Box not selected. Redirecting to dashboard.');
         window.location.href = '/dashboard#dashboard';

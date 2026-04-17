@@ -467,7 +467,7 @@ const getBoxCapacityAndUsage = async (boxId) => {
         capacity,
         memberCount,
         pendingInviteCount,
-        reservedCount: memberCount + pendingInviteCount
+        reservedCount: memberCount
     };
 };
 
@@ -646,10 +646,6 @@ exports.getAllBoxes = async (req, res) => {
                         (SELECT COUNT(DISTINCT bm.user_id)
                          FROM box_members bm
                          WHERE bm.box_id = b.id)
-                        +
-                        (SELECT COUNT(DISTINCT bi.email)
-                         FROM box_invites bi
-                         WHERE bi.box_id = b.id AND bi.status = 'pending')
                     ) AS reservedCount,
                     CASE
                         WHEN b.user_id = ? THEN 'admin'
@@ -664,7 +660,19 @@ exports.getAllBoxes = async (req, res) => {
             [userId, userId]
         );
 
-        return res.json(results);
+        const normalizedResults = results.map((row) => {
+            const memberCount = Number(row.memberCount || 0);
+            const capacity = Number(row.capacity || 1);
+            const normalizedCapacity = Math.max(capacity, memberCount, 1);
+
+            return {
+                ...row,
+                capacity: normalizedCapacity,
+                configuredCapacity: capacity
+            };
+        });
+
+        return res.json(normalizedResults);
     } catch (err) {
         return res.status(500).json({ message: 'Error fetching boxes', details: err.message });
     }
@@ -720,6 +728,10 @@ exports.updateBox = async (req, res) => {
             const nextCapacity = Math.floor(Number(capacityValue));
             if (!Number.isFinite(nextCapacity) || nextCapacity < 1) {
                 return res.status(400).json({ message: 'Capacity must be at least 1' });
+            }
+
+            if (nextCapacity > 200) {
+                return res.status(400).json({ message: 'Capacity cannot exceed 200' });
             }
 
             const capacityState = await getBoxCapacityAndUsage(id);
@@ -812,7 +824,7 @@ exports.getMyBoxes = async (req, res) => {
             `SELECT b.*,
                     COUNT(DISTINCT bm_all.user_id) AS memberCount,
                     COUNT(DISTINCT CASE WHEN bi.status = 'pending' THEN bi.email END) AS pendingInviteCount,
-                    COUNT(DISTINCT bm_all.user_id) + COUNT(DISTINCT CASE WHEN bi.status = 'pending' THEN bi.email END) AS reservedCount,
+                    COUNT(DISTINCT bm_all.user_id) AS reservedCount,
                     CASE
                         WHEN b.user_id = ? THEN 'admin'
                         WHEN MAX(CASE WHEN bm_user.role = 'admin' THEN 1 ELSE 0 END) = 1 THEN 'admin'
@@ -827,9 +839,22 @@ exports.getMyBoxes = async (req, res) => {
             [userId, userId]
         );
 
+        const normalizedRows = rows.map((row) => {
+            const memberCount = Number(row.memberCount || 0);
+            const capacity = Number(row.capacity || 1);
+            const normalizedCapacity = Math.max(capacity, memberCount, 1);
+
+            return {
+                ...row,
+                capacity: normalizedCapacity,
+                configuredCapacity: capacity,
+                reservedCount: memberCount
+            };
+        });
+
         return res.json({
             success: true,
-            data: rows
+            data: normalizedRows
         });
     } catch (err) {
         return res.status(500).json({ message: 'DB error', error: err.message });

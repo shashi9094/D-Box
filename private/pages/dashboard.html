@@ -82,6 +82,8 @@ let boxes = [];
 let selectedBoxId = null;
 let selectedBoxRole = null;
 let reqUserId = null;
+const CAPACITY_MIN = 1;
+const CAPACITY_MAX = 200;
 
 async function apiRequest(url, options = {}) {
     const res = await fetch(url, {
@@ -135,6 +137,51 @@ function renderEmptyState(list) {
     list.appendChild(card);
 }
 
+function getCapacityCard(boxId) {
+    return document.querySelector(`.exist-box-card[data-id="${boxId}"]`);
+}
+
+async function editCapacity(boxId) {
+    const box = boxes.find((entry) => String(entry.id) === String(boxId));
+    if (!box) return;
+
+    const currentCapacity = Number(box.capacity || 1);
+    const reservedCount = Number(box.reservedCount || box.memberCount || 0);
+    const nextValue = window.prompt(`Set new capacity for ${box.title || 'this box'}`, String(currentCapacity));
+
+    if (nextValue === null) {
+        return;
+    }
+
+    const parsed = Math.floor(Number(String(nextValue).trim()));
+    if (!Number.isFinite(parsed) || parsed < 1) {
+        alert('Please enter a valid capacity of at least 1');
+        return;
+    }
+
+    if (parsed < reservedCount) {
+        alert(`Capacity cannot be lower than current members (${reservedCount})`);
+        return;
+    }
+
+    if (parsed > 200) {
+        alert('Capacity cannot exceed 200');
+        return;
+    }
+
+    if (parsed === currentCapacity) {
+        return;
+    }
+
+    await apiRequest(`/api/box/update/${boxId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ capacity: parsed })
+    });
+
+    await loadBoxes();
+}
+
 async function render() {
     const list = document.querySelector('.box-list');
     list.innerHTML = '';
@@ -163,27 +210,39 @@ async function render() {
         content.className = 'box-content';
         content.innerHTML = `<p class="box-description">${box.description || ''}</p>`;
 
+        const metaActions = document.createElement('div');
+        metaActions.className = 'box-meta-actions';
+
+        const usedCount = Number(box.reservedCount || box.memberCount || 0);
+        const capacityValue = Number(box.capacity || 1);
+        const minCapacity = Math.max(usedCount, 1);
+        const canEditCapacity = String(box.role || '').toLowerCase() === 'admin';
+
         const capacityRow = document.createElement('div');
         capacityRow.className = 'item-line capacity-line';
-        capacityRow.innerHTML = `<strong>Capacity:</strong> ${Number(box.reservedCount || box.memberCount || 0)}/${Number(box.capacity || 1)} members used`;
-        content.appendChild(capacityRow);
+        capacityRow.dataset.capacityRow = box.id;
+        capacityRow.innerHTML = `
+            <div class="capacity-line-main">
+                <strong>Capacity:</strong>
+                <span class="capacity-pill" data-capacity-pill="${box.id}">${usedCount}/${capacityValue}</span>
+            </div>
+            ${canEditCapacity ? `<button type="button" class="capacity-edit-btn" data-action="edit-capacity" data-id="${box.id}" aria-label="Edit capacity" title="Edit capacity"><i class="fa-solid fa-pen"></i></button>` : ''}
+        `;
+        metaActions.appendChild(capacityRow);
+
+        if (box.role === 'admin') {
+            const memberActionRow = document.createElement('div');
+            memberActionRow.className = 'item-line member-action-line';
+            memberActionRow.innerHTML = `
+                <button class="action-chip" data-action="add-member" data-id="${box.id}"><i class="fa-solid fa-user-plus"></i> Add User by Email</button>
+            `;
+            metaActions.appendChild(memberActionRow);
+        }
+
+        content.appendChild(metaActions);
 
         if (box.id === selectedBoxId) {
-            const [members, contents] = await Promise.all([loadMembers(box.id), loadContents(box.id)]);
-
-            const membersBlock = document.createElement('div');
-            membersBlock.className = 'item-line members-line';
-            membersBlock.innerHTML = `<strong>Members:</strong> ${members.map((m) => `${m.email} (${m.role})`).join(', ') || 'No members'}`;
-            content.appendChild(membersBlock);
-
-            if (box.role === 'admin') {
-                const adminTools = document.createElement('div');
-                adminTools.className = 'item-line admin-tools';
-                adminTools.innerHTML = `
-                    <button class="action-chip" data-action="add-member" data-id="${box.id}"><i class="fa-solid fa-user-plus"></i> Add User by Email</button>
-                `;
-                content.appendChild(adminTools);
-            }
+            const contents = await loadContents(box.id);
 
             if (!contents.length) {
                 const row = document.createElement('div');
@@ -299,6 +358,10 @@ document.querySelector('.box-list').addEventListener('click', async (event) => {
     const button = event.target.closest('button[data-action]');
 
     if (!button) {
+        if (event.target.closest('input, textarea, select, label, button, a')) {
+            return;
+        }
+
         const card = event.target.closest('.exist-box-card[data-id]');
         if (!card) return;
 
@@ -313,6 +376,11 @@ document.querySelector('.box-list').addEventListener('click', async (event) => {
     const boxId = Number(id);
 
     try {
+        if (action === 'edit-capacity') {
+            await editCapacity(boxId);
+            return;
+        }
+
         if (action === 'delete') {
             await deleteBox(boxId);
             return;

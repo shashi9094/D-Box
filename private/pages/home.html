@@ -210,12 +210,6 @@
         </label>
       </div>
 
-      <div class="profile-capacity-section" id="settingsCapacitySection" hidden>
-        <h4>Box Capacity</h4>
-        <div id="settingsCapacityList"></div>
-        <p class="modal-help-text">Set the maximum members for each box you own. It cannot be lower than current members.</p>
-      </div>
-
       <button type="button" class="modal-submit-btn" id="saveSettingsBtn">Save settings</button>
       <p class="modal-error" id="settingsModalMessage"></p>
     </div>
@@ -745,82 +739,6 @@
       }
     }
 
-    async function loadCapacitySettings() {
-      const messageEl = document.getElementById('settingsModalMessage');
-      const capacitySection = document.getElementById('settingsCapacitySection');
-      const capacityList = document.getElementById('settingsCapacityList');
-
-      if (!messageEl || !capacitySection || !capacityList) {
-        return;
-      }
-
-      messageEl.textContent = '';
-      capacityList.innerHTML = '';
-
-      try {
-        const boxesRes = await fetch('/api/box/my-boxes', {
-          credentials: 'same-origin',
-          cache: 'no-store'
-        });
-        const boxesData = await boxesRes.json().catch(() => ({}));
-        const ownedBoxes = Array.isArray(boxesData.data)
-          ? boxesData.data.filter((box) => String(box.role || '').toLowerCase() === 'admin')
-          : [];
-
-        capacitySection.hidden = !ownedBoxes.length;
-
-        ownedBoxes.forEach((box) => {
-          const row = document.createElement('div');
-          row.className = 'profile-capacity-row';
-          row.innerHTML = `
-            <div class="profile-capacity-meta">
-              <strong>${box.title}</strong>
-              <span>${Number(box.reservedCount || box.memberCount || 0)} member(s) / capacity ${Number(box.capacity || 1)}</span>
-            </div>
-            <div class="profile-capacity-controls">
-              <input type="number" min="${Math.max(Number(box.reservedCount || box.memberCount || 1), 1)}" max="200" value="${Number(box.capacity || 1)}" data-settings-capacity-input="${box.id}">
-              <button type="button" class="modal-submit-btn" data-settings-capacity-save="${box.id}">Save</button>
-            </div>
-          `;
-          capacityList.appendChild(row);
-        });
-
-        capacityList.querySelectorAll('[data-settings-capacity-save]').forEach((button) => {
-          button.addEventListener('click', async () => {
-            const boxId = button.getAttribute('data-settings-capacity-save');
-            const input = capacityList.querySelector(`[data-settings-capacity-input="${boxId}"]`);
-            const nextCapacity = Number(input?.value);
-
-            if (!Number.isFinite(nextCapacity) || nextCapacity < 1) {
-              messageEl.textContent = 'Please enter a valid capacity';
-              return;
-            }
-
-            try {
-              const res = await fetch(`/api/box/update/${boxId}`, {
-                method: 'PUT',
-                credentials: 'same-origin',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ capacity: nextCapacity })
-              });
-
-              const data = await res.json().catch(() => ({}));
-              if (!res.ok) {
-                throw new Error(data.message || 'Unable to update capacity');
-              }
-
-              messageEl.textContent = data.message || 'Capacity updated';
-              await loadCapacitySettings();
-            } catch (error) {
-              messageEl.textContent = error.message || 'Capacity update failed';
-            }
-          });
-        });
-      } catch (error) {
-        messageEl.textContent = error.message || 'Unable to load box capacities';
-      }
-    }
-
     async function logoutCurrent() {
       try {
         await fetch('/api/auth/logout', {
@@ -938,7 +856,6 @@
         } catch (_) {
           googleSelect.innerHTML = '<option value="unknown">Unknown</option>';
         }
-        await loadCapacitySettings();
         openModal('settingsModal');
       };
 
