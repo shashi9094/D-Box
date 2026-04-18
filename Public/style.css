@@ -905,7 +905,7 @@ body.dashboard-page {
 
 .home-body.theme-light .settings-grid select option {
   background: #ffffff;
-  color: #1a2942;
+  color: #1f2d45;
 }
 
 .home-body.theme-neon {
@@ -1548,7 +1548,7 @@ textarea:focus {
   border: 1px solid rgba(154, 179, 255, 0.24);
   backdrop-filter: blur(10px);
   box-shadow: 0 14px 35px rgba(4, 8, 22, 0.58);
-  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.18s cubic-bezier(.4,2,.6,1.2), background 0.18s cubic-bezier(.4,2,.6,1.2), backdrop-filter 0.18s cubic-bezier(.4,2,.6,1.2);
   cursor: pointer;
   width: 100%;
   position: relative;
@@ -1560,7 +1560,10 @@ textarea:focus {
   border-color: rgba(85, 217, 255, 0.75);
   outline: 1px solid rgba(85, 217, 255, 0.55);
   outline-offset: 2px;
-  box-shadow: 0 20px 48px rgba(2, 16, 36, 0.72), 0 0 0 1px rgba(85, 217, 255, 0.18);
+  box-shadow: 0 24px 64px 0 rgba(2,16,36,0.72), 0 0 0 2px rgba(85,217,255,0.18), 0 8px 32px 0 rgba(123,47,247,0.18);
+  background: rgba(30, 34, 54, 0.72);
+  backdrop-filter: blur(8px);
+  transform: scale(1.03);
 }
 
 .box-header {
