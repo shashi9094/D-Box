@@ -1565,9 +1565,21 @@ textarea:focus {
 
 .box-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: 18px;
+}
+
+.box-title {
+  flex: 0 0 auto;
+}
+
+.box-admin-email {
+  flex: 1;
+  text-align: center;
+}
+
+.actions {
+  flex: 0 0 auto;
 }
 
 .box-title {
@@ -1589,6 +1601,22 @@ textarea:focus {
   border-radius: 999px;
   padding: 4px 10px;
   margin-left: 8px;
+}
+
+.box-admin-email {
+  text-align: center;
+  font-size: 0.9rem;
+  color: #a8c5ff;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.exist-box-card:hover .box-admin-email {
+  opacity: 1;
+  transform: scale(1.02);
 }
 
 .box-description {

@@ -822,6 +822,8 @@ exports.getMyBoxes = async (req, res) => {
 
         const [rows] = await sql.query(
             `SELECT b.*,
+                    u.email AS adminEmail,
+                    u.fullName AS adminName,
                     COUNT(DISTINCT bm_all.user_id) AS memberCount,
                     COUNT(DISTINCT CASE WHEN bi.status = 'pending' THEN bi.email END) AS pendingInviteCount,
                     COUNT(DISTINCT bm_all.user_id) AS reservedCount,
@@ -834,6 +836,7 @@ exports.getMyBoxes = async (req, res) => {
              JOIN box_members bm_user ON bm_user.box_id = b.id AND bm_user.user_id = ?
              LEFT JOIN box_members bm_all ON bm_all.box_id = b.id
              LEFT JOIN box_invites bi ON bi.box_id = b.id
+             LEFT JOIN users u ON u.id = b.user_id
              GROUP BY b.id
              ORDER BY b.id DESC`,
             [userId, userId]

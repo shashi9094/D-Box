@@ -200,6 +200,7 @@ async function render() {
         header.className = 'box-header';
         header.innerHTML = `
             <span class="box-title">${box.title} <span class="role-pill">${box.role}</span></span>
+            ${box.adminEmail ? `<div class="box-admin-email">${box.adminEmail}</div>` : ''}
             <div class="actions">
                 ${box.role === 'admin' ? `<button class="action-btn danger" data-action="delete" data-id="${box.id}"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
             </div>
