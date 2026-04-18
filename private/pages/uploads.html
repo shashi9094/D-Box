@@ -256,6 +256,8 @@
         `;
         strip.appendChild(chip);
       });
+
+      updateStickyHeaderHeight();
     }
 
     function getTypeLabel(item) {
@@ -282,6 +284,15 @@
 
     function nextPaint() {
       return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+    }
+
+    function updateStickyHeaderHeight() {
+      const layout = document.querySelector('.uploads-page-layout');
+      const header = document.getElementById('groupHeaderCard');
+      if (!layout || !header) return;
+
+      const headerHeight = Math.ceil(header.getBoundingClientRect().height || header.offsetHeight || 0);
+      layout.style.setProperty('--uploads-header-height', `${Math.max(headerHeight, 0)}px`);
     }
 
     function buildChildFolderPath(folderName) {
@@ -585,6 +596,8 @@
 
         grid.appendChild(card);
       });
+
+      updateStickyHeaderHeight();
     }
 
     function closeActiveMenu() {
@@ -666,6 +679,7 @@
 
       syncDeleteModeButtonLabel();
       syncDeleteSelectedButton();
+      updateStickyHeaderHeight();
     }
 
     function closeModal() {
@@ -1346,9 +1360,18 @@
         return;
       }
 
+      const header = document.getElementById('groupHeaderCard');
+      if (header && typeof ResizeObserver !== 'undefined') {
+        const stickyHeaderObserver = new ResizeObserver(() => updateStickyHeaderHeight());
+        stickyHeaderObserver.observe(header);
+      }
+
+      window.addEventListener('resize', updateStickyHeaderHeight, { passive: true });
+
       try {
         await loadSessionUser();
         await loadGroupData();
+        updateStickyHeaderHeight();
       } catch (error) {
         alert(error.message || 'Unable to open this group uploads');
         window.location.href = '/dashboard#dashboard';
