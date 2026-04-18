@@ -167,7 +167,7 @@ const allowedDocumentMimeTypes = new Set([
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 ]);
 
-const allowedExtensions = new Set(['.pdf', '.doc', '.docx', '.mp4', '.webm', '.mov', '.mkv']);
+const allowedExtensions = new Set(['.pdf', '.doc', '.docx', '.mp4', '.webm', '.mov', '.mkv', '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg']);
 
 const isAllowedUpload = (file) => {
     if (!file) return false;
@@ -176,6 +176,7 @@ const isAllowedUpload = (file) => {
     const extension = path.extname(String(file.originalname || '')).toLowerCase();
 
     if (mime.startsWith('video/')) return true;
+    if (mime.startsWith('image/')) return true;
     if (allowedDocumentMimeTypes.has(mime)) return true;
     if (allowedExtensions.has(extension)) return true;
 
@@ -190,7 +191,7 @@ const upload = multer({
             return cb(null, true);
         }
 
-        return cb(new Error('Only PDF, DOC, DOCX, and video files are allowed'));
+        return cb(new Error('Only PDF, DOC, DOCX, image, and video files are allowed'));
     }
 });
 

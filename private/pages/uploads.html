@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
   <script src="/scripts/auth-guard.js" defer></script>
   <script src="/scripts/back-nav.js" defer></script>
+  <script src="/private/scripts/uploads-view.js" defer></script>
 </head>
 <body class="dashboard-page">
   <div class="main-layout uploads-page-layout">
@@ -92,7 +93,7 @@
     <button type="button" id="deleteSelectModeBtn" data-action="select-delete"><i class="fa-solid fa-check-double"></i> Select to delete</button>
   </div>
 
-  <input id="fileInput" type="file" accept=".pdf,.doc,.docx,video/*" multiple hidden />
+  <input id="fileInput" type="file" accept=".pdf,.doc,.docx,image/*,video/*" multiple hidden />
   <input id="folderInput" type="file" webkitdirectory directory multiple hidden />
 
   <div class="dashboard-modal" id="uploadsModal" aria-hidden="true">

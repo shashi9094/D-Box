@@ -72,7 +72,8 @@
             Ask admin a question
           </button>
 
-          <form id="askAdminForm" class="notification-ask-form" hidden>
+          <form id="askAdminForm" class="notification-ask-form" hidden style="position: relative;">
+            <button type="button" id="closeAskAdminFormBtn" aria-label="Close" style="position: absolute; top: 8px; right: 8px; background: none; border: none; font-size: 1.3em; color: #aaa; cursor: pointer; z-index: 2;">&times;</button>
             <label for="askAdminBoxSelect">Select course/box</label>
             <div class="select-wrapper">
               <select id="askAdminBoxSelect" required>
@@ -913,11 +914,9 @@
 
       askAdminToggleBtn?.addEventListener('click', () => {
         if (!askAdminForm) return;
-
         const willOpen = askAdminForm.hidden;
         askAdminForm.hidden = !askAdminForm.hidden;
-        askAdminToggleBtn.textContent = willOpen ? 'Hide question form' : 'Ask admin a question';
-
+        askAdminToggleBtn.style.display = willOpen ? 'none' : '';
         if (willOpen) {
           document.getElementById('askAdminInput')?.focus();
         }
@@ -926,6 +925,14 @@
       askAdminForm?.addEventListener('submit', async (event) => {
         event.preventDefault();
         await sendQuestionToAdmins();
+        askAdminToggleBtn.style.display = '';
+      });
+
+      // Close (cut) button for ask admin form
+      const closeAskAdminFormBtn = document.getElementById('closeAskAdminFormBtn');
+      closeAskAdminFormBtn?.addEventListener('click', () => {
+        askAdminForm.hidden = true;
+        askAdminToggleBtn.style.display = '';
       });
 
       document.getElementById('openProfileAction')?.addEventListener('click', openProfileModal);
