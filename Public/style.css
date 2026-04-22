@@ -1,3 +1,36 @@
+/* Co-admin icon and tooltip */
+.coadmin-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 10px;
+  cursor: pointer;
+  color: #7be0ff;
+  font-size: 1.1em;
+  border-radius: 50%;
+  padding: 4px;
+  transition: background 0.2s, color 0.2s;
+  position: relative;
+}
+.coadmin-icon:hover {
+  background: #1a2a3a;
+  color: #fff;
+}
+.coadmin-icon[title]:hover:after {
+  content: attr(title);
+  position: absolute;
+  left: 50%;
+  top: 120%;
+  transform: translateX(-50%);
+  background: #222e3a;
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.85em;
+  white-space: nowrap;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+}
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
 
 body {
@@ -2879,6 +2912,10 @@ body{
   cursor: pointer;
 }
 
+.upload-select-toggle[hidden] {
+  display: none !important;
+}
+
 .upload-select-toggle input {
   position: absolute;
   opacity: 0;
@@ -2932,6 +2969,12 @@ body{
   transform: translateY(-8px) scale(1.01);
   border-color: rgba(110, 231, 255, 0.72);
   box-shadow: 0 22px 38px rgba(5, 12, 32, 0.58), 0 0 0 1px rgba(123, 211, 255, 0.16) inset;
+}
+
+.upload-item-card.is-selected {
+  border-color: rgba(110, 231, 255, 0.9);
+  background: linear-gradient(160deg, rgba(18, 34, 66, 0.96), rgba(10, 18, 42, 0.98));
+  box-shadow: 0 20px 34px rgba(4, 12, 30, 0.56), 0 0 0 1px rgba(110, 231, 255, 0.2) inset;
 }
 
 .upload-item-card-uploading {

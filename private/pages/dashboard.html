@@ -198,8 +198,31 @@ async function render() {
 
         const header = document.createElement('div');
         header.className = 'box-header';
+        // Show roles as (admin) | (Main admin) in one line after the name
+        let roleLine = '';
+        if (box.role) {
+            roleLine += `(admin)`;
+        }
+        if (box.isMainAdmin) {
+            if (roleLine) roleLine += ' | ';
+            roleLine += `(Main admin)`;
+        }
+        // Co-admin icon logic (main admin can promote/demote, co-admins can't)
+        let coAdminIcon = '';
+        // Assume reqUserId is main admin if box.isMainAdmin && box.user_id === reqUserId
+        // You may need to adjust this logic based on your backend data structure
+        const isMainAdmin = box.isMainAdmin && box.user_id === reqUserId;
+        const isSelf = box.user_id === reqUserId;
+        if (isMainAdmin && !isSelf) {
+            if (box.isCoAdmin) {
+                coAdminIcon = `<span class="coadmin-icon" data-action="remove-coadmin" data-id="${box.id}" title="Remove co admin"><i class="fa-solid fa-user-shield"></i></span>`;
+            } else {
+                coAdminIcon = `<span class="coadmin-icon" data-action="make-coadmin" data-id="${box.id}" title="Add co admin"><i class="fa-regular fa-user-plus"></i></span>`;
+            }
+        }
         header.innerHTML = `
-            <span class="box-title">${box.title} <span class="role-pill">${box.role}</span></span>
+            <span class="box-title">${box.title} <span class="role-pill">${roleLine}</span></span>
+            ${coAdminIcon}
             ${box.adminEmail ? `<div class="box-admin-email">${box.adminEmail}</div>` : ''}
             <div class="actions">
                 ${box.role === 'admin' ? `<button class="action-btn danger" data-action="delete" data-id="${box.id}"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
@@ -262,6 +285,25 @@ async function render() {
 
         card.appendChild(content);
         list.appendChild(card);
+
+        // Add event listeners for co-admin icon
+        if (coAdminIcon) {
+            const icon = header.querySelector('.coadmin-icon');
+            if (icon) {
+                icon.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    if (icon.dataset.action === 'make-coadmin') {
+                        // Call API to make co-admin
+                        await apiRequest(`/api/box/${box.id}/make-coadmin`, { method: 'POST' });
+                        await loadBoxes();
+                    } else if (icon.dataset.action === 'remove-coadmin') {
+                        // Call API to remove co-admin
+                        await apiRequest(`/api/box/${box.id}/remove-coadmin`, { method: 'POST' });
+                        await loadBoxes();
+                    }
+                });
+            }
+        }
     }
 }
 

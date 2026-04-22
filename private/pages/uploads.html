@@ -8,7 +8,6 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
   <script src="/scripts/auth-guard.js" defer></script>
   <script src="/scripts/back-nav.js" defer></script>
-  <script src="/private/scripts/uploads-view.js" defer></script>
 </head>
 <body class="dashboard-page">
   <div class="main-layout uploads-page-layout">
@@ -158,7 +157,14 @@
     let uploadingItems = [];
     let selectedUploadIds = new Set();
     let isDeleteSelectMode = false;
+    let visibleDeleteTargetCount = 0;
     const MAX_UPLOAD_FILES_PER_BATCH = 25;
+    const DELETE_MODE_DOUBLE_TAP_MS = 320;
+    let deleteModeTapState = {
+      contentId: '',
+      timestamp: 0,
+      wasSelected: false
+    };
 
     function isAdminUser() {
       return myRole === 'admin';
@@ -261,11 +267,8 @@
       updateStickyHeaderHeight();
     }
 
-    function getTypeLabel(item) {
-      if (item.is_virtual_folder) return 'FOLDER';
-      if (item.content_type === 'note') return 'NOTE';
-      if (item.content_type === 'video') return 'VIDEO';
-      return 'FILE';
+    function getTypeLabel(item, extension = '') {
+      return getFileBadge(item, extension);
     }
 
     function normalizeFolderPath(value) {
@@ -323,32 +326,47 @@
       backBtn.setAttribute('title', `Back to ${parentPath || '/'}`);
     }
 
+    let batchStatusTimeout = null;
     function setBatchStatus(message = '', isError = false) {
       const statusEl = document.getElementById('uploadsBatchStatus');
-      if (!statusEl) {
-        return;
-      }
-
+      if (!statusEl) return;
       const safeMessage = String(message || '').trim();
       if (!safeMessage) {
         statusEl.hidden = true;
         statusEl.classList.remove('is-error');
         statusEl.textContent = '';
+        if (batchStatusTimeout) clearTimeout(batchStatusTimeout);
         return;
       }
-
       statusEl.textContent = safeMessage;
       statusEl.hidden = false;
       statusEl.classList.toggle('is-error', Boolean(isError));
+      if (batchStatusTimeout) clearTimeout(batchStatusTimeout);
+      batchStatusTimeout = setTimeout(() => {
+        statusEl.hidden = true;
+        statusEl.textContent = '';
+        statusEl.classList.remove('is-error');
+      }, 3000);
     }
 
     function syncDeleteModeButtonLabel() {
       const modeBtn = document.getElementById('deleteSelectModeBtn');
       if (!modeBtn) return;
-
-      modeBtn.innerHTML = isDeleteSelectMode
-        ? '<i class="fa-solid fa-xmark"></i> Cancel delete selection'
-        : '<i class="fa-solid fa-check-double"></i> Select to delete';
+      const shouldShow = isAdminUser() && visibleDeleteTargetCount > 0;
+      modeBtn.hidden = !shouldShow;
+      if (!shouldShow) {
+        modeBtn.innerHTML = '<i class="fa-solid fa-check-double"></i> Select to delete';
+        return;
+      }
+      // If any file is selected, keep ON
+      if (selectedUploadIds.size > 0) {
+        modeBtn.innerHTML = '<i class="fa-solid fa-xmark"></i> Cancel delete selection';
+        isDeleteSelectMode = true;
+      } else {
+        modeBtn.innerHTML = isDeleteSelectMode
+          ? '<i class="fa-solid fa-xmark"></i> Cancel delete selection'
+          : '<i class="fa-solid fa-check-double"></i> Select to delete';
+      }
     }
 
     function syncDeleteModeIndicator() {
@@ -373,6 +391,127 @@
       deleteBtn.hidden = !isAdminUser() || !isDeleteSelectMode;
       deleteBtn.disabled = selectedCount === 0;
       syncDeleteModeIndicator();
+    }
+
+    function syncDeleteModeDom() {
+      const shouldShowToggles = isAdminUser() && isDeleteSelectMode;
+
+      document.querySelectorAll('#uploadsGrid .upload-item-card[data-content-id]').forEach((card) => {
+        const contentId = String(card.dataset.contentId || '').trim();
+        const isSelected = Boolean(contentId) && selectedUploadIds.has(contentId);
+        const selectToggle = card.querySelector('.upload-select-toggle');
+        const selectInput = selectToggle?.querySelector('input[data-select-upload]');
+
+        card.classList.toggle('is-selected', isSelected);
+
+        if (selectToggle) {
+          selectToggle.hidden = !shouldShowToggles;
+          selectToggle.setAttribute('aria-hidden', String(!shouldShowToggles));
+          selectToggle.style.display = shouldShowToggles ? '' : 'none';
+        }
+
+        if (selectInput) {
+          selectInput.checked = isSelected;
+          selectInput.tabIndex = shouldShowToggles ? 0 : -1;
+        }
+      });
+    }
+
+    function syncDeleteModeAvailability(visibleCount = visibleDeleteTargetCount) {
+      visibleDeleteTargetCount = Math.max(Number(visibleCount) || 0, 0);
+
+      if (!isAdminUser() || visibleDeleteTargetCount === 0) {
+        selectedUploadIds = new Set();
+        isDeleteSelectMode = false;
+        resetDeleteModeTapState();
+      }
+
+      syncDeleteModeButtonLabel();
+      syncDeleteSelectedButton();
+      syncDeleteModeDom();
+    }
+
+    function resetDeleteModeTapState() {
+      deleteModeTapState = {
+        contentId: '',
+        timestamp: 0,
+        wasSelected: false
+      };
+    }
+
+    function syncDeleteSelectionState({ rerender = false } = {}) {
+      if (selectedUploadIds.size === 0) {
+        isDeleteSelectMode = false;
+        resetDeleteModeTapState();
+      } else {
+        isDeleteSelectMode = true;
+      }
+
+      syncDeleteModeAvailability();
+
+      if (rerender) {
+        renderContents();
+      }
+    }
+
+    function setUploadSelectionState(contentId, shouldSelect, { rerender = false } = {}) {
+      const safeContentId = String(contentId || '').trim();
+      if (!safeContentId) {
+        return false;
+      }
+
+      if (shouldSelect) {
+        selectedUploadIds.add(safeContentId);
+      } else {
+        selectedUploadIds.delete(safeContentId);
+      }
+
+      syncDeleteSelectionState({ rerender });
+      return selectedUploadIds.has(safeContentId);
+    }
+
+    function toggleUploadSelectionState(contentId, options = {}) {
+      const safeContentId = String(contentId || '').trim();
+      if (!safeContentId) {
+        return false;
+      }
+
+      const nextSelected = !selectedUploadIds.has(safeContentId);
+      setUploadSelectionState(safeContentId, nextSelected, options);
+      return nextSelected;
+    }
+
+    function handleDeleteModeCardTap(event, contentId, openItem) {
+      if (!isAdminUser() || !isDeleteSelectMode) {
+        return false;
+      }
+
+      const safeContentId = String(contentId || '').trim();
+      if (!safeContentId) {
+        return false;
+      }
+
+      const now = Date.now();
+      const isSameCard = deleteModeTapState.contentId === safeContentId;
+      const isQuickSecondTap = isSameCard && (now - deleteModeTapState.timestamp) <= DELETE_MODE_DOUBLE_TAP_MS;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (isQuickSecondTap && typeof openItem === 'function') {
+        setUploadSelectionState(safeContentId, deleteModeTapState.wasSelected);
+        resetDeleteModeTapState();
+        openItem();
+        return true;
+      }
+
+      deleteModeTapState = {
+        contentId: safeContentId,
+        timestamp: now,
+        wasSelected: selectedUploadIds.has(safeContentId)
+      };
+      toggleUploadSelectionState(safeContentId);
+      return true;
     }
 
     function getFileExtension(name) {
@@ -458,7 +597,7 @@
           selectedUploadIds.delete(String(id));
         }
       });
-      syncDeleteSelectedButton();
+      syncDeleteModeAvailability(visibleItems.length);
 
       const visibleUploads = uploadingItems.filter((item) => item.folderPath === currentFolderPath);
 
@@ -510,9 +649,13 @@
         const safeImportantNote = escapeHtml(getImportantNoteText(item));
         const isSelected = selectedUploadIds.has(String(item.id));
 
-        const selectMarkup = canManage && isDeleteSelectMode
+        if (isSelected) {
+          card.classList.add('is-selected');
+        }
+
+        const selectMarkup = canManage
           ? `
-            <label class="upload-select-toggle" aria-label="Select ${safeName} for delete">
+            <label class="upload-select-toggle" aria-label="Select ${safeName} for delete" ${isDeleteSelectMode ? '' : 'hidden'} aria-hidden="${String(!isDeleteSelectMode)}">
               <input type="checkbox" data-select-upload="${item.id}" ${isSelected ? 'checked' : ''} />
               <span></span>
             </label>
@@ -534,39 +677,60 @@
           `
           : '';
 
+        let openItem = null;
+        let openRole = '';
+        let openLabel = '';
+
         if (isFolder) {
-          card.classList.add('is-openable');
-          card.tabIndex = 0;
-          card.setAttribute('role', 'button');
-          card.setAttribute('aria-label', `Open folder ${name}`);
-          const openFolder = () => {
+          openItem = () => {
             currentFolderPath = buildChildFolderPath(name);
             renderContents();
           };
-          card.addEventListener('click', (event) => {
-            if (event.target.closest('.upload-card-actions') || event.target.closest('.upload-select-toggle')) return;
-            openFolder();
-          });
-          card.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              openFolder();
-            }
-          });
+          openRole = 'button';
+          openLabel = `Open folder ${name}`;
         } else if (isOpenable) {
+          openItem = () => {
+            window.open(safePath, '_blank', 'noopener');
+          };
+          openRole = 'link';
+          openLabel = `Open ${name}`;
+        }
+
+        if (openItem) {
           card.classList.add('is-openable');
           card.tabIndex = 0;
-          card.setAttribute('role', 'link');
-          card.setAttribute('aria-label', `Open ${name}`);
+          card.setAttribute('role', openRole);
+          card.setAttribute('aria-label', openLabel);
+        }
+
+        if (canManage || openItem) {
           card.addEventListener('click', (event) => {
             if (event.target.closest('.upload-card-actions') || event.target.closest('.upload-select-toggle')) return;
-            window.open(safePath, '_blank', 'noopener');
-          });
-          card.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              window.open(safePath, '_blank', 'noopener');
+            if (handleDeleteModeCardTap(event, item.id, openItem)) return;
+            if (openItem) {
+              openItem();
             }
+          });
+        }
+
+        if (openItem) {
+          card.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') {
+              return;
+            }
+
+            if (isDeleteSelectMode && canManage) {
+              event.preventDefault();
+              if (event.key === 'Enter') {
+                openItem();
+              } else {
+                toggleUploadSelectionState(item.id);
+              }
+              return;
+            }
+
+            event.preventDefault();
+            openItem();
           });
         }
 
@@ -584,7 +748,7 @@
           </div>
           <div class="upload-item-body">
             <div class="upload-item-head">
-              <span class="upload-type-pill">${getTypeLabel(item)}</span>
+              <span class="upload-type-pill">${getTypeLabel(item, extension)}</span>
             </div>
             <h3 title="${safeName}">${safeName}</h3>
             <p class="upload-meta">By ${safeUploadedBy}</p>
@@ -598,6 +762,7 @@
         grid.appendChild(card);
       });
 
+      syncDeleteModeDom();
       updateStickyHeaderHeight();
     }
 
@@ -674,12 +839,13 @@
 
       if (!isVisible) {
         menu.hidden = true;
+        visibleDeleteTargetCount = 0;
         selectedUploadIds = new Set();
         isDeleteSelectMode = false;
+        resetDeleteModeTapState();
       }
 
-      syncDeleteModeButtonLabel();
-      syncDeleteSelectedButton();
+      syncDeleteModeAvailability();
       updateStickyHeaderHeight();
     }
 
@@ -931,34 +1097,36 @@
         document.getElementById('fabMenu').hidden = true;
         return;
       }
-
       const actionButton = event.target.closest('button[data-action]');
       if (!actionButton) return;
-
       const action = actionButton.dataset.action;
       document.getElementById('fabMenu').hidden = true;
-
       if (action === 'file-upload') {
         document.getElementById('fileInput').click();
       }
-
       if (action === 'folder-upload') {
         document.getElementById('folderInput').click();
       }
-
       if (action === 'new-folder') {
         document.getElementById('folderNameInput').value = '';
         openModal('new-folder');
       }
-
       if (action === 'select-delete') {
-        isDeleteSelectMode = !isDeleteSelectMode;
+        if (visibleDeleteTargetCount === 0) {
+          syncDeleteModeAvailability();
+          return;
+        }
+        // Only one selection mode ON at a time
+        if (isDeleteSelectMode && selectedUploadIds.size === 0) {
+          isDeleteSelectMode = false;
+        } else {
+          isDeleteSelectMode = true;
+        }
         if (!isDeleteSelectMode) {
           selectedUploadIds = new Set();
         }
-        syncDeleteModeButtonLabel();
-        syncDeleteSelectedButton();
-        renderContents();
+        resetDeleteModeTapState();
+        syncDeleteModeAvailability();
       }
     });
 
@@ -1025,19 +1193,13 @@
       if (!selectInput) {
         return;
       }
-
       const contentId = String(selectInput.dataset.selectUpload || '').trim();
       if (!contentId) {
         return;
       }
-
-      if (selectInput.checked) {
-        selectedUploadIds.add(contentId);
-      } else {
-        selectedUploadIds.delete(contentId);
-      }
-
-      syncDeleteSelectedButton();
+      resetDeleteModeTapState();
+      setUploadSelectionState(contentId, selectInput.checked);
+      selectInput.closest('.upload-item-card')?.classList.toggle('is-selected', selectInput.checked);
     });
 
     document.getElementById('deleteSelectedUploadsBtn').addEventListener('click', async () => {
@@ -1069,7 +1231,9 @@
       }
 
       selectedUploadIds = new Set();
-      syncDeleteSelectedButton();
+      isDeleteSelectMode = false;
+      resetDeleteModeTapState();
+      syncDeleteModeAvailability();
       await loadGroupData();
 
       if (failedDeletes.length) {
