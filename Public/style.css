@@ -2644,6 +2644,7 @@ body{
 }
 
 .member-chip-action {
+  position: relative;
   width: 34px;
   height: 34px;
   border-radius: 10px;
@@ -2680,6 +2681,32 @@ body{
 .member-chip-action.promote:hover {
   border-color: rgba(34, 197, 94, 0.65);
   background: rgba(10, 40, 25, 0.96);
+}
+
+.member-chip-action.demote {
+  color: #ffd2d2;
+  border-color: rgba(248, 113, 113, 0.3);
+}
+
+.member-chip-action.demote:hover {
+  border-color: rgba(248, 113, 113, 0.7);
+  background: rgba(55, 14, 22, 0.96);
+}
+
+.member-chip-action[data-tooltip]:hover::after,
+.member-chip-action[data-tooltip]:focus-visible::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  background: rgba(23, 180, 249, 0.95);
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  z-index: 3000;
+  box-shadow: 0 10px 24px rgba(4, 8, 22, 0.35);
 }
 
 .uploads-admin-tools {

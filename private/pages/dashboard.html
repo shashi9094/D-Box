@@ -198,15 +198,15 @@ async function render() {
 
         const header = document.createElement('div');
         header.className = 'box-header';
-        // Show roles as (admin) | (Main admin) in one line after the name
-        let roleLine = '';
-        if (box.role) {
-            roleLine += `(admin)`;
+        // Show role badges without brackets and only when the role truly applies.
+        const roleLabels = [];
+        if (String(box.role || '').toLowerCase() === 'admin') {
+            roleLabels.push('admin');
         }
         if (box.isMainAdmin) {
-            if (roleLine) roleLine += ' | ';
-            roleLine += `(Main admin)`;
+            roleLabels.push('main admin');
         }
+        const roleLine = roleLabels.join(' | ');
         // Co-admin icon logic (main admin can promote/demote, co-admins can't)
         let coAdminIcon = '';
         // Assume reqUserId is main admin if box.isMainAdmin && box.user_id === reqUserId
@@ -221,7 +221,7 @@ async function render() {
             }
         }
         header.innerHTML = `
-            <span class="box-title">${box.title} <span class="role-pill">${roleLine}</span></span>
+            <span class="box-title">${box.title}${roleLine ? ` <span class="role-pill">${roleLine}</span>` : ''}</span>
             ${coAdminIcon}
             ${box.adminEmail ? `<div class="box-admin-email">${box.adminEmail}</div>` : ''}
             <div class="actions">

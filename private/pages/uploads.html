@@ -170,6 +170,10 @@
       return myRole === 'admin';
     }
 
+    function isMainAdminUser() {
+      return isAdminUser() && Number(reqUserId) === Number(currentBoxOwnerId);
+    }
+
     function goToParentFolder() {
       currentFolderPath = getParentFolderPath(currentFolderPath);
       renderContents();
@@ -236,12 +240,27 @@
       members.forEach((member) => {
         const safeFullName = escapeHtml(member.fullName || 'User');
         const safeEmail = escapeHtml(member.email || '-');
-        const safeRole = escapeHtml(member.role || 'member');
+        const normalizedRole = String(member.role || '').toLowerCase();
         const isOwner = Boolean(member.is_owner) || Number(member.user_id) === Number(currentBoxOwnerId);
         const isSelf = Number(member.user_id) === Number(reqUserId);
-        const canManageTarget = isAdminUser() && !isSelf;
-        const canPromote = canManageTarget && !isOwner && String(member.role || '').toLowerCase() !== 'admin';
-        const canRemove = canManageTarget && !isOwner;
+        const isAdmin = normalizedRole === 'admin';
+        const canToggleAdmin = isMainAdminUser() && !isSelf && !isOwner;
+        const roleLabels = [];
+        if (isAdmin) {
+          roleLabels.push('(admin)');
+        }
+        if (isOwner) {
+          roleLabels.push('(Main admin)');
+        }
+        const roleBadge = roleLabels.length
+          ? `<span class="member-chip-badge">${roleLabels.join(' | ')}</span>`
+          : '';
+        const roleAction = isAdmin ? 'demote' : 'promote';
+        const roleActionClass = isAdmin ? 'demote' : 'promote';
+        const roleActionIcon = isAdmin ? 'fa-user-minus' : 'fa-user-shield';
+        const roleActionLabel = isAdmin
+          ? `Remove admin: ${safeFullName}`
+          : `Make admin: ${safeFullName}`;
         const chip = document.createElement('div');
         chip.className = 'member-chip';
         if (isOwner) {
@@ -251,13 +270,21 @@
           <div class="member-chip-avatar">${(member.fullName || member.email || 'U').charAt(0).toUpperCase()}</div>
           <div class="member-chip-body">
             <p class="member-chip-name">${safeFullName}</p>
-            <p class="member-chip-meta">${safeEmail} (${safeRole})</p>
-            ${isOwner ? '<span class="member-chip-badge">Main admin</span>' : ''}
+            <p class="member-chip-meta">${safeEmail}</p>
+            ${roleBadge}
           </div>
-          ${canManageTarget ? `
+          ${canToggleAdmin ? `
             <div class="member-chip-actions">
-              ${canPromote ? `<button type="button" class="member-chip-action promote" data-member-action="promote" data-user-id="${member.user_id}" aria-label="Promote ${safeFullName} to admin"><i class="fa-solid fa-user-shield"></i></button>` : ''}
-              ${canRemove ? `<button type="button" class="member-chip-action danger" data-member-action="remove" data-user-id="${member.user_id}" aria-label="Remove ${safeFullName}"><i class="fa-solid fa-user-xmark"></i></button>` : ''}
+              <button
+                type="button"
+                class="member-chip-action ${roleActionClass}"
+                data-member-action="${roleAction}"
+                data-user-id="${member.user_id}"
+                data-tooltip="${roleActionLabel}"
+                aria-label="${roleActionLabel}"
+              >
+                <i class="fa-solid ${roleActionIcon}"></i>
+              </button>
             </div>
           ` : ''}
         `;
@@ -1415,7 +1442,7 @@
 
     document.getElementById('membersStrip').addEventListener('click', async (event) => {
       const button = event.target.closest('button[data-member-action]');
-      if (!button || !isAdminUser()) return;
+      if (!button || !isMainAdminUser()) return;
 
       const memberUserId = Number(button.dataset.userId);
       if (!Number.isFinite(memberUserId)) return;
@@ -1424,20 +1451,6 @@
       if (!member) return;
 
       const action = button.dataset.memberAction;
-
-      if (action === 'remove') {
-        if (!window.confirm(`Remove ${member.fullName || member.email || 'this member'} from this box?`)) {
-          return;
-        }
-
-        try {
-          await apiRequest(`/api/box/${boxId}/members/${memberUserId}`, { method: 'DELETE' });
-          await loadGroupData();
-        } catch (error) {
-          alert(error.message || 'Unable to remove member');
-        }
-        return;
-      }
 
       if (action === 'promote') {
         if (!window.confirm(`Make ${member.fullName || member.email || 'this member'} an admin?`)) {
@@ -1449,6 +1462,20 @@
           await loadGroupData();
         } catch (error) {
           alert(error.message || 'Unable to promote member');
+        }
+        return;
+      }
+
+      if (action === 'demote') {
+        if (!window.confirm(`Remove admin access from ${member.fullName || member.email || 'this member'}?`)) {
+          return;
+        }
+
+        try {
+          await apiRequest(`/api/box/${boxId}/members/${memberUserId}/role`, { method: 'DELETE' });
+          await loadGroupData();
+        } catch (error) {
+          alert(error.message || 'Unable to remove admin access');
         }
       }
     });

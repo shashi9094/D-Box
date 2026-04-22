@@ -1101,12 +1101,10 @@ exports.promoteMember = async (req, res) => {
     try {
         await ensureCollaborationTables();
 
-        const isAdmin = await ensureAdmin(boxId, currentUserId);
-        if (!isAdmin) {
-            return res.status(403).json({ message: 'Only admin can promote members' });
-        }
-
         const ownerId = await getBoxOwnerId(boxId);
+        if (Number(ownerId) !== Number(currentUserId)) {
+            return res.status(403).json({ message: 'Only main admin can change admin access' });
+        }
         if (!Number.isFinite(targetUserId)) {
             return res.status(400).json({ message: 'Invalid member id' });
         }
@@ -1137,6 +1135,54 @@ exports.promoteMember = async (req, res) => {
         });
     } catch (err) {
         return res.status(500).json({ message: 'Unable to promote member', error: err.message });
+    }
+};
+
+exports.demoteMember = async (req, res) => {
+    const { boxId, memberUserId } = req.params;
+    const currentUserId = req.user.id;
+    const targetUserId = Number(memberUserId);
+
+    try {
+        await ensureCollaborationTables();
+
+        const ownerId = await getBoxOwnerId(boxId);
+        if (Number(ownerId) !== Number(currentUserId)) {
+            return res.status(403).json({ message: 'Only main admin can change admin access' });
+        }
+
+        if (!Number.isFinite(targetUserId)) {
+            return res.status(400).json({ message: 'Invalid member id' });
+        }
+
+        if (Number(ownerId) === targetUserId) {
+            return res.status(400).json({ message: 'Main admin access cannot be removed' });
+        }
+
+        const [memberRows] = await sql.query(
+            'SELECT role FROM box_members WHERE box_id = ? AND user_id = ? LIMIT 1',
+            [boxId, targetUserId]
+        );
+
+        if (!memberRows.length) {
+            return res.status(404).json({ message: 'Member not found in this box' });
+        }
+
+        if (memberRows[0].role !== 'admin') {
+            return res.json({ success: true, message: 'Member is already not an admin' });
+        }
+
+        await sql.query(
+            'UPDATE box_members SET role = ? WHERE box_id = ? AND user_id = ?',
+            ['member', boxId, targetUserId]
+        );
+
+        return res.json({
+            success: true,
+            message: 'Admin access removed from member'
+        });
+    } catch (err) {
+        return res.status(500).json({ message: 'Unable to remove admin access', error: err.message });
     }
 };
 

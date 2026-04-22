@@ -24,6 +24,7 @@ router.get('/other-boxes', boxController.getOtherUsersBoxes);
 router.get('/:boxId/members', boxController.listMembers);
 router.post('/:boxId/members', boxController.addMemberByEmail);
 router.patch('/:boxId/members/:memberUserId/role', boxController.promoteMember);
+router.delete('/:boxId/members/:memberUserId/role', boxController.demoteMember);
 router.delete('/:boxId/members/:memberUserId', boxController.removeMember);
 
 // Box content management
