@@ -264,16 +264,19 @@
     <div class="dashboard-modal-card home-modal-card" role="dialog" aria-modal="true" aria-labelledby="notificationDetailTitle">
       <div class="dashboard-modal-header">
         <h3 id="notificationDetailTitle">Notification Detail</h3>
-        <button type="button" class="modal-close-btn" data-close-modal="notificationDetailModal" aria-label="Close">
-          x
-        </button>
+        <div class="notification-detail-header-actions">
+          <button type="button" id="notificationDetailReplyBtn" class="notification-reply-btn notification-detail-reply-btn" hidden>Reply</button>
+          <button type="button" class="modal-close-btn" data-close-modal="notificationDetailModal" aria-label="Close">
+            x
+          </button>
+        </div>
       </div>
       <div class="home-modal-grid">
         <p><strong>Type:</strong> <span id="notificationDetailType">-</span></p>
         <p><strong>When:</strong> <span id="notificationDetailTime">-</span></p>
         <p><strong>Title:</strong> <span id="notificationDetailHeading">-</span></p>
-        <p><strong>Message:</strong> <span id="notificationDetailMessage">-</span></p>
-        <p><strong>Details:</strong> <span id="notificationDetailMeta">-</span></p>
+        <p id="notificationDetailMessageRow"><strong id="notificationDetailMessageLabel">Message:</strong> <span id="notificationDetailMessage">-</span></p>
+        <p id="notificationDetailBodyRow"><strong id="notificationDetailBodyLabel">Message:</strong> <span id="notificationDetailBody">-</span></p>
       </div>
     </div>
   </div>
@@ -449,12 +452,46 @@
     function openNotificationDetail(notificationId) {
       const entry = notificationsById.get(Number(notificationId));
       if (!entry) return;
+      const details = entry.details && typeof entry.details === 'object' ? entry.details : {};
+      const detailReplyBtn = document.getElementById('notificationDetailReplyBtn');
+      const messageLabelEl = document.getElementById('notificationDetailMessageLabel');
+      const messageValueEl = document.getElementById('notificationDetailMessage');
+      const bodyRowEl = document.getElementById('notificationDetailBodyRow');
+      const bodyLabelEl = document.getElementById('notificationDetailBodyLabel');
+      const bodyValueEl = document.getElementById('notificationDetailBody');
+
+      let summaryLabel = 'Message:';
+      let summaryValue = String(entry.message || '-');
+      let bodyLabel = '';
+      let bodyValue = '';
+
+      if (String(entry.type || '').trim().toLowerCase() === 'user_question') {
+        summaryLabel = 'Asked By:';
+        summaryValue = String(details.fromName || details.fromEmail || entry.message || '-');
+        bodyLabel = 'Question:';
+        bodyValue = String(details.question || '').trim();
+      } else if (String(entry.type || '').trim().toLowerCase() === 'admin_reply') {
+        summaryLabel = 'Replied By:';
+        summaryValue = String(details.fromName || entry.message || '-');
+        bodyLabel = 'Reply:';
+        bodyValue = String(details.reply || '').trim();
+      }
 
       document.getElementById('notificationDetailType').textContent = entry.type || '-';
       document.getElementById('notificationDetailTime').textContent = formatDate(entry.createdAt);
       document.getElementById('notificationDetailHeading').textContent = entry.title || '-';
-      document.getElementById('notificationDetailMessage').textContent = entry.message || '-';
-      document.getElementById('notificationDetailMeta').textContent = formatNotificationMeta(entry.details);
+      messageLabelEl.textContent = summaryLabel;
+      messageValueEl.textContent = summaryValue || '-';
+      bodyLabelEl.textContent = bodyLabel || 'Message:';
+      bodyValueEl.textContent = bodyValue || '-';
+      bodyRowEl.hidden = !bodyLabel || !bodyValue;
+
+      if (detailReplyBtn) {
+        const canReply = canReplyToNotification(entry);
+        detailReplyBtn.hidden = !canReply;
+        detailReplyBtn.dataset.notificationId = canReply ? String(entry.id) : '';
+      }
+
       openModal('notificationDetailModal');
     }
 
@@ -542,6 +579,14 @@
         showAppToast(error.message || 'Unable to send reply');
       }
     }
+
+    document.getElementById('notificationDetailReplyBtn')?.addEventListener('click', () => {
+      const notificationId = Number(document.getElementById('notificationDetailReplyBtn')?.dataset.notificationId);
+      if (!Number.isFinite(notificationId) || notificationId <= 0) {
+        return;
+      }
+      replyToNotificationById(notificationId);
+    });
 
     function renderNotificationList(items) {
       const listEl = document.getElementById('notificationList');

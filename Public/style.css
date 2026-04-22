@@ -2705,10 +2705,10 @@ body{
   padding: 6px 10px;
   border-radius: 6px;
   font-size: 0.78rem;
-  line-height: 1.2;
-  white-space: normal;
-  max-width: 220px;
-  text-align: center;
+  line-height: 1;
+  white-space: nowrap;
+  max-width: none;
+  text-align: left;
   z-index: 3000;
   pointer-events: none;
   box-shadow: 0 10px 24px rgba(4, 8, 22, 0.35);
@@ -3802,6 +3802,16 @@ body.theme-neon .app-toast {
 .notification-reply-btn:hover {
   border-color: rgba(90, 200, 255, 0.95);
   background: rgba(17, 92, 136, 0.92);
+}
+
+.notification-detail-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.notification-detail-reply-btn {
+  min-width: 84px;
 }
 
 .notification-delete-btn:hover {
