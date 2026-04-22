@@ -1,6 +1,7 @@
 const db = require('../db/connection');
 
 let tableReady = false;
+const READ_NOTIFICATION_RETENTION_DAYS = 7;
 
 const ensureNotificationsTable = async () => {
   if (tableReady) return;
@@ -32,11 +33,22 @@ const parseDetails = (value) => {
   }
 };
 
+const purgeExpiredReadNotifications = async () => {
+  await ensureNotificationsTable();
+
+  await db.promise().query(
+    `DELETE FROM notifications
+     WHERE is_read = 1
+       AND created_at < DATE_SUB(NOW(), INTERVAL ${READ_NOTIFICATION_RETENTION_DAYS} DAY)`
+  );
+};
+
 const createNotification = async ({ userId, type, title, message, details = null }) => {
   const numericUserId = Number(userId);
   if (!Number.isFinite(numericUserId) || numericUserId <= 0) return false;
 
   await ensureNotificationsTable();
+  await purgeExpiredReadNotifications();
 
   await db.promise().query(
     `INSERT INTO notifications (user_id, type, title, message, details_json)
@@ -73,6 +85,7 @@ const createNotificationsForUsers = async (userIds, payload) => {
 const listUserNotifications = async (userId, limit = 30) => {
   const numericUserId = Number(userId);
   await ensureNotificationsTable();
+  await purgeExpiredReadNotifications();
 
   const safeLimit = Math.min(Math.max(Math.floor(Number(limit) || 30), 1), 200);
 
@@ -100,6 +113,7 @@ const listUserNotifications = async (userId, limit = 30) => {
 const getUnreadNotificationCount = async (userId) => {
   const numericUserId = Number(userId);
   await ensureNotificationsTable();
+  await purgeExpiredReadNotifications();
 
   const [rows] = await db.promise().query(
     `SELECT COUNT(*) AS total
@@ -114,6 +128,7 @@ const getUnreadNotificationCount = async (userId) => {
 const markNotificationsRead = async (userId, ids = null) => {
   const numericUserId = Number(userId);
   await ensureNotificationsTable();
+  await purgeExpiredReadNotifications();
 
   if (Array.isArray(ids) && ids.length) {
     const safeIds = ids
@@ -129,6 +144,7 @@ const markNotificationsRead = async (userId, ids = null) => {
       [numericUserId, safeIds]
     );
 
+    await purgeExpiredReadNotifications();
     return Number(result.affectedRows || 0);
   }
 
@@ -139,6 +155,7 @@ const markNotificationsRead = async (userId, ids = null) => {
     [numericUserId]
   );
 
+  await purgeExpiredReadNotifications();
   return Number(result.affectedRows || 0);
 };
 
@@ -151,6 +168,7 @@ const deleteNotification = async (userId, notificationId) => {
   }
 
   await ensureNotificationsTable();
+  await purgeExpiredReadNotifications();
 
   const [result] = await db.promise().query(
     `DELETE FROM notifications WHERE user_id = ? AND id = ? LIMIT 1`,

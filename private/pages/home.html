@@ -481,6 +481,68 @@
       }
     }
 
+    function canReplyToNotification(item) {
+      const type = String(item?.type || '').trim().toLowerCase();
+      const fromUserId = Number(item?.details?.fromUserId);
+      return type === 'user_question' && Number.isFinite(fromUserId) && fromUserId > 0;
+    }
+
+    async function replyToNotificationById(notificationId) {
+      const numericId = Number(notificationId);
+      if (!Number.isFinite(numericId) || numericId <= 0) {
+        return;
+      }
+
+      const entry = notificationsById.get(numericId);
+      if (!entry || !canReplyToNotification(entry)) {
+        showAppToast('Reply is not available for this notification');
+        return;
+      }
+
+      const targetName = String(entry.details?.fromName || 'this user').trim();
+      const questionText = String(entry.details?.question || '').trim();
+      const promptText = questionText
+        ? `Reply to ${targetName}\n\nQuestion: ${questionText}`
+        : `Reply to ${targetName}`;
+      const replyInput = window.prompt(promptText, '');
+
+      if (replyInput === null) {
+        return;
+      }
+
+      const replyText = String(replyInput || '').trim();
+      if (!replyText) {
+        showAppToast('Please type a reply first');
+        return;
+      }
+
+      if (replyText.length > 1000) {
+        showAppToast('Reply is too long');
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/auth/notifications/${numericId}/reply`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ message: replyText }),
+        });
+
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(payload.message || 'Unable to send reply');
+        }
+
+        await loadNotifications({ silent: true });
+        showAppToast(payload.message || 'Reply sent');
+      } catch (error) {
+        showAppToast(error.message || 'Unable to send reply');
+      }
+    }
+
     function renderNotificationList(items) {
       const listEl = document.getElementById('notificationList');
       if (!listEl) return;
@@ -518,6 +580,21 @@
         content.appendChild(timeEl);
         content.addEventListener('click', () => openNotificationDetail(item.id));
 
+        const actions = document.createElement('div');
+        actions.className = 'notification-item-actions';
+
+        if (canReplyToNotification(item)) {
+          const replyBtn = document.createElement('button');
+          replyBtn.type = 'button';
+          replyBtn.className = 'notification-reply-btn';
+          replyBtn.textContent = 'Reply';
+          replyBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            replyToNotificationById(item.id);
+          });
+          actions.appendChild(replyBtn);
+        }
+
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
         deleteBtn.className = 'notification-delete-btn';
@@ -527,8 +604,9 @@
           deleteNotificationById(item.id);
         });
 
+        actions.appendChild(deleteBtn);
         row.appendChild(content);
-        row.appendChild(deleteBtn);
+        row.appendChild(actions);
         listEl.appendChild(row);
       });
     }

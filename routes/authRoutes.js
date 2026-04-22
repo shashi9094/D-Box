@@ -10,6 +10,7 @@ const authController = require("../controllers/authController");
 const db = require("../db/connection");
 const { logLoginHistory, isNewDeviceLogin } = require("../utils/loginHistory");
 const {
+  ensureNotificationsTable,
   listUserNotifications,
   getUnreadNotificationCount,
   markNotificationsRead,
@@ -54,6 +55,15 @@ function requireSessionUser(req, res, next) {
     return res.status(401).json({ message: "Not authenticated" });
   }
   return next();
+}
+
+function parseNotificationDetails(value) {
+  if (!value) return null;
+  try {
+    return JSON.parse(String(value));
+  } catch (_) {
+    return null;
+  }
 }
 
 function isValidGoogleClientId(value) {
@@ -210,6 +220,120 @@ router.delete('/notifications/:id', requireSessionUser, async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       message: 'Unable to delete notification',
+      error: error.message,
+    });
+  }
+});
+
+router.post('/notifications/:id/reply', requireSessionUser, async (req, res) => {
+  const currentUserId = Number(req.session.user.id);
+  const notificationId = Number(req.params?.id);
+  const replyText = String(req.body?.message || '').trim();
+
+  if (!Number.isFinite(notificationId) || notificationId <= 0) {
+    return res.status(400).json({ message: 'Valid notification ID is required' });
+  }
+
+  if (!replyText) {
+    return res.status(400).json({ message: 'Reply message is required' });
+  }
+
+  if (replyText.length > 1000) {
+    return res.status(400).json({ message: 'Reply is too long' });
+  }
+
+  try {
+    await ensureNotificationsTable();
+    const sql = db.promise();
+
+    const [notificationRows] = await sql.query(
+      `SELECT id, type, title, message, details_json
+       FROM notifications
+       WHERE id = ? AND user_id = ?
+       LIMIT 1`,
+      [notificationId, currentUserId]
+    );
+
+    if (!notificationRows.length) {
+      return res.status(404).json({ message: 'Notification not found' });
+    }
+
+    const notification = notificationRows[0];
+    if (String(notification.type || '').trim().toLowerCase() !== 'user_question') {
+      return res.status(400).json({ message: 'Replies are allowed only for user question notifications' });
+    }
+
+    const details = parseNotificationDetails(notification.details_json) || {};
+    const targetUserId = Number(details.fromUserId);
+    const boxId = Number(details.boxId);
+    const questionText = String(details.question || '').trim();
+    const boxTitle = String(details.boxTitle || '').trim() || `Box ${boxId || ''}`.trim() || 'D-Box';
+
+    if (!Number.isFinite(targetUserId) || targetUserId <= 0) {
+      return res.status(400).json({ message: 'Original question sender is unavailable for reply' });
+    }
+
+    if (!Number.isFinite(boxId) || boxId <= 0) {
+      return res.status(400).json({ message: 'This notification is missing box information' });
+    }
+
+    const [adminAccessRows] = await sql.query(
+      `SELECT 1 AS allowed
+       FROM boxes b
+       WHERE b.id = ? AND b.user_id = ?
+       UNION
+       SELECT 1 AS allowed
+       FROM box_members bm
+       WHERE bm.box_id = ? AND bm.user_id = ? AND bm.role IN ('Admin', 'admin')
+       LIMIT 1`,
+      [boxId, currentUserId, boxId, currentUserId]
+    );
+
+    if (!adminAccessRows.length) {
+      return res.status(403).json({ message: 'Only current box admins can reply to this question' });
+    }
+
+    const [senderRows] = await sql.query(
+      'SELECT fullName, email FROM users WHERE id = ? LIMIT 1',
+      [currentUserId]
+    );
+
+    const admin = senderRows[0] || {};
+    const adminName = String(admin.fullName || admin.email || `User ${currentUserId}`).trim();
+
+    await createNotification({
+      userId: targetUserId,
+      type: 'admin_reply',
+      title: `Reply in ${boxTitle}`,
+      message: `${adminName} replied: ${replyText}`,
+      details: {
+        boxId,
+        boxTitle,
+        question: questionText,
+        reply: replyText,
+        fromUserId: currentUserId,
+        fromName: adminName,
+        replyToNotificationId: notificationId,
+      },
+    });
+
+    await sql.query(
+      `UPDATE notifications
+       SET is_read = 1
+       WHERE id = ? AND user_id = ?`,
+      [notificationId, currentUserId]
+    );
+
+    const unreadCount = await getUnreadNotificationCount(currentUserId);
+
+    return res.json({
+      success: true,
+      message: 'Reply sent successfully',
+      unreadCount,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Unable to send reply',
       error: error.message,
     });
   }

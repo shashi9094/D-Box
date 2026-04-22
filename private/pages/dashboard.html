@@ -198,21 +198,19 @@ async function render() {
 
         const header = document.createElement('div');
         header.className = 'box-header';
+        const isMainAdmin = Number(box.user_id) === Number(reqUserId);
+        const isSelf = Number(box.user_id) === Number(reqUserId);
         // Show role badges without brackets and only when the role truly applies.
         const roleLabels = [];
         if (String(box.role || '').toLowerCase() === 'admin') {
             roleLabels.push('admin');
         }
-        if (box.isMainAdmin) {
+        if (isMainAdmin) {
             roleLabels.push('main admin');
         }
         const roleLine = roleLabels.join(' | ');
         // Co-admin icon logic (main admin can promote/demote, co-admins can't)
         let coAdminIcon = '';
-        // Assume reqUserId is main admin if box.isMainAdmin && box.user_id === reqUserId
-        // You may need to adjust this logic based on your backend data structure
-        const isMainAdmin = box.isMainAdmin && box.user_id === reqUserId;
-        const isSelf = box.user_id === reqUserId;
         if (isMainAdmin && !isSelf) {
             if (box.isCoAdmin) {
                 coAdminIcon = `<span class="coadmin-icon" data-action="remove-coadmin" data-id="${box.id}" title="Remove co admin"><i class="fa-solid fa-user-shield"></i></span>`;
@@ -225,7 +223,7 @@ async function render() {
             ${coAdminIcon}
             ${box.adminEmail ? `<div class="box-admin-email">${box.adminEmail}</div>` : ''}
             <div class="actions">
-                ${box.role === 'admin' ? `<button class="action-btn danger" data-action="delete" data-id="${box.id}"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
+                ${isMainAdmin ? `<button class="action-btn danger" data-action="delete" data-id="${box.id}"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
             </div>
         `;
         card.appendChild(header);
@@ -240,7 +238,7 @@ async function render() {
         const usedCount = Number(box.reservedCount || box.memberCount || 0);
         const capacityValue = Number(box.capacity || 1);
         const minCapacity = Math.max(usedCount, 1);
-        const canEditCapacity = String(box.role || '').toLowerCase() === 'admin';
+        const canEditCapacity = isMainAdmin;
 
         const capacityRow = document.createElement('div');
         capacityRow.className = 'item-line capacity-line';

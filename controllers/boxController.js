@@ -386,6 +386,11 @@ const getBoxOwnerId = async (boxId) => {
     return rows.length ? Number(rows[0].user_id) : null;
 };
 
+const ensureMainAdmin = async (boxId, userId) => {
+    const ownerId = await getBoxOwnerId(boxId);
+    return Number(ownerId) === Number(userId);
+};
+
 const getAdminRecipientsForBox = async (boxId) => {
     const [rows] = await sql.query(
         `SELECT DISTINCT user_id
@@ -707,9 +712,9 @@ exports.updateBox = async (req, res) => {
 
     try {
         await ensureCollaborationTables();
-        const isAdmin = await ensureAdmin(id, userId);
-        if (!isAdmin) {
-            return res.status(403).json({ message: 'Only admin can update this box' });
+        const isMainAdmin = await ensureMainAdmin(id, userId);
+        if (!isMainAdmin) {
+            return res.status(403).json({ message: 'Only main admin can update this box' });
         }
 
         const updates = [];
@@ -770,9 +775,9 @@ exports.deleteBox = async (req, res) => {
 
     try {
         await ensureCollaborationTables();
-        const isAdmin = await ensureAdmin(id, userId);
-        if (!isAdmin) {
-            return res.status(403).json({ message: 'Only admin can delete this box' });
+        const isMainAdmin = await ensureMainAdmin(id, userId);
+        if (!isMainAdmin) {
+            return res.status(403).json({ message: 'Only main admin can delete this box' });
         }
 
         const [boxRows] = await sql.query(
@@ -896,7 +901,6 @@ exports.addMemberByEmail = async (req, res) => {
     const { boxId } = req.params;
     const { email, emails, role } = req.body;
     const currentUserId = req.user.id;
-    const safeRole = role === 'admin' ? 'admin' : 'member';
     const rawEmails = Array.isArray(emails)
         ? emails
         : String(emails || email || '').split(/[\n,;]+/);
@@ -918,6 +922,8 @@ exports.addMemberByEmail = async (req, res) => {
         if (!isAdmin) {
             return res.status(403).json({ message: 'Only admin can add members' });
         }
+        const isMainAdmin = await ensureMainAdmin(boxId, currentUserId);
+        const safeRole = role === 'admin' && isMainAdmin ? 'admin' : 'member';
 
         const boxState = await getBoxCapacityAndUsage(boxId);
         const availableSlots = Math.max(0, boxState.capacity - boxState.reservedCount);
@@ -1059,6 +1065,7 @@ exports.removeMember = async (req, res) => {
         if (!isAdmin) {
             return res.status(403).json({ message: 'Only admin can remove members' });
         }
+        const isMainAdmin = await ensureMainAdmin(boxId, currentUserId);
 
         const ownerId = await getBoxOwnerId(boxId);
         if (Number(ownerId) === targetUserId) {
@@ -1075,6 +1082,10 @@ exports.removeMember = async (req, res) => {
         }
 
         if (memberRows[0].role === 'admin') {
+            if (!isMainAdmin) {
+                return res.status(403).json({ message: 'Only main admin can remove admins from this box' });
+            }
+
             const [adminCountRows] = await sql.query(
                 'SELECT COUNT(*) AS adminCount FROM box_members WHERE box_id = ? AND role = ? ',
                 [boxId, 'admin']
@@ -1239,14 +1250,19 @@ exports.uploadBoxContent = [
         try {
             await ensureCollaborationTables();
 
-            const membership = await getMembership(boxId, userId);
-            if (!membership) {
+            const isAdmin = await ensureAdmin(boxId, userId);
+            if (!isAdmin) {
                 cleanupUploadedFile();
-                return res.status(403).json({ message: 'You do not have access to this box' });
+                return res.status(403).json({ message: 'Only admin can upload content' });
             }
+            const isMainAdmin = await ensureMainAdmin(boxId, userId);
 
             if (!req.file && !note) {
                 return res.status(400).json({ message: 'Provide a file or note text' });
+            }
+
+            if (!req.file && !isMainAdmin) {
+                return res.status(403).json({ message: 'Only main admin can create folders or notes' });
             }
 
             let contentType = 'note';
@@ -1254,7 +1270,7 @@ exports.uploadBoxContent = [
             let filePath = null;
             let originalName = null;
             const safeFolderPath = String(folderPath || '').trim().replace(/^\/+|\/+$/g, '');
-            const safeAdminNote = sanitizeAdminNote(adminNote);
+            const safeAdminNote = isMainAdmin ? sanitizeAdminNote(adminNote) : '';
 
             if (req.file) {
                 contentType = inferContentType(req.file);
@@ -1518,9 +1534,9 @@ exports.deleteBoxContent = async (req, res) => {
     try {
         await ensureCollaborationTables();
 
-        const isAdmin = await ensureAdmin(boxId, userId);
-        if (!isAdmin) {
-            return res.status(403).json({ message: 'Only admin can delete uploads' });
+        const isMainAdmin = await ensureMainAdmin(boxId, userId);
+        if (!isMainAdmin) {
+            return res.status(403).json({ message: 'Only main admin can delete uploads' });
         }
 
         const fsRelativePath = decodeFsContentId(contentId);
@@ -1586,9 +1602,9 @@ exports.updateContentAdminNote = async (req, res) => {
     try {
         await ensureCollaborationTables();
 
-        const isAdmin = await ensureAdmin(boxId, userId);
-        if (!isAdmin) {
-            return res.status(403).json({ message: 'Only admin can update upload notes' });
+        const isMainAdmin = await ensureMainAdmin(boxId, userId);
+        if (!isMainAdmin) {
+            return res.status(403).json({ message: 'Only main admin can update upload notes' });
         }
 
         const fsRelativePath = decodeFsContentId(contentId);

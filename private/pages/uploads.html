@@ -174,6 +174,34 @@
       return isAdminUser() && Number(reqUserId) === Number(currentBoxOwnerId);
     }
 
+    function canUploadContent() {
+      return isAdminUser();
+    }
+
+    function canRenameContent() {
+      return isAdminUser();
+    }
+
+    function canManageMembers() {
+      return isAdminUser();
+    }
+
+    function canCreateFolders() {
+      return isMainAdminUser();
+    }
+
+    function canDeleteContent() {
+      return isMainAdminUser();
+    }
+
+    function canEditUploadImportantNotes() {
+      return isMainAdminUser();
+    }
+
+    function hasFabAccess() {
+      return canUploadContent() || canCreateFolders() || canDeleteContent();
+    }
+
     function goToParentFolder() {
       currentFolderPath = getParentFolderPath(currentFolderPath);
       renderContents();
@@ -379,7 +407,7 @@
     function syncDeleteModeButtonLabel() {
       const modeBtn = document.getElementById('deleteSelectModeBtn');
       if (!modeBtn) return;
-      const shouldShow = isAdminUser() && visibleDeleteTargetCount > 0;
+      const shouldShow = canDeleteContent() && visibleDeleteTargetCount > 0;
       modeBtn.hidden = !shouldShow;
       if (!shouldShow) {
         modeBtn.innerHTML = '<i class="fa-solid fa-check-double"></i> Select to delete';
@@ -401,7 +429,7 @@
       if (!indicator) return;
 
       const selectedCount = selectedUploadIds.size;
-      const shouldShow = isAdminUser() && isDeleteSelectMode;
+      const shouldShow = canDeleteContent() && isDeleteSelectMode;
 
       indicator.hidden = !shouldShow;
       indicator.textContent = selectedCount > 0
@@ -415,13 +443,13 @@
 
       const selectedCount = selectedUploadIds.size;
       deleteBtn.textContent = selectedCount > 0 ? `Delete Selected (${selectedCount})` : 'Delete Selected';
-      deleteBtn.hidden = !isAdminUser() || !isDeleteSelectMode;
+      deleteBtn.hidden = !canDeleteContent() || !isDeleteSelectMode;
       deleteBtn.disabled = selectedCount === 0;
       syncDeleteModeIndicator();
     }
 
     function syncDeleteModeDom() {
-      const shouldShowToggles = isAdminUser() && isDeleteSelectMode;
+      const shouldShowToggles = canDeleteContent() && isDeleteSelectMode;
 
       document.querySelectorAll('#uploadsGrid .upload-item-card[data-content-id]').forEach((card) => {
         const contentId = String(card.dataset.contentId || '').trim();
@@ -447,7 +475,7 @@
     function syncDeleteModeAvailability(visibleCount = visibleDeleteTargetCount) {
       visibleDeleteTargetCount = Math.max(Number(visibleCount) || 0, 0);
 
-      if (!isAdminUser() || visibleDeleteTargetCount === 0) {
+      if (!canDeleteContent() || visibleDeleteTargetCount === 0) {
         selectedUploadIds = new Set();
         isDeleteSelectMode = false;
         resetDeleteModeTapState();
@@ -509,7 +537,7 @@
     }
 
     function handleDeleteModeCardTap(event, contentId, openItem) {
-      if (!isAdminUser() || !isDeleteSelectMode) {
+      if (!canDeleteContent() || !isDeleteSelectMode) {
         return false;
       }
 
@@ -608,6 +636,18 @@
       return true;
     }
 
+    function canRemoveMemberTarget(member) {
+      if (!canManageMembers()) return false;
+
+      const isOwner = Boolean(member?.is_owner) || Number(member?.user_id) === Number(currentBoxOwnerId);
+      const isSelf = Number(member?.user_id) === Number(reqUserId);
+      const isAdminTarget = String(member?.role || '').toLowerCase() === 'admin';
+
+      if (isOwner || isSelf) return false;
+      if (isAdminTarget && !isMainAdminUser()) return false;
+      return true;
+    }
+
     function renderContents() {
       const grid = document.getElementById('uploadsGrid');
       grid.innerHTML = '';
@@ -671,8 +711,10 @@
         const safePathHtml = escapeHtml(safePath);
         const isOpenable = Boolean(safePath && !item.is_virtual_folder);
         const isFolder = Boolean(item.is_virtual_folder);
-        const canManage = myRole === 'admin';
-        const canEditImportantNote = canManage && canManageImportantNote(item);
+        const canRename = canRenameContent();
+        const canDelete = canDeleteContent();
+        const canEditImportantNote = canEditUploadImportantNotes() && canManageImportantNote(item);
+        const hasActions = canRename || canDelete || canEditImportantNote;
         const safeImportantNote = escapeHtml(getImportantNoteText(item));
         const isSelected = selectedUploadIds.has(String(item.id));
 
@@ -680,7 +722,7 @@
           card.classList.add('is-selected');
         }
 
-        const selectMarkup = canManage
+        const selectMarkup = canDelete
           ? `
             <label class="upload-select-toggle" aria-label="Select ${safeName} for delete" ${isDeleteSelectMode ? '' : 'hidden'} aria-hidden="${String(!isDeleteSelectMode)}">
               <input type="checkbox" data-select-upload="${item.id}" ${isSelected ? 'checked' : ''} />
@@ -689,7 +731,7 @@
           `
           : '';
 
-        const actionsMarkup = canManage
+        const actionsMarkup = hasActions
           ? `
             <div class="upload-card-actions" aria-label="Upload actions">
               <button type="button" class="upload-card-menu-btn" data-menu-toggle="${item.id}" aria-label="More actions" aria-expanded="false">
@@ -697,8 +739,8 @@
               </button>
               <div class="upload-card-menu" data-menu="${item.id}">
                 ${canEditImportantNote ? `<button type="button" data-action="important-note" data-content-id="${item.id}"><i class="fa-solid fa-bullhorn"></i> Important note</button>` : ''}
-                <button type="button" data-action="rename" data-content-id="${item.id}"><i class="fa-solid fa-pen-to-square"></i> Rename</button>
-                <button type="button" class="danger" data-action="delete" data-content-id="${item.id}"><i class="fa-solid fa-trash"></i> Delete</button>
+                ${canRename ? `<button type="button" data-action="rename" data-content-id="${item.id}"><i class="fa-solid fa-pen-to-square"></i> Rename</button>` : ''}
+                ${canDelete ? `<button type="button" class="danger" data-action="delete" data-content-id="${item.id}"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
               </div>
             </div>
           `
@@ -730,7 +772,7 @@
           card.setAttribute('aria-label', openLabel);
         }
 
-        if (canManage || openItem) {
+        if (hasActions || openItem) {
           card.addEventListener('click', (event) => {
             if (event.target.closest('.upload-card-actions') || event.target.closest('.upload-select-toggle')) return;
             if (handleDeleteModeCardTap(event, item.id, openItem)) return;
@@ -746,7 +788,7 @@
               return;
             }
 
-            if (isDeleteSelectMode && canManage) {
+            if (isDeleteSelectMode && canDelete) {
               event.preventDefault();
               if (event.key === 'Enter') {
                 openItem();
@@ -857,15 +899,33 @@
       const adminTools = document.getElementById('adminTools');
       const fab = document.getElementById('uploadsFab');
       const menu = document.getElementById('fabMenu');
+      const addMemberAction = document.getElementById('addMemberBtn');
+      const removeMemberAction = document.getElementById('removeMemberBtn');
+      const newFolderAction = menu.querySelector('button[data-action="new-folder"]');
+      const fileUploadAction = menu.querySelector('button[data-action="file-upload"]');
+      const folderUploadAction = menu.querySelector('button[data-action="folder-upload"]');
+      const deleteModeAction = menu.querySelector('button[data-action="select-delete"]');
+      const showAdminTools = canManageMembers();
+      const showFab = hasFabAccess();
 
-      adminTools.hidden = !isVisible;
-      fab.hidden = false;
-      fab.disabled = !isVisible;
-      fab.setAttribute('aria-disabled', String(!isVisible));
-      fab.classList.toggle('is-disabled', !isVisible);
+      adminTools.hidden = !showAdminTools;
+      if (addMemberAction) addMemberAction.hidden = !canManageMembers();
+      if (removeMemberAction) removeMemberAction.hidden = !canManageMembers();
+      if (newFolderAction) newFolderAction.hidden = !canCreateFolders();
+      if (fileUploadAction) fileUploadAction.hidden = !canUploadContent();
+      if (folderUploadAction) folderUploadAction.hidden = !canUploadContent();
+      if (deleteModeAction) deleteModeAction.hidden = !canDeleteContent();
 
-      if (!isVisible) {
+      fab.hidden = !showFab;
+      fab.disabled = !showFab;
+      fab.setAttribute('aria-disabled', String(!showFab));
+      fab.classList.toggle('is-disabled', !showFab);
+
+      if (!showFab) {
         menu.hidden = true;
+      }
+
+      if (!canDeleteContent()) {
         visibleDeleteTargetCount = 0;
         selectedUploadIds = new Set();
         isDeleteSelectMode = false;
@@ -1024,7 +1084,7 @@
       myRole = currentBox.role || 'member';
       currentBoxOwnerId = currentBox.user_id;
       setHeader(currentBox);
-      setAdminControlsVisible(myRole === 'admin');
+      setAdminControlsVisible();
 
       const [memberResponse, contentResponse] = await Promise.all([
         apiRequest(`/api/box/${boxId}/members`),
@@ -1041,7 +1101,7 @@
       const select = document.getElementById('removeMemberSelect');
       select.innerHTML = '';
 
-      const removable = members.filter((m) => String(m.user_id) !== String(reqUserId));
+      const removable = members.filter((member) => canRemoveMemberTarget(member));
       if (!removable.length) {
         throw new Error('No removable users found');
       }
@@ -1058,9 +1118,7 @@
 
     function getRemovableMembers() {
       return members.filter((member) => {
-        const isOwner = Boolean(member.is_owner) || Number(member.user_id) === Number(currentBoxOwnerId);
-        const isSelf = Number(member.user_id) === Number(reqUserId);
-        return !isOwner && !isSelf;
+        return canRemoveMemberTarget(member);
       });
     }
 
@@ -1099,7 +1157,7 @@
     });
 
     document.getElementById('uploadsFab').addEventListener('mouseenter', () => {
-      if (!isAdminUser()) {
+      if (!hasFabAccess()) {
         document.getElementById('fabMenu').hidden = true;
         return;
       }
@@ -1120,7 +1178,7 @@
     });
 
     document.getElementById('fabMenu').addEventListener('click', (event) => {
-      if (!isAdminUser()) {
+      if (!hasFabAccess()) {
         document.getElementById('fabMenu').hidden = true;
         return;
       }
@@ -1129,16 +1187,20 @@
       const action = actionButton.dataset.action;
       document.getElementById('fabMenu').hidden = true;
       if (action === 'file-upload') {
+        if (!canUploadContent()) return;
         document.getElementById('fileInput').click();
       }
       if (action === 'folder-upload') {
+        if (!canUploadContent()) return;
         document.getElementById('folderInput').click();
       }
       if (action === 'new-folder') {
+        if (!canCreateFolders()) return;
         document.getElementById('folderNameInput').value = '';
         openModal('new-folder');
       }
       if (action === 'select-delete') {
+        if (!canDeleteContent()) return;
         if (visibleDeleteTargetCount === 0) {
           syncDeleteModeAvailability();
           return;
@@ -1184,11 +1246,13 @@
       if (!item) return;
 
       if (action === 'rename') {
+        if (!canRenameContent()) return;
         openRenameModal(mapDisplayItem(item));
         return;
       }
 
       if (action === 'important-note') {
+        if (!canEditUploadImportantNotes()) return;
         const currentValue = String(item.admin_note || '').trim();
         const nextValue = window.prompt('Important note for this upload (leave empty for default):', currentValue);
         if (nextValue === null) return;
@@ -1203,6 +1267,7 @@
       }
 
       if (action === 'delete') {
+        if (!canDeleteContent()) return;
         const confirmed = window.confirm(`Delete ${item.original_name || item.note_text || 'this upload'}?`);
         if (!confirmed) return;
 
@@ -1230,7 +1295,7 @@
     });
 
     document.getElementById('deleteSelectedUploadsBtn').addEventListener('click', async () => {
-      if (!isAdminUser()) {
+      if (!canDeleteContent()) {
         return;
       }
 
@@ -1288,6 +1353,7 @@
       event.preventDefault();
 
       if (!renameTarget) return;
+      if (!canRenameContent()) return;
 
       const nextName = document.getElementById('renameUploadInput').value.trim();
       if (!nextName) return;
@@ -1302,7 +1368,7 @@
     });
 
     document.getElementById('fileInput').addEventListener('change', async (event) => {
-      if (!isAdminUser()) {
+      if (!canUploadContent()) {
         event.target.value = '';
         return;
       }
@@ -1319,8 +1385,9 @@
 
       try {
         setBatchStatus(`Uploaded 0 of ${files.length}`);
-        const noteInput = window.prompt('Important note for selected uploads (optional):', '');
-        const adminNote = noteInput === null ? '' : noteInput;
+        const adminNote = canEditUploadImportantNotes()
+          ? ((window.prompt('Important note for selected uploads (optional):', '') ?? ''))
+          : '';
 
         const { successCount, failedFiles } = await uploadSelectedFiles(files, adminNote, ({ completedCount, totalFiles, currentState }) => {
           if (currentState === 'uploading') {
@@ -1347,7 +1414,7 @@
     });
 
     document.getElementById('folderInput').addEventListener('change', async (event) => {
-      if (!isAdminUser()) {
+      if (!canUploadContent()) {
         event.target.value = '';
         return;
       }
@@ -1364,8 +1431,9 @@
 
       try {
         setBatchStatus(`Uploaded 0 of ${files.length}`);
-        const noteInput = window.prompt('Important note for selected uploads (optional):', '');
-        const adminNote = noteInput === null ? '' : noteInput;
+        const adminNote = canEditUploadImportantNotes()
+          ? ((window.prompt('Important note for selected uploads (optional):', '') ?? ''))
+          : '';
         const { successCount, failedFiles } = await uploadSelectedFiles(files, adminNote, ({ completedCount, totalFiles, currentState }) => {
           if (currentState === 'uploading') {
             setBatchStatus(`Uploading ${completedCount + 1} of ${totalFiles}`);
@@ -1391,13 +1459,13 @@
     });
 
     document.getElementById('addMemberBtn').addEventListener('click', () => {
-      if (!isAdminUser()) return;
+      if (!canManageMembers()) return;
       document.getElementById('memberEmailInput').value = '';
       openModal('add-member');
     });
 
     document.getElementById('removeMemberBtn').addEventListener('click', () => {
-      if (!isAdminUser()) return;
+      if (!canManageMembers()) return;
       const panel = document.getElementById('memberDropdownPanel');
       const shouldOpen = panel.hidden;
       if (shouldOpen) {
@@ -1407,6 +1475,10 @@
     });
 
     document.getElementById('removeSelectedMembersBtn').addEventListener('click', async () => {
+      if (!canManageMembers()) {
+        return;
+      }
+
       const selected = Array.from(document.querySelectorAll('#memberDropdownList input[type="checkbox"]:checked'))
         .map((input) => Number(input.value))
         .filter((value) => Number.isFinite(value));
@@ -1482,6 +1554,7 @@
 
     document.getElementById('addMemberForm').addEventListener('submit', async (event) => {
       event.preventDefault();
+      if (!canManageMembers()) return;
       const email = document.getElementById('memberEmailInput').value.trim();
       if (!email) return;
 
@@ -1502,6 +1575,7 @@
 
     document.getElementById('removeMemberForm').addEventListener('submit', async (event) => {
       event.preventDefault();
+      if (!canManageMembers()) return;
       const memberUserId = document.getElementById('removeMemberSelect').value;
       if (!memberUserId) return;
 
@@ -1516,8 +1590,8 @@
 
     document.getElementById('newFolderForm').addEventListener('submit', async (event) => {
       event.preventDefault();
-      if (!isAdminUser()) {
-        document.getElementById('uploadsModalError').textContent = 'Only admin can create folders';
+      if (!canCreateFolders()) {
+        document.getElementById('uploadsModalError').textContent = 'Only main admin can create folders';
         return;
       }
 

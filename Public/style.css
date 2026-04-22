@@ -2697,15 +2697,20 @@ body{
 .member-chip-action[data-tooltip]:focus-visible::after {
   content: attr(data-tooltip);
   position: absolute;
-  right: 0;
-  bottom: calc(100% + 8px);
+  right: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
   background: rgba(23, 180, 249, 0.95);
   color: #fff;
   padding: 6px 10px;
   border-radius: 6px;
   font-size: 0.78rem;
-  white-space: nowrap;
+  line-height: 1.2;
+  white-space: normal;
+  max-width: 220px;
+  text-align: center;
   z-index: 3000;
+  pointer-events: none;
   box-shadow: 0 10px 24px rgba(4, 8, 22, 0.35);
 }
 
@@ -3753,7 +3758,7 @@ body.theme-neon .app-toast {
 }
 
 .notification-delete-btn {
-  align-self: center;
+  align-self: stretch;
   border: 1px solid rgba(255, 107, 107, 0.7);
   border-radius: 8px;
   background: rgba(89, 18, 29, 0.7);
@@ -3761,14 +3766,47 @@ body.theme-neon .app-toast {
   padding: 6px 9px;
   cursor: pointer;
   font-size: 0.75rem;
+  min-width: 74px;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.notification-item-actions {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease;
 }
 
-.notification-item:hover .notification-delete-btn {
+.notification-item:hover .notification-item-actions,
+.notification-item:focus-within .notification-item-actions {
   opacity: 1;
   pointer-events: auto;
+}
+
+.notification-reply-btn {
+  align-self: stretch;
+  border: 1px solid rgba(90, 200, 255, 0.72);
+  border-radius: 8px;
+  background: rgba(17, 74, 108, 0.78);
+  color: #d8f5ff;
+  padding: 6px 9px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  min-width: 74px;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.notification-reply-btn:hover {
+  border-color: rgba(90, 200, 255, 0.95);
+  background: rgba(17, 92, 136, 0.92);
+}
+
+.notification-delete-btn:hover {
+  border-color: rgba(255, 107, 107, 0.95);
+  background: rgba(117, 20, 35, 0.92);
 }
 
 .notification-ask-toggle {
