@@ -16,7 +16,6 @@ const storeFileMetadataInDb = String(process.env.STORE_FILE_METADATA_IN_DB || 't
 const sanitizeFolderPath = (value) => {
     const normalized = String(value || '').replace(/\\/g, '/').trim();
     if (!normalized) return '';
-
     return normalized
         .split('/')
         .map((part) => part.trim())
@@ -52,11 +51,9 @@ const encodeFsContentId = (relativePath) => {
 const decodeFsContentId = (contentId) => {
     const value = String(contentId || '');
     if (!value.startsWith('fs_')) return null;
-
     const payload = value.slice(3).replace(/-/g, '+').replace(/_/g, '/');
     const paddingLength = (4 - (payload.length % 4)) % 4;
     const padded = payload + '='.repeat(paddingLength);
-
     try {
         return Buffer.from(padded, 'base64').toString('utf8');
     } catch (err) {
@@ -87,13 +84,10 @@ const isSafeResolvedPath = (basePath, targetPath) => {
 const removeEmptyParentDirs = (basePath, fromDir) => {
     let current = path.resolve(fromDir);
     const root = path.resolve(basePath);
-
     while (current.startsWith(`${root}${path.sep}`)) {
         if (!fs.existsSync(current)) break;
-
         const entries = fs.readdirSync(current);
         if (entries.length > 0) break;
-
         fs.rmdirSync(current);
         current = path.dirname(current);
     }
@@ -102,27 +96,21 @@ const removeEmptyParentDirs = (basePath, fromDir) => {
 const readFsContentsForBox = (boxId) => {
     const root = getBoxUploadsRoot(boxId);
     if (!fs.existsSync(root)) return [];
-
     const rows = [];
-
     const walk = (currentDir, relativeDir) => {
         const entries = fs.readdirSync(currentDir, { withFileTypes: true });
-
         for (const entry of entries) {
             const absolutePath = path.join(currentDir, entry.name);
             const relativePath = relativeDir ? path.join(relativeDir, entry.name) : entry.name;
-
             if (entry.isDirectory()) {
                 walk(absolutePath, relativePath);
                 continue;
             }
-
             const stats = fs.statSync(absolutePath);
             const relativePosixPath = toPosixPath(relativePath);
-            const folderPath = toPosixPath(path.dirname(relativePath)).replace(/^\.$/, '');
+            const folderPath = toPosixPath(path.dirname(relativePath)).replace(/^\.$/g, '');
             const fileName = entry.name;
             const originalName = deriveOriginalName(fileName);
-
             rows.push({
                 id: encodeFsContentId(relativePosixPath),
                 content_type: inferContentTypeFromName(fileName),
@@ -138,7 +126,6 @@ const readFsContentsForBox = (boxId) => {
             });
         }
     };
-
     walk(root, '');
     return rows;
 };
@@ -151,7 +138,6 @@ const storage = multer.diskStorage({
         const destinationPath = safeFolderPath
             ? path.join(destinationRoot, safeFolderPath.replace(/\//g, path.sep))
             : destinationRoot;
-
         ensureDirExists(destinationPath);
         cb(null, destinationPath);
     },
@@ -171,15 +157,12 @@ const allowedExtensions = new Set(['.pdf', '.doc', '.docx', '.mp4', '.webm', '.m
 
 const isAllowedUpload = (file) => {
     if (!file) return false;
-
     const mime = String(file.mimetype || '').toLowerCase();
     const extension = path.extname(String(file.originalname || '')).toLowerCase();
-
     if (mime.startsWith('video/')) return true;
     if (mime.startsWith('image/')) return true;
     if (allowedDocumentMimeTypes.has(mime)) return true;
     if (allowedExtensions.has(extension)) return true;
-
     return false;
 };
 
@@ -190,7 +173,6 @@ const upload = multer({
         if (isAllowedUpload(file)) {
             return cb(null, true);
         }
-
         return cb(new Error('Only PDF, DOC, DOCX, image, and video files are allowed'));
     }
 });
@@ -230,29 +212,21 @@ const syncLegacyFileRename = async ({ boxId, userId, oldFilePath, newFileName, n
         Number(boxId),
         String(oldFilePath || '')
     ];
-
-    let query = `UPDATE box_files
-         SET file_name = ?, file_path = ?
-         WHERE box_id = ? AND file_path = ?`;
-
+    let query = `UPDATE box_files SET file_name = ?, file_path = ? WHERE box_id = ? AND file_path = ?`;
     if (Number.isFinite(Number(userId))) {
         query += ' AND user_id = ?';
         params.push(Number(userId));
     }
-
     await sql.query(query, params);
 };
 
 const syncLegacyFileDelete = async ({ boxId, userId, filePath }) => {
     const params = [Number(boxId), String(filePath || '')];
-    let query = `DELETE FROM box_files
-         WHERE box_id = ? AND file_path = ?`;
-
+    let query = `DELETE FROM box_files WHERE box_id = ? AND file_path = ?`;
     if (Number.isFinite(Number(userId))) {
         query += ' AND user_id = ?';
         params.push(Number(userId));
     }
-
     await sql.query(query, params);
 };
 
@@ -287,11 +261,9 @@ const ensureCollaborationTables = async () => {
         )
     `);
 
-    // Backward compatibility for older table versions.
     try {
         await sql.query('ALTER TABLE box_contents ADD COLUMN folder_path VARCHAR(500) NULL AFTER note_text');
     } catch (alterErr) {
-        // ER_DUP_FIELDNAME means column already exists.
         if (alterErr && alterErr.code !== 'ER_DUP_FIELDNAME') {
             throw alterErr;
         }
@@ -344,7 +316,6 @@ const ensureCollaborationTables = async () => {
         )
     `);
 
-    // Keep owner permissions consistent for old/inconsistent records.
     await sql.query(`
         UPDATE box_members bm
         JOIN boxes b ON b.id = bm.box_id
@@ -369,6 +340,7 @@ const getMembership = async (boxId, userId) => {
         'SELECT role FROM box_members WHERE box_id = ? AND user_id = ? LIMIT 1',
         [boxId, userId]
     );
+
     return rows[0] || null;
 };
 
@@ -382,7 +354,6 @@ const getBoxOwnerId = async (boxId) => {
         'SELECT user_id FROM boxes WHERE id = ? LIMIT 1',
         [boxId]
     );
-
     return rows.length ? Number(rows[0].user_id) : null;
 };
 
@@ -473,7 +444,7 @@ const getBoxCapacityAndUsage = async (boxId) => {
         capacity,
         memberCount,
         pendingInviteCount,
-        reservedCount: memberCount
+        reservedCount: memberCount + pendingInviteCount
     };
 };
 
@@ -485,10 +456,8 @@ const resolveUploadAbsolutePath = (filePathValue) => {
 const deriveFolderPathFromFilePath = (boxId, filePathValue) => {
     const normalized = toPosixPath(String(filePathValue || '')).replace(/^\/+/, '');
     if (!normalized) return null;
-
     const expectedPrefix = `uploads/boxes/${boxId}/`;
     if (!normalized.startsWith(expectedPrefix)) return null;
-
     const relativePath = normalized.slice(expectedPrefix.length);
     const folderPath = toPosixPath(path.dirname(relativePath)).replace(/^\.$/, '');
     return folderPath || null;
@@ -497,10 +466,8 @@ const deriveFolderPathFromFilePath = (boxId, filePathValue) => {
 const deriveRelativePathFromFilePath = (boxId, filePathValue) => {
     const normalized = toPosixPath(String(filePathValue || '')).replace(/^\/+/, '');
     if (!normalized) return '';
-
     const expectedPrefix = `uploads/boxes/${boxId}/`;
     if (!normalized.startsWith(expectedPrefix)) return '';
-
     return normalized.slice(expectedPrefix.length);
 };
 
@@ -536,7 +503,7 @@ exports.acceptPendingInvitesForUser = async (userId, email, inviteToken = null) 
 
     for (const invite of invites) {
         const capacityState = await getBoxCapacityAndUsage(invite.box_id);
-        if (capacityState.memberCount >= capacityState.capacity) {
+        if (capacityState.memberCount + capacityState.pendingInviteCount >= capacityState.capacity) {
             skippedCount += 1;
             continue;
         }
@@ -561,8 +528,8 @@ exports.acceptPendingInvitesForUser = async (userId, email, inviteToken = null) 
             'SELECT title FROM boxes WHERE id = ? LIMIT 1',
             [invite.box_id]
         );
-        const boxTitle = String(boxRows[0]?.title || `Box ${invite.box_id}`);
 
+        const boxTitle = String(boxRows[0]?.title || `Box ${invite.box_id}`);
         const adminRecipients = await getAdminRecipientsForBox(invite.box_id);
         const recipients = adminRecipients.filter((adminId) => Number(adminId) !== Number(userId));
 
@@ -588,7 +555,6 @@ exports.acceptPendingInvitesForUser = async (userId, email, inviteToken = null) 
     return { acceptedCount, skippedCount };
 };
 
-// Create Box
 exports.createBox = async (req, res) => {
     const { title, description } = req.body;
     const userId = req.user.id;
@@ -633,7 +599,6 @@ exports.createBox = async (req, res) => {
     }
 };
 
-// Get All Boxes
 exports.getAllBoxes = async (req, res) => {
     const userId = req.user.id;
 
@@ -642,17 +607,9 @@ exports.getAllBoxes = async (req, res) => {
 
         const [results] = await sql.query(
             `SELECT b.*,
-                    (SELECT COUNT(DISTINCT bm.user_id)
-                     FROM box_members bm
-                     WHERE bm.box_id = b.id) AS memberCount,
-                    (SELECT COUNT(DISTINCT bi.email)
-                     FROM box_invites bi
-                     WHERE bi.box_id = b.id AND bi.status = 'pending') AS pendingInviteCount,
-                    (
-                        (SELECT COUNT(DISTINCT bm.user_id)
-                         FROM box_members bm
-                         WHERE bm.box_id = b.id)
-                    ) AS reservedCount,
+                    (SELECT COUNT(DISTINCT bm.user_id) FROM box_members bm WHERE bm.box_id = b.id) AS memberCount,
+                    (SELECT COUNT(DISTINCT bi.email) FROM box_invites bi WHERE bi.box_id = b.id AND bi.status = 'pending') AS pendingInviteCount,
+                    (SELECT COUNT(DISTINCT bm.user_id) FROM box_members bm WHERE bm.box_id = b.id) AS reservedCount,
                     CASE
                         WHEN b.user_id = ? THEN 'admin'
                         WHEN MAX(CASE WHEN bm.role = 'admin' THEN 1 ELSE 0 END) = 1 THEN 'admin'
@@ -670,7 +627,6 @@ exports.getAllBoxes = async (req, res) => {
             const memberCount = Number(row.memberCount || 0);
             const capacity = Number(row.capacity || 1);
             const normalizedCapacity = Math.max(capacity, memberCount, 1);
-
             return {
                 ...row,
                 capacity: normalizedCapacity,
@@ -684,7 +640,6 @@ exports.getAllBoxes = async (req, res) => {
     }
 };
 
-// Get Single Box
 exports.getBoxById = async (req, res) => {
     const { id } = req.params;
     const userId = req.user.id;
@@ -703,7 +658,6 @@ exports.getBoxById = async (req, res) => {
     }
 };
 
-// Update Box
 exports.updateBox = async (req, res) => {
     const { id } = req.params;
     const { title, description } = req.body;
@@ -766,9 +720,8 @@ exports.updateBox = async (req, res) => {
     } catch (err) {
         return res.status(500).json({ message: 'Error updating box', details: err.message });
     }
-};      
+};
 
-// Delete Box
 exports.deleteBox = async (req, res) => {
     const { id } = req.params;
     const userId = req.user.id;
@@ -818,8 +771,6 @@ exports.deleteBox = async (req, res) => {
     }
 };
 
-//DASHBOARD MY BOX API
-
 exports.getMyBoxes = async (req, res) => {
     const userId = req.user.id;
 
@@ -852,7 +803,6 @@ exports.getMyBoxes = async (req, res) => {
             const memberCount = Number(row.memberCount || 0);
             const capacity = Number(row.capacity || 1);
             const normalizedCapacity = Math.max(capacity, memberCount, 1);
-
             return {
                 ...row,
                 capacity: normalizedCapacity,
@@ -869,8 +819,6 @@ exports.getMyBoxes = async (req, res) => {
         return res.status(500).json({ message: 'DB error', error: err.message });
     }
 };
-
-//EXISTING BOX (OTHER USER'S BOX) API
 
 exports.getOtherUsersBoxes = async (req, res) => {
     const userId = req.user.id;
@@ -931,7 +879,6 @@ exports.addMemberByEmail = async (req, res) => {
             return res.status(400).json({ message: 'Box capacity is full' });
         }
 
-        // Get box details and sender's name
         const [boxes] = await sql.query(
             'SELECT title FROM boxes WHERE id = ? LIMIT 1',
             [boxId]
@@ -960,7 +907,6 @@ exports.addMemberByEmail = async (req, res) => {
         let skippedSelfCount = 0;
         let invitedCount = 0;
         let emailQueuedCount = 0;
-        let capacityReached = false;
 
         const inviteTargets = [];
 
@@ -1020,7 +966,6 @@ exports.addMemberByEmail = async (req, res) => {
             for (const notification of emailNotifications) {
                 emailQueuedCount += 1;
 
-                // Fire-and-forget so API is fast even if SMTP/network is slow.
                 sendInvitationEmail(notification.email, boxTitle, senderName, notification.url)
                     .then((emailResult) => {
                         if (!emailResult.success) {
@@ -1087,7 +1032,7 @@ exports.removeMember = async (req, res) => {
             }
 
             const [adminCountRows] = await sql.query(
-                'SELECT COUNT(*) AS adminCount FROM box_members WHERE box_id = ? AND role = ? ',
+                'SELECT COUNT(*) AS adminCount FROM box_members WHERE box_id = ? AND role = ?',
                 [boxId, 'admin']
             );
 
@@ -1229,11 +1174,9 @@ exports.uploadBoxContent = [
     (req, res, next) => {
         upload.single('file')(req, res, (err) => {
             if (!err) return next();
-
             if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
                 return res.status(400).json({ message: 'File size should be less than 200 MB' });
             }
-
             return res.status(400).json({ message: err.message || 'Invalid file upload' });
         });
     },
@@ -1269,6 +1212,7 @@ exports.uploadBoxContent = [
             let fileName = null;
             let filePath = null;
             let originalName = null;
+
             const safeFolderPath = String(folderPath || '').trim().replace(/^\/+|\/+$/g, '');
             const safeAdminNote = isMainAdmin ? sanitizeAdminNote(adminNote) : '';
 
@@ -1334,7 +1278,7 @@ exports.getBoxContents = async (req, res) => {
         }
 
         const [dbRows] = await sql.query(
-                `SELECT bc.id, bc.content_type, bc.file_name, bc.file_path, bc.original_name, bc.note_text, bc.admin_note, bc.folder_path,
+            `SELECT bc.id, bc.content_type, bc.file_name, bc.file_path, bc.original_name, bc.note_text, bc.admin_note, bc.folder_path,
                     bc.created_at, bc.uploaded_by, u.fullName AS uploaded_by_name
              FROM box_contents bc
              LEFT JOIN users u ON u.id = bc.uploaded_by
@@ -1344,8 +1288,7 @@ exports.getBoxContents = async (req, res) => {
         );
 
         const [legacyRows] = await sql.query(
-            `SELECT bf.id, bf.user_id, bf.file_name, bf.file_type, bf.file_path, bf.uploaded_at,
-                    u.fullName AS uploaded_by_name
+            `SELECT bf.id, bf.user_id, bf.file_name, bf.file_type, bf.file_path, bf.uploaded_at, u.fullName AS uploaded_by_name
              FROM box_files bf
              LEFT JOIN users u ON u.id = bf.user_id
              WHERE bf.box_id = ?
@@ -1369,14 +1312,12 @@ exports.getBoxContents = async (req, res) => {
             .filter((row) => {
                 const key = String(row.file_path || '');
                 if (!key || existingFileKeys.has(key)) return false;
-
                 const absolutePath = resolveUploadAbsolutePath(row.file_path);
                 return absolutePath && fs.existsSync(absolutePath);
             })
             .map((row) => {
                 const relativePath = deriveRelativePathFromFilePath(boxId, row.file_path);
                 if (!relativePath) return null;
-
                 return {
                     id: encodeFsContentId(relativePath),
                     content_type: inferContentTypeFromLegacyMeta(row.file_type, row.file_name),
@@ -1403,6 +1344,7 @@ exports.getBoxContents = async (req, res) => {
         const noteRows = mergedRows.filter((row) => row.content_type === 'note');
         const dbFileRows = mergedRows.filter((row) => row.content_type !== 'note');
         const fsOnlyRows = fsRows.filter((row) => !dbFileRows.some((dbRow) => String(dbRow.file_path || '') === String(row.file_path || '')));
+
         const data = [...noteRows, ...dbFileRows, ...fsOnlyRows].sort((a, b) => {
             const aTime = new Date(a.created_at || 0).getTime();
             const bTime = new Date(b.created_at || 0).getTime();
@@ -1447,6 +1389,7 @@ exports.renameBoxContent = async (req, res) => {
             const targetBaseName = path.extname(safeName)
                 ? path.basename(safeName, path.extname(safeName))
                 : safeName;
+
             const nextFileName = `${Date.now()}-${sanitizeFileName(targetBaseName)}${currentExt || ''}`;
             const relativeDir = path.dirname(safeRelativePath).replace(/^\.$/, '');
             const nextRelativePath = relativeDir
@@ -1476,9 +1419,10 @@ exports.renameBoxContent = async (req, res) => {
         const content = rows[0];
 
         if (content.content_type === 'note') {
-            const updatedNote = safeName.startsWith('[Folder]') ? safeName : content.note_text && content.note_text.startsWith('[Folder]')
-                ? `[Folder] ${safeName}`
-                : safeName;
+            const updatedNote = safeName.startsWith('[Folder]') ? safeName :
+                content.note_text && content.note_text.startsWith('[Folder]')
+                    ? `[Folder] ${safeName}`
+                    : safeName;
 
             await sql.query(
                 'UPDATE box_contents SET note_text = ? WHERE id = ? AND box_id = ?',
@@ -1505,9 +1449,7 @@ exports.renameBoxContent = async (req, res) => {
         }
 
         await sql.query(
-            `UPDATE box_contents
-             SET file_name = ?, file_path = ?, original_name = ?
-             WHERE id = ? AND box_id = ?`,
+            `UPDATE box_contents SET file_name = ?, file_path = ?, original_name = ? WHERE id = ? AND box_id = ?`,
             [nextFileName, nextRelativePath, safeName, contentId, boxId]
         );
 
@@ -1641,4 +1583,3 @@ exports.updateContentAdminNote = async (req, res) => {
         return res.status(500).json({ message: 'Unable to update important note', error: err.message });
     }
 };
-

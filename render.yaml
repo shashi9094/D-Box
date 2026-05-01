@@ -1,3 +1,5 @@
+# Important: set UPLOADS_ROOT to a persistent disk mount path in Render.
+# Example: /var/data/d-box-uploads
 services:
   - type: web
     name: d-box
@@ -44,4 +46,6 @@ services:
       - key: JWT_SECRET
         sync: false
       - key: PUBLIC_APP_URL
+        sync: false
+      - key: UPLOADS_ROOT
         sync: false

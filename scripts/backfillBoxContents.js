@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const db = require('../db/connection');
+const { boxUploadsRoot: uploadsRoot } = require('../utils/uploadPaths');
 
 const sql = db.promise();
-const uploadsRoot = path.join(__dirname, '..', 'uploads', 'boxes');
 
 const args = new Set(process.argv.slice(2));
 const isApplyMode = args.has('--apply');

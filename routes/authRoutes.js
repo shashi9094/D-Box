@@ -10,6 +10,10 @@ const authController = require("../controllers/authController");
 const db = require("../db/connection");
 const { logLoginHistory, isNewDeviceLogin } = require("../utils/loginHistory");
 const {
+  profileUploadsRoot,
+  ensureUploadDirectories,
+} = require("../utils/uploadPaths");
+const {
   ensureNotificationsTable,
   listUserNotifications,
   getUnreadNotificationCount,
@@ -19,11 +23,9 @@ const {
   createNotificationsForUsers,
 } = require("../utils/notifications");
 const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-const profileUploadsDir = path.join(__dirname, '..', 'uploads', 'profiles');
+const profileUploadsDir = profileUploadsRoot;
 
-if (!fs.existsSync(profileUploadsDir)) {
-  fs.mkdirSync(profileUploadsDir, { recursive: true });
-}
+ensureUploadDirectories();
 
 const profilePhotoStorage = multer.diskStorage({
   destination: (_req, _file, cb) => {

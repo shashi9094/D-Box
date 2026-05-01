@@ -1,15 +1,10 @@
 const fs = require('fs');
-const path = require('path');
 const db = require('../db/connection');
+const { resolveUploadAbsolutePath } = require('../utils/uploadPaths');
 
 const sql = db.promise();
 const args = new Set(process.argv.slice(2));
 const isApplyMode = args.has('--apply');
-
-const resolveUploadAbsolutePath = (filePathValue) => {
-    const normalizedPath = String(filePathValue || '').replace(/^\/+/, '').replace(/\\/g, path.sep);
-    return normalizedPath ? path.join(__dirname, '..', normalizedPath) : '';
-};
 
 const hasPhysicalFile = (filePathValue) => {
     const absolutePath = resolveUploadAbsolutePath(filePathValue);

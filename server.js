@@ -5,12 +5,21 @@ const app = express();
 const path = require('path');
 
 const db = require('./db/connection');
+const {
+    uploadsRoot,
+    defaultUploadsRoot,
+    ensureUploadDirectories,
+    logUploadsStorageWarning
+} = require('./utils/uploadPaths');
 
 require('./config/googleAuth'); // Google Strategy load
 const passport = require('passport');
 const session = require('express-session');
 const isProduction = process.env.NODE_ENV === 'production';
 const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+ensureUploadDirectories();
+logUploadsStorageWarning();
 
 // Routes
 const authRoutes = require('./routes/authRoutes');
@@ -101,7 +110,10 @@ app.get('/signup.html', (req, res) => {
 
 // Static
 app.use(express.static(path.join(__dirname, 'Public')));
-app.use("/uploads", express.static(path.join(__dirname, 'uploads')));
+app.use("/uploads", express.static(uploadsRoot));
+if (path.resolve(uploadsRoot) !== path.resolve(defaultUploadsRoot)) {
+    app.use("/uploads", express.static(defaultUploadsRoot));
+}
 
 // Routes
 app.use('/api/auth', authRoutes);
