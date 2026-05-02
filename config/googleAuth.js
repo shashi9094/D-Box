@@ -17,6 +17,7 @@ if (googleConfig.enabled) {
       (accessToken, refreshToken, profile, done) => {
         const email = profile.emails[0].value;
         const name = profile.displayName;
+        const googleId = String(profile.id || '').trim();
 
         db.query(
           "SELECT * FROM users WHERE email = ?",
@@ -25,13 +26,26 @@ if (googleConfig.enabled) {
             if (err) return done(err);
 
             if (results.length > 0) {
-              return done(null, results[0]);
+              const existing = results[0];
+              // Ensure googleid is stored for this user
+              if (googleId && !existing.googleid) {
+                db.query(
+                  'UPDATE users SET googleid = ? WHERE email = ?',
+                  [googleId, email],
+                  (updateErr) => {
+                    if (updateErr) console.warn('Unable to update user googleid:', updateErr.message || updateErr);
+                    return done(null, existing);
+                  }
+                );
+              } else {
+                return done(null, existing);
+              }
             }
 
             const sql = `
               INSERT INTO users
-              (fullName, dob, email, country, capacity, purpose, role, password)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              (fullName, dob, email, country, capacity, purpose, role, password, googleid)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
               RETURNING id
             `;
 
@@ -46,6 +60,7 @@ if (googleConfig.enabled) {
                 "Google Login",
                 "User",
                 "google_auth",
+                googleId || null,
               ],
               (err, result) => {
                 if (err) {
@@ -53,8 +68,9 @@ if (googleConfig.enabled) {
                   return done(err);
                 }
 
+                const newId = result && (result.insertId || result.rows?.[0]?.id);
                 return done(null, {
-                  id: result.insertId || result.rows?.[0]?.id,
+                  id: newId,
                   email: email,
                   fullName: name,
                 });
