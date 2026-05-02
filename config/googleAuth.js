@@ -1,23 +1,12 @@
 const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const db = require("../db/connection");
+const { loadGoogleOAuthConfig } = require("../utils/googleOAuthConfig");
 
-const clientID = String(process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_iD || '').trim();
-const clientSecret = String(process.env.GOOGLE_CLIENT_SECRET || '').trim();
-const callbackURL = String(process.env.GOOGLE_CALLBACK_URL || '/api/auth/google/callback').trim();
+const googleConfig = loadGoogleOAuthConfig();
+const { clientID, clientSecret, callbackURL } = googleConfig;
 
-function isValidGoogleClientId(value) {
-  return /^\d+-[a-z0-9-]+\.apps\.googleusercontent\.com$/i.test(String(value || '').trim());
-}
-
-function maskClientId(value) {
-  const id = String(value || '').trim();
-  if (!id) return '(empty)';
-  if (id.length <= 18) return `${id.slice(0, 4)}...`;
-  return `${id.slice(0, 10)}...${id.slice(-18)}`;
-}
-
-if (clientID && clientSecret && isValidGoogleClientId(clientID)) {
+if (googleConfig.enabled) {
   passport.use(
     new GoogleStrategy(
       {
@@ -78,7 +67,7 @@ if (clientID && clientSecret && isValidGoogleClientId(clientID)) {
   );
 } else {
   console.warn(
-    `Google OAuth is disabled. clientId=${maskClientId(clientID)} validClientId=${isValidGoogleClientId(clientID)} hasSecret=${Boolean(clientSecret)} callbackURL=${callbackURL}`
+    `Google OAuth is disabled. source=${googleConfig.source} clientId=${googleConfig.maskedClientId} validClientId=${googleConfig.validClientIdFormat} hasSecret=${googleConfig.hasClientSecret} callbackURL=${callbackURL}`
   );
 }
 

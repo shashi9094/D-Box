@@ -9,6 +9,7 @@ const sharp = require("sharp");
 const authController = require("../controllers/authController");
 const db = require("../db/connection");
 const { logLoginHistory, isNewDeviceLogin } = require("../utils/loginHistory");
+const { loadGoogleOAuthConfig } = require("../utils/googleOAuthConfig");
 const {
   profileUploadsRoot,
   ensureUploadDirectories,
@@ -79,14 +80,11 @@ function maskClientId(value) {
   return `${id.slice(0, 10)}...${id.slice(-18)}`;
 }
 
-const googleClientId = String(process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_iD || '').trim();
-const googleClientSecret = String(process.env.GOOGLE_CLIENT_SECRET || '').trim();
-const googleCallbackUrl = String(process.env.GOOGLE_CALLBACK_URL || '/api/auth/google/callback').trim();
-
-const googleAuthEnabled = Boolean(
-  isValidGoogleClientId(googleClientId) &&
-  googleClientSecret
-);
+const googleConfig = loadGoogleOAuthConfig();
+const googleClientId = googleConfig.clientID;
+const googleClientSecret = googleConfig.clientSecret;
+const googleCallbackUrl = googleConfig.callbackURL;
+const googleAuthEnabled = googleConfig.enabled;
 
 // Normal signup
 router.post("/signup", authController.signup);
@@ -119,12 +117,19 @@ router.get("/session", (req, res) => {
 });
 
 router.get("/google/status", (req, res) => {
+  const missing = [];
+  if (!googleClientId) missing.push('GOOGLE_CLIENT_ID');
+  if (!googleClientSecret) missing.push('GOOGLE_CLIENT_SECRET');
+  if (googleClientId && !isValidGoogleClientId(googleClientId)) missing.push('GOOGLE_CLIENT_ID format');
+
   res.json({
     googleAuthEnabled,
-    clientIdMasked: maskClientId(googleClientId),
-    validClientIdFormat: isValidGoogleClientId(googleClientId),
-    hasClientSecret: Boolean(googleClientSecret),
+    clientIdMasked: googleConfig.maskedClientId,
+    validClientIdFormat: googleConfig.validClientIdFormat,
+    hasClientSecret: googleConfig.hasClientSecret,
     callbackURL: googleCallbackUrl,
+    source: googleConfig.source,
+    missing,
   });
 });
 
@@ -143,10 +148,11 @@ router.get("/status", async (req, res) => {
     return res.json({
       googleAuthEnabled,
       google: {
-        clientIdMasked: maskClientId(googleClientId),
-        validClientIdFormat: isValidGoogleClientId(googleClientId),
-        hasClientSecret: Boolean(googleClientSecret),
+        clientIdMasked: googleConfig.maskedClientId,
+        validClientIdFormat: googleConfig.validClientIdFormat,
+        hasClientSecret: googleConfig.hasClientSecret,
         callbackURL: googleCallbackUrl,
+        source: googleConfig.source,
       },
       database: dbStatus,
     });
