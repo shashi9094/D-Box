@@ -1,14 +1,14 @@
 # Important: Database Type
 
-This project currently uses MySQL (`mysql2`) and MySQL SQL syntax.
+This project now uses PostgreSQL for the runtime database.
 
-If you use Render PostgreSQL credentials (from a `postgresql://...` URL), this app will not connect because PostgreSQL is a different database engine.
+If you deploy the app on Railway or Render, point the service at a PostgreSQL database using `DATABASE_URL`.
 
 ## Use one of these options
 
-1. Use a public MySQL provider (PlanetScale, Railway MySQL, Aiven MySQL, etc.) and put those values into Render env vars.
-2. Migrate the application from MySQL to PostgreSQL (code and SQL changes required).
+1. Use PostgreSQL for the app runtime and set `DATABASE_URL` in the hosting dashboard.
+2. Run the MySQL-to-Postgres migration script before cutover if your existing data still lives in MySQL.
 
-## If you keep MySQL
+## Legacy MySQL source data
 
-Use the template in `render.env.mysql.example` and set all variables in Render dashboard.
+Use the template in `render.env.mysql.example` only as a source database reference for migration. It is not the runtime template anymore.

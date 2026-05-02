@@ -44,41 +44,34 @@ const walkFiles = (dirPath, relativeDir = '') => {
 const ensureBoxContentsTable = async () => {
     await sql.query(`
         CREATE TABLE IF NOT EXISTS box_contents (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            box_id INT NOT NULL,
-            uploaded_by INT NOT NULL,
-            content_type ENUM('file', 'note', 'video') NOT NULL DEFAULT 'file',
+            id BIGSERIAL PRIMARY KEY,
+            box_id BIGINT NOT NULL,
+            uploaded_by BIGINT NOT NULL,
+            content_type TEXT NOT NULL DEFAULT 'file',
             file_name VARCHAR(255) NULL,
             file_path VARCHAR(500) NULL,
             original_name VARCHAR(255) NULL,
             note_text TEXT NULL,
             folder_path VARCHAR(500) NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT box_contents_content_type_check CHECK (content_type IN ('file', 'note', 'video'))
         )
     `);
 
-    try {
-        await sql.query('ALTER TABLE box_contents ADD COLUMN folder_path VARCHAR(500) NULL AFTER note_text');
-    } catch (err) {
-        if (!err || err.code !== 'ER_DUP_FIELDNAME') {
-            throw err;
-        }
-    }
+    await sql.query('ALTER TABLE box_contents ADD COLUMN IF NOT EXISTS folder_path VARCHAR(500) NULL');
 };
 
 const ensureLegacyBoxFilesTable = async () => {
     await sql.query(`
         CREATE TABLE IF NOT EXISTS box_files (
-            id INT NOT NULL AUTO_INCREMENT,
-            box_id INT NOT NULL,
-            user_id INT NOT NULL,
+            id BIGSERIAL PRIMARY KEY,
+            box_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
             file_name VARCHAR(255) NOT NULL,
             file_size BIGINT NOT NULL,
             file_type VARCHAR(128) NOT NULL,
             file_path VARCHAR(1024) DEFAULT NULL,
-            uploaded_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (id),
-            KEY box_id (box_id),
+            uploaded_at TIMESTAMPTZ NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT box_files_ibfk_1 FOREIGN KEY (box_id) REFERENCES boxes (id) ON DELETE CASCADE
         )
     `);

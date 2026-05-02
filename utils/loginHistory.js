@@ -47,10 +47,10 @@ const ensureLoginHistoryTable = async () => {
 
   await db.promise().query(`
     CREATE TABLE IF NOT EXISTS login_history (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      user_id INT NOT NULL,
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL,
       email VARCHAR(255) NOT NULL,
-      login_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      login_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
       ip_address VARCHAR(100) NULL,
       user_agent TEXT NULL,
       device_type VARCHAR(50) NULL,

@@ -1,142 +1,185 @@
 require('dotenv').config();
-const mysql = require('mysql2');
+const { Pool } = require('pg');
 
-const dbSslEnabled = ['1', 'true', 'yes', 'required'].includes(
-    String(process.env.DB_SSL || '').trim().toLowerCase()
-);
+const connectionString = String(
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.PG_CONNECTION_STRING ||
+    ''
+).trim();
 
-const dbSslRejectUnauthorized = !['0', 'false', 'no'].includes(
-    String(process.env.DB_SSL_REJECT_UNAUTHORIZED || 'true').trim().toLowerCase()
-);
-
-const dbSslCaFromText = String(process.env.DB_SSL_CA || '').trim();
-const dbSslCaFromBase64 = String(process.env.DB_SSL_CA_BASE64 || '').trim();
-
-const resolveDbSslCa = () => {
-    if (dbSslCaFromBase64) {
-        try {
-            return Buffer.from(dbSslCaFromBase64, 'base64').toString('utf8');
-        } catch (_) {
-            return '';
-        }
-    }
-
-    if (!dbSslCaFromText) return '';
-    return dbSslCaFromText.replace(/\\n/g, '\n');
+const parseBoolean = (value, fallback = false) => {
+    if (value === undefined || value === null || value === '') return fallback;
+    return ['1', 'true', 'yes', 'required', 'on'].includes(String(value).trim().toLowerCase());
 };
 
-const dbSslCa = resolveDbSslCa();
+const parseBooleanNegated = (value, fallback = false) => {
+    if (value === undefined || value === null || value === '') return fallback;
+    return !['0', 'false', 'no', 'off'].includes(String(value).trim().toLowerCase());
+};
 
-const pool = mysql.createPool({
-    host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'dbox',
-    port: Number(process.env.DB_PORT || 3306),
-    connectTimeout: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10000),
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0,
+const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+const dbSslEnabled = (() => {
+    if (process.env.DB_SSL !== undefined) {
+        return parseBoolean(process.env.DB_SSL, false);
+    }
+
+    if (process.env.PGSSLMODE) {
+        return !['disable', 'allow', 'prefer'].includes(String(process.env.PGSSLMODE).trim().toLowerCase());
+    }
+
+    return isProduction || Boolean(connectionString);
+})();
+
+const dbSslRejectUnauthorized = parseBooleanNegated(process.env.DB_SSL_REJECT_UNAUTHORIZED, false);
+
+const pool = new Pool({
+    connectionString: connectionString || undefined,
+    host: process.env.PGHOST || process.env.DB_HOST || 'localhost',
+    user: process.env.PGUSER || process.env.DB_USER || 'postgres',
+    password: process.env.PGPASSWORD || process.env.DB_PASSWORD || '',
+    database: process.env.PGDATABASE || process.env.DB_NAME || 'dbox',
+    port: Number(process.env.PGPORT || process.env.DB_PORT || 5432),
+    max: Number(process.env.DB_POOL_SIZE || 10),
+    idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 30000),
+    connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10000),
     ssl: dbSslEnabled
         ? {
-            rejectUnauthorized: dbSslRejectUnauthorized,
-            ca: dbSslCa || undefined
+            rejectUnauthorized: dbSslRejectUnauthorized
         }
-        : undefined
+        : false,
 });
+
+const translatePlaceholders = (sqlText) => {
+    let index = 0;
+    return String(sqlText || '').replace(/\?/g, () => `$${++index}`);
+};
+
+const isReadQuery = (command, sqlText) => {
+    const safeCommand = String(command || '').toUpperCase();
+    if (safeCommand === 'SELECT' || safeCommand === 'WITH') {
+        return true;
+    }
+
+    return /^\s*(SELECT|WITH)\b/i.test(String(sqlText || ''));
+};
+
+const normalizeWriteResult = (result) => {
+    const firstRow = Array.isArray(result.rows) ? result.rows[0] : null;
+    const firstId = firstRow && Object.prototype.hasOwnProperty.call(firstRow, 'id')
+        ? firstRow.id
+        : firstRow && Object.prototype.hasOwnProperty.call(firstRow, 'insertId')
+            ? firstRow.insertId
+            : null;
+
+    return {
+        command: result.command,
+        rowCount: Number(result.rowCount || 0),
+        affectedRows: Number(result.rowCount || 0),
+        insertId: firstId === null || firstId === undefined ? null : Number(firstId) || firstId,
+        rows: Array.isArray(result.rows) ? result.rows : []
+    };
+};
+
+const executeQuery = async (sqlText, values = []) => {
+    const translatedSql = translatePlaceholders(sqlText);
+    const queryValues = Array.isArray(values) ? values : [values];
+    const result = await pool.query(translatedSql, queryValues);
+
+    if (isReadQuery(result.command, sqlText)) {
+        return [result.rows, result.fields];
+    }
+
+    return [normalizeWriteResult(result), result.fields];
+};
+
+const query = (sqlText, values, callback) => {
+    let params = values;
+    let done = callback;
+
+    if (typeof values === 'function') {
+        done = values;
+        params = [];
+    }
+
+    const promise = executeQuery(sqlText, params);
+
+    if (typeof done === 'function') {
+        promise
+            .then(([rowsOrResult, fields]) => done(null, rowsOrResult, fields))
+            .catch((error) => done(error));
+        return undefined;
+    }
+
+    return promise;
+};
 
 async function ensureCoreTables() {
-    const sql = pool.promise();
-
-    await sql.query(`
+    await pool.query(`
         CREATE TABLE IF NOT EXISTS users (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            fullName VARCHAR(255) NOT NULL,
+            id BIGSERIAL PRIMARY KEY,
+            fullName TEXT NOT NULL,
             dob DATE NULL,
-            email VARCHAR(255) NOT NULL UNIQUE,
-            country VARCHAR(100) NULL,
-            capacity VARCHAR(100) NULL,
-            purpose VARCHAR(255) NULL,
-            role ENUM('User','Admin') NOT NULL DEFAULT 'User',
-            password VARCHAR(255) NOT NULL,
-            profilePhoto VARCHAR(1000) NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            email TEXT NOT NULL UNIQUE,
+            country TEXT NULL,
+            capacity TEXT NULL,
+            purpose TEXT NULL,
+            role TEXT NOT NULL DEFAULT 'User',
+            password TEXT NOT NULL,
+            profilePhoto TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT users_role_check CHECK (role IN ('User', 'Admin'))
         )
     `);
 
-    try {
-        await sql.query("ALTER TABLE users ADD COLUMN role ENUM('User','Admin') NOT NULL DEFAULT 'User' AFTER purpose");
-    } catch (alterErr) {
-        if (alterErr && alterErr.code !== 'ER_DUP_FIELDNAME') {
-            throw alterErr;
-        }
-    }
-
-    try {
-        await sql.query('ALTER TABLE users ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP AFTER password');
-    } catch (alterErr) {
-        if (alterErr && alterErr.code !== 'ER_DUP_FIELDNAME') {
-            throw alterErr;
-        }
-    }
-
-    try {
-        await sql.query('ALTER TABLE users ADD COLUMN profilePhoto VARCHAR(1000) NULL AFTER created_at');
-    } catch (alterErr) {
-        if (alterErr && alterErr.code !== 'ER_DUP_FIELDNAME') {
-            throw alterErr;
-        }
-    }
-
-    await sql.query(`
+    await pool.query(`
         CREATE TABLE IF NOT EXISTS boxes (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            title VARCHAR(255) NOT NULL,
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            title TEXT NOT NULL,
             description TEXT NULL,
             capacity INT NOT NULL DEFAULT 1,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            KEY idx_boxes_user_id (user_id),
-            CONSTRAINT boxes_ibfk_1 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
     `);
 
-    try {
-        await sql.query('ALTER TABLE boxes ADD COLUMN capacity INT NOT NULL DEFAULT 1 AFTER description');
-    } catch (alterErr) {
-        if (alterErr && alterErr.code !== 'ER_DUP_FIELDNAME') {
-            throw alterErr;
-        }
-    }
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_boxes_user_id ON boxes(user_id)');
 }
 
-// Validate connection once on startup for faster error feedback.
-pool.getConnection((err, conn) => {
-    if (err) {
-        console.error('Database connection failed:', {
-            code: err.code,
-            errno: err.errno,
-            sqlMessage: err.sqlMessage,
-            host: process.env.DB_HOST || 'localhost',
-            database: process.env.DB_NAME || 'dbox'
-        });
-        return;
-    }
-
-    conn.release();
-    console.log('Database connected successfully.');
-
-    ensureCoreTables()
-        .then(() => {
-            console.log('Core tables are ready.');
-        })
-        .catch((tableErr) => {
-            console.error('Core table setup failed:', {
-                code: tableErr.code,
-                errno: tableErr.errno,
-                sqlMessage: tableErr.sqlMessage
-            });
-        });
+const promise = () => ({
+    query: executeQuery,
+    end: () => pool.end(),
 });
 
-module.exports = pool;
+const end = () => pool.end();
+
+pool.query('SELECT 1')
+    .then(() => ensureCoreTables())
+    .then(() => {
+        console.log('Database connected successfully.');
+        console.log('Core tables are ready.');
+    })
+    .catch((error) => {
+        console.error('Database connection failed:', {
+            code: error.code,
+            message: error.message,
+            host: process.env.PGHOST || process.env.DB_HOST || 'localhost',
+            database: process.env.PGDATABASE || process.env.DB_NAME || 'dbox'
+        });
+    });
+
+module.exports = {
+    query,
+    promise,
+    end,
+    getConnection: (callback) => {
+        pool.connect()
+            .then((client) => {
+                client.release();
+                callback(null, {
+                    release: () => {}
+                });
+            })
+            .catch((error) => callback(error));
+    }
+};

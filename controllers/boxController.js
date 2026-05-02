@@ -235,92 +235,78 @@ const ensureCollaborationTables = async () => {
 
     await sql.query(`
         CREATE TABLE IF NOT EXISTS box_members (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            box_id INT NOT NULL,
-            user_id INT NOT NULL,
-            role ENUM('admin', 'member') NOT NULL DEFAULT 'member',
-            added_by INT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE KEY uniq_box_user (box_id, user_id)
+            id BIGSERIAL PRIMARY KEY,
+            box_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'member',
+            added_by BIGINT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT box_members_role_check CHECK (role IN ('admin', 'member')),
+            UNIQUE (box_id, user_id)
         )
     `);
 
     await sql.query(`
         CREATE TABLE IF NOT EXISTS box_contents (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            box_id INT NOT NULL,
-            uploaded_by INT NOT NULL,
-            content_type ENUM('file', 'note', 'video') NOT NULL DEFAULT 'file',
+            id BIGSERIAL PRIMARY KEY,
+            box_id BIGINT NOT NULL,
+            uploaded_by BIGINT NOT NULL,
+            content_type TEXT NOT NULL DEFAULT 'file',
             file_name VARCHAR(255) NULL,
             file_path VARCHAR(500) NULL,
             original_name VARCHAR(255) NULL,
             note_text TEXT NULL,
             admin_note VARCHAR(300) NULL,
             folder_path VARCHAR(500) NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT box_contents_content_type_check CHECK (content_type IN ('file', 'note', 'video'))
         )
     `);
 
-    try {
-        await sql.query('ALTER TABLE box_contents ADD COLUMN folder_path VARCHAR(500) NULL AFTER note_text');
-    } catch (alterErr) {
-        if (alterErr && alterErr.code !== 'ER_DUP_FIELDNAME') {
-            throw alterErr;
-        }
-    }
-
-    try {
-        await sql.query('ALTER TABLE box_contents ADD COLUMN admin_note VARCHAR(300) NULL AFTER note_text');
-    } catch (alterErr) {
-        if (alterErr && alterErr.code !== 'ER_DUP_FIELDNAME') {
-            throw alterErr;
-        }
-    }
+    await sql.query('ALTER TABLE box_contents ADD COLUMN IF NOT EXISTS folder_path VARCHAR(500) NULL');
+    await sql.query('ALTER TABLE box_contents ADD COLUMN IF NOT EXISTS admin_note VARCHAR(300) NULL');
 
     await sql.query(`
         CREATE TABLE IF NOT EXISTS box_invites (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            box_id INT NOT NULL,
+            id BIGSERIAL PRIMARY KEY,
+            box_id BIGINT NOT NULL,
             email VARCHAR(255) NOT NULL,
-            role ENUM('admin', 'member') NOT NULL DEFAULT 'member',
-            invited_by INT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'member',
+            invited_by BIGINT NOT NULL,
             invite_token VARCHAR(128) NULL,
-            status ENUM('pending', 'accepted', 'revoked') NOT NULL DEFAULT 'pending',
-            accepted_by INT NULL,
-            accepted_at TIMESTAMP NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE KEY uniq_box_email_status (box_id, email, status)
+            status TEXT NOT NULL DEFAULT 'pending',
+            accepted_by BIGINT NULL,
+            accepted_at TIMESTAMPTZ NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT box_invites_role_check CHECK (role IN ('admin', 'member')),
+            CONSTRAINT box_invites_status_check CHECK (status IN ('pending', 'accepted', 'revoked')),
+            UNIQUE (box_id, email, status)
         )
     `);
 
-    try {
-        await sql.query('ALTER TABLE box_invites ADD COLUMN invite_token VARCHAR(128) NULL AFTER invited_by');
-    } catch (alterErr) {
-        if (alterErr && alterErr.code !== 'ER_DUP_FIELDNAME') {
-            throw alterErr;
-        }
-    }
+    await sql.query('ALTER TABLE box_invites ADD COLUMN IF NOT EXISTS invite_token VARCHAR(128) NULL');
 
     await sql.query(`
         CREATE TABLE IF NOT EXISTS box_files (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            box_id INT NOT NULL,
-            user_id INT NOT NULL,
+            id BIGSERIAL PRIMARY KEY,
+            box_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
             file_name VARCHAR(255) NOT NULL,
             file_size BIGINT NOT NULL,
             file_type VARCHAR(128) NOT NULL,
             file_path VARCHAR(1024) NULL,
-            uploaded_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-            KEY box_id (box_id),
+            uploaded_at TIMESTAMPTZ NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT box_files_ibfk_1 FOREIGN KEY (box_id) REFERENCES boxes(id) ON DELETE CASCADE
         )
     `);
 
     await sql.query(`
         UPDATE box_members bm
-        JOIN boxes b ON b.id = bm.box_id
-        SET bm.role = 'admin'
-        WHERE bm.user_id = b.user_id AND bm.role <> 'admin'
+        SET role = 'admin'
+        FROM boxes b
+        WHERE b.id = bm.box_id
+          AND bm.user_id = b.user_id
+          AND bm.role <> 'admin'
     `);
 
     tablesReady = true;
@@ -511,9 +497,9 @@ exports.acceptPendingInvitesForUser = async (userId, email, inviteToken = null) 
         await sql.query(
             `INSERT INTO box_members (box_id, user_id, role, added_by)
              VALUES (?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE
-                role = CASE WHEN role = 'admin' THEN 'admin' ELSE VALUES(role) END,
-                added_by = VALUES(added_by)`,
+             ON CONFLICT (box_id, user_id) DO UPDATE SET
+                role = CASE WHEN role = 'admin' THEN 'admin' ELSE EXCLUDED.role END,
+                added_by = EXCLUDED.added_by`,
             [invite.box_id, userId, invite.role, invite.invited_by]
         );
 
@@ -573,14 +559,14 @@ exports.createBox = async (req, res) => {
         await ensureCollaborationTables();
 
         const [result] = await sql.query(
-            'INSERT INTO boxes (user_id, title, description, capacity) VALUES (?, ?, ?, ?)',
+            'INSERT INTO boxes (user_id, title, description, capacity) VALUES (?, ?, ?, ?) RETURNING id',
             [userId, title, description, capacity]
         );
 
         await sql.query(
             `INSERT INTO box_members (box_id, user_id, role, added_by)
              VALUES (?, ?, 'admin', ?)
-             ON DUPLICATE KEY UPDATE role = 'admin'`,
+             ON CONFLICT (box_id, user_id) DO UPDATE SET role = 'admin', added_by = EXCLUDED.added_by`,
             [result.insertId, userId, userId]
         );
 
@@ -892,7 +878,7 @@ exports.addMemberByEmail = async (req, res) => {
         const senderName = senders && senders[0] ? senders[0].email.split('@')[0] : 'A user';
 
         const [users] = await sql.query(
-            'SELECT id, email FROM users WHERE LOWER(email) IN (?)',
+            'SELECT id, email FROM users WHERE LOWER(email) = ANY(?)',
             [normalizedEmails]
         );
 
@@ -949,10 +935,10 @@ exports.addMemberByEmail = async (req, res) => {
             await sql.query(
                 `INSERT INTO box_invites (box_id, email, role, invited_by, invite_token, status)
                  VALUES (?, ?, ?, ?, ?, 'pending')
-                 ON DUPLICATE KEY UPDATE
-                    role = VALUES(role),
-                    invited_by = VALUES(invited_by),
-                    invite_token = VALUES(invite_token),
+                 ON CONFLICT (box_id, email, status) DO UPDATE SET
+                    role = EXCLUDED.role,
+                    invited_by = EXCLUDED.invited_by,
+                    invite_token = EXCLUDED.invite_token,
                     status = 'pending',
                     accepted_by = NULL,
                     accepted_at = NULL`,
@@ -1081,7 +1067,7 @@ exports.promoteMember = async (req, res) => {
         await sql.query(
             `INSERT INTO box_members (box_id, user_id, role, added_by)
              VALUES (?, ?, 'admin', ?)
-             ON DUPLICATE KEY UPDATE role = 'admin', added_by = VALUES(added_by)`,
+             ON CONFLICT (box_id, user_id) DO UPDATE SET role = 'admin', added_by = EXCLUDED.added_by`,
             [boxId, targetUserId, currentUserId]
         );
 
@@ -1236,7 +1222,7 @@ exports.uploadBoxContent = [
             const [result] = await sql.query(
                 `INSERT INTO box_contents
                 (box_id, uploaded_by, content_type, file_name, file_path, original_name, note_text, admin_note, folder_path)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
                 [boxId, userId, contentType, fileName, filePath, originalName, note || null, safeAdminNote, safeFolderPath || null]
             );
 

@@ -8,18 +8,24 @@ const ensureNotificationsTable = async () => {
 
   await db.promise().query(`
     CREATE TABLE IF NOT EXISTS notifications (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      user_id INT NOT NULL,
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL,
       type VARCHAR(80) NOT NULL,
       title VARCHAR(255) NOT NULL,
       message TEXT NOT NULL,
       details_json TEXT NULL,
-      is_read TINYINT(1) NOT NULL DEFAULT 0,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      KEY idx_notifications_user_created (user_id, created_at),
-      KEY idx_notifications_user_read (user_id, is_read)
+      is_read BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  await db.promise().query(
+    'CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications (user_id, created_at)'
+  );
+
+  await db.promise().query(
+    'CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications (user_id, is_read)'
+  );
 
   tableReady = true;
 };
@@ -38,8 +44,8 @@ const purgeExpiredReadNotifications = async () => {
 
   await db.promise().query(
     `DELETE FROM notifications
-     WHERE is_read = 1
-       AND created_at < DATE_SUB(NOW(), INTERVAL ${READ_NOTIFICATION_RETENTION_DAYS} DAY)`
+     WHERE is_read = TRUE
+       AND created_at < NOW() - INTERVAL '${READ_NOTIFICATION_RETENTION_DAYS} days'`
   );
 };
 
@@ -118,7 +124,7 @@ const getUnreadNotificationCount = async (userId) => {
   const [rows] = await db.promise().query(
     `SELECT COUNT(*) AS total
      FROM notifications
-     WHERE user_id = ? AND is_read = 0`,
+     WHERE user_id = ? AND is_read = FALSE`,
     [numericUserId]
   );
 
@@ -139,8 +145,8 @@ const markNotificationsRead = async (userId, ids = null) => {
 
     const [result] = await db.promise().query(
       `UPDATE notifications
-       SET is_read = 1
-       WHERE user_id = ? AND id IN (?)`,
+       SET is_read = TRUE
+       WHERE user_id = ? AND id = ANY(?)`,
       [numericUserId, safeIds]
     );
 
@@ -150,8 +156,8 @@ const markNotificationsRead = async (userId, ids = null) => {
 
   const [result] = await db.promise().query(
     `UPDATE notifications
-     SET is_read = 1
-     WHERE user_id = ? AND is_read = 0`,
+     SET is_read = TRUE
+     WHERE user_id = ? AND is_read = FALSE`,
     [numericUserId]
   );
 

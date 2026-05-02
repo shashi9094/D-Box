@@ -5,16 +5,14 @@ const sql = db.promise();
 (async () => {
     await sql.query(`
         CREATE TABLE IF NOT EXISTS box_files (
-            id INT NOT NULL AUTO_INCREMENT,
-            box_id INT NOT NULL,
-            user_id INT NOT NULL,
+            id BIGSERIAL PRIMARY KEY,
+            box_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
             file_name VARCHAR(255) NOT NULL,
             file_size BIGINT NOT NULL,
             file_type VARCHAR(128) NOT NULL,
             file_path VARCHAR(1024) DEFAULT NULL,
-            uploaded_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (id),
-            KEY box_id (box_id),
+            uploaded_at TIMESTAMPTZ NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT box_files_ibfk_1 FOREIGN KEY (box_id) REFERENCES boxes (id) ON DELETE CASCADE
         )
     `);

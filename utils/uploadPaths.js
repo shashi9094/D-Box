@@ -62,7 +62,7 @@ const logUploadsStorageWarning = () => {
 
     console.warn(
         `[uploads] UPLOADS_ROOT is not set. Files are being stored in ${uploadsRoot}. ` +
-        'On managed hosts like Render, this directory can be wiped on redeploy or restart. ' +
+        'On managed hosts like Railway or Render, this directory can be wiped on redeploy or restart. ' +
         'Set UPLOADS_ROOT to a persistent disk mount path to prevent uploaded files from disappearing.'
     );
 };

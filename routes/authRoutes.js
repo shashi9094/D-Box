@@ -321,7 +321,7 @@ router.post('/notifications/:id/reply', requireSessionUser, async (req, res) => 
 
     await sql.query(
       `UPDATE notifications
-       SET is_read = 1
+       SET is_read = TRUE
        WHERE id = ? AND user_id = ?`,
       [notificationId, currentUserId]
     );

@@ -43,6 +43,7 @@ if (clientID && clientSecret && isValidGoogleClientId(clientID)) {
               INSERT INTO users
               (fullName, dob, email, country, capacity, purpose, role, password)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              RETURNING id
             `;
 
             db.query(
@@ -64,7 +65,7 @@ if (clientID && clientSecret && isValidGoogleClientId(clientID)) {
                 }
 
                 return done(null, {
-                  id: result.insertId,
+                  id: result.insertId || result.rows?.[0]?.id,
                   email: email,
                   fullName: name,
                 });

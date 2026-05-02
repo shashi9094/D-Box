@@ -55,6 +55,7 @@ exports.signup = async (req, res) => {
                 INSERT INTO users 
                 (fullName, dob, email, country, capacity, purpose, role, password) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                RETURNING id
             `;
 
             db.query(

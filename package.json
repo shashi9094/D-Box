@@ -9,6 +9,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "backfill:uploads:dry": "node scripts/backfillBoxContents.js",
     "backfill:uploads": "node scripts/backfillBoxContents.js --apply",
+    "migrate:mysql-to-postgres": "node scripts/migrateMysqlToPostgres.js",
     "sync:boxfiles": "node scripts/syncBoxFilesFromContents.js",
     "cleanup:uploads:dry": "node scripts/cleanupStaleUploads.js",
     "cleanup:uploads": "node scripts/cleanupStaleUploads.js --apply"
@@ -25,6 +26,9 @@
     "url": "https://github.com/shashi9094/D-Box/issues"
   },
   "homepage": "https://github.com/shashi9094/D-Box#readme",
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "body-parser": "^2.2.1",
@@ -34,13 +38,14 @@
     "express-session": "^1.19.0",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.1",
-    "mysql2": "^3.15.3",
     "nodemailer": "^8.0.4",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
+    "pg": "^8.16.3",
     "sharp": "^0.34.5"
   },
   "devDependencies": {
+    "mysql2": "^3.15.3",
     "nodemon": "^3.1.11"
   }
 }
