@@ -34,6 +34,31 @@ const dbSslEnabled = (() => {
 const dbSslRejectUnauthorized = parseBooleanNegated(process.env.DB_SSL_REJECT_UNAUTHORIZED, false);
 const isProductionConnection = isProduction && Boolean(connectionString);
 
+// In production, DATABASE_URL is REQUIRED - fail fast if not set
+if (isProduction && !connectionString) {
+    const errorMsg = `
+CRITICAL: DATABASE_URL not configured in production!
+
+Railway Setup:
+1. Go to Railway dashboard → Your App → Settings
+2. Click "Environment" tab
+3. If PostgreSQL service is attached, click "Generate" to auto-add DATABASE_URL
+   OR manually set: DATABASE_URL=postgresql://user:password@host:port/database
+
+Railway PostgreSQL service must be:
+  - Created and attached to your Web service
+  - Connection string available in PostgreSQL service → Connect tab
+
+For now, these env vars are missing:
+  - DATABASE_URL (primary)
+  - POSTGRES_URL (alternative)
+  - PG_CONNECTION_STRING (alternative)
+  - PGHOST/PGUSER/PGPASSWORD/PGDATABASE (individual vars)
+`;
+    console.error(errorMsg);
+    process.exit(1);
+}
+
 const poolConfig = connectionString
     ? {
         connectionString,
