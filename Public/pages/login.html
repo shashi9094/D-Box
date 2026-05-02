@@ -177,6 +177,33 @@
     }
   }
 
+  function showGoogleErrorNotice() {
+    const params = new URLSearchParams(window.location.search);
+    const googleNotice = document.getElementById('googleNotice');
+    const g = params.get('google');
+    const reason = params.get('reason') || '';
+
+    if (!g) return;
+
+    if (g === 'failed') {
+      googleNotice.textContent = 'Google login failed. Please try again or use email/password.';
+      googleNotice.hidden = false;
+      return;
+    }
+
+    if (g === 'error') {
+      let message = 'Google login encountered an error.';
+      if (reason === 'invalid-client-secret') {
+        message = 'Google login is misconfigured: invalid client secret. Contact the site administrator.';
+      } else if (reason) {
+        message = `Google login error: ${decodeURIComponent(reason)}`;
+      }
+
+      googleNotice.textContent = message;
+      googleNotice.hidden = false;
+    }
+  }
+
   function showSessionExpiredNotice() {
     const params = new URLSearchParams(window.location.search);
     const sessionNotice = document.getElementById('sessionNotice');
@@ -189,6 +216,7 @@
 
   redirectIfLoggedIn();
   showGoogleDisabledNotice();
+  showGoogleErrorNotice();
   showSessionExpiredNotice();
   showInviteNotice();
   checkInviteAccount();

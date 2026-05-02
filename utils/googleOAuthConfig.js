@@ -11,6 +11,35 @@ function maskClientId(value) {
   return `${id.slice(0, 10)}...${id.slice(-18)}`;
 }
 
+function normalizeBaseUrl(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  return text.replace(/\/$/, '');
+}
+
+function buildCallbackFromBaseUrl(baseUrl) {
+  const normalized = normalizeBaseUrl(baseUrl);
+  if (!normalized) return '';
+  return `${normalized}/api/auth/google/callback`;
+}
+
+function normalizeCallbackUrl(value) {
+  const callback = String(value || '').trim();
+  if (!callback) return '';
+
+  // Keep absolute URLs unchanged.
+  if (/^https?:\/\//i.test(callback)) {
+    return callback;
+  }
+
+  // Normalize relative values like "api/auth/google/callback".
+  if (callback.startsWith('/')) {
+    return callback;
+  }
+
+  return `/${callback}`;
+}
+
 function readOAuthFile(filePath) {
   const safePath = String(filePath || '').trim();
   if (!safePath || !fs.existsSync(safePath)) {
@@ -52,11 +81,16 @@ function loadGoogleOAuthConfig() {
     ''
   ).trim();
 
-  const callbackURL = String(
+  const railwayPublicDomain = String(process.env.RAILWAY_PUBLIC_DOMAIN || '').trim();
+  const derivedRailwayBaseUrl = railwayPublicDomain ? `https://${railwayPublicDomain}` : '';
+
+  const callbackURL = normalizeCallbackUrl(
     process.env.GOOGLE_CALLBACK_URL ||
     fileConfig?.callbackURL ||
+    buildCallbackFromBaseUrl(process.env.PUBLIC_APP_URL || process.env.INVITE_BASE_URL || process.env.APP_URL) ||
+    buildCallbackFromBaseUrl(derivedRailwayBaseUrl) ||
     '/api/auth/google/callback'
-  ).trim();
+  );
 
   const enabled = Boolean(clientID && clientSecret && isValidGoogleClientId(clientID));
 
