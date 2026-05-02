@@ -703,17 +703,31 @@ router.get("/google", (req, res, next) => {
 });
 
 // Google callback
-router.get("/google/callback", (req, res, next) => {
+router.get('/google/callback', (req, res, next) => {
   if (!googleAuthEnabled) {
-    return res.redirect("/login.html?google=disabled");
+    return res.redirect('/login.html?google=disabled');
   }
 
-  return passport.authenticate("google", { failureRedirect: "/login.html" })(req, res, next);
-},
-  async (req, res) => {
+  // Use a custom callback to catch OAuth errors (e.g. invalid client secret)
+  return passport.authenticate('google', { failureRedirect: '/login.html' }, async (err, user, info) => {
+    if (err) {
+      console.warn('Google OAuth error:', err && err.message ? err.message : err);
+
+      const msg = String(err && err.message || '').toLowerCase();
+      const isInvalidClientSecret = msg.includes('invalid client secret') || msg.includes('tokenerror');
+
+      return res.redirect(`/login.html?google=error&reason=${encodeURIComponent(isInvalidClientSecret ? 'invalid-client-secret' : (err.message || 'oauth_error'))}`);
+    }
+
+    if (!user) {
+      return res.redirect('/login.html?google=failed');
+    }
+
+    // attach user and establish session (same flow as previous implementation)
+    req.user = user;
     req.session.user = {
-      id: req.user.id,
-      email: req.user.email,
+      id: user.id,
+      email: user.email,
       loginAt: Date.now(),
     };
 
@@ -721,15 +735,15 @@ router.get("/google/callback", (req, res, next) => {
 
     let shouldNotifyNewDevice = false;
     try {
-      shouldNotifyNewDevice = await isNewDeviceLogin({ userId: req.user.id, req });
+      shouldNotifyNewDevice = await isNewDeviceLogin({ userId: user.id, req });
     } catch (deviceErr) {
       console.warn('Unable to evaluate device novelty for Google login:', deviceErr.message);
     }
 
     req.session.save(() => {
       logLoginHistory({
-        userId: req.user.id,
-        email: req.user.email,
+        userId: user.id,
+        email: user.email,
         req,
       });
 
@@ -742,23 +756,23 @@ router.get("/google/callback", (req, res, next) => {
         const userAgent = String(req?.headers?.['user-agent'] || '').trim() || 'Unknown device';
 
         createNotification({
-          userId: req.user.id,
+          userId: user.id,
           type: 'new_device_login',
           title: 'New device login detected',
           message: 'Your account was logged in from a new device/browser.',
           details: {
             ipAddress,
             userAgent,
-            email: String(req.user.email || '').trim().toLowerCase(),
+            email: String(user.email || '').trim().toLowerCase(),
           },
         }).catch((notifyErr) => {
           console.warn('Google login device notification failed:', notifyErr.message);
         });
       }
 
-      res.redirect("/home");
+      res.redirect('/home');
     });
-  }
-);
+  })(req, res, next);
+});
 
 module.exports = router;
