@@ -32,6 +32,7 @@ const dbSslEnabled = (() => {
 })();
 
 const dbSslRejectUnauthorized = parseBooleanNegated(process.env.DB_SSL_REJECT_UNAUTHORIZED, false);
+const isProductionConnection = isProduction && Boolean(connectionString);
 
 const poolConfig = connectionString
     ? {
@@ -45,21 +46,37 @@ const poolConfig = connectionString
             }
             : false,
     }
-    : {
-        host: process.env.PGHOST || process.env.DB_HOST || 'localhost',
-        user: process.env.PGUSER || process.env.DB_USER || 'postgres',
-        password: process.env.PGPASSWORD || process.env.DB_PASSWORD || '',
-        database: process.env.PGDATABASE || process.env.DB_NAME || 'dbox',
-        port: Number(process.env.PGPORT || process.env.DB_PORT || 5432),
-        max: Number(process.env.DB_POOL_SIZE || 10),
-        idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 30000),
-        connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10000),
-        ssl: dbSslEnabled
-            ? {
-                rejectUnauthorized: dbSslRejectUnauthorized
-            }
-            : false,
-    };
+    : isProduction
+        ? {
+            host: process.env.PGHOST || 'localhost',
+            user: process.env.PGUSER || 'postgres',
+            password: process.env.PGPASSWORD || '',
+            database: process.env.PGDATABASE || 'dbox',
+            port: Number(process.env.PGPORT || 5432),
+            max: Number(process.env.DB_POOL_SIZE || 10),
+            idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 30000),
+            connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10000),
+            ssl: dbSslEnabled
+                ? {
+                    rejectUnauthorized: dbSslRejectUnauthorized
+                }
+                : false,
+        }
+        : {
+            host: process.env.PGHOST || process.env.DB_HOST || 'localhost',
+            user: process.env.PGUSER || process.env.DB_USER || 'postgres',
+            password: process.env.PGPASSWORD || process.env.DB_PASSWORD || '',
+            database: process.env.PGDATABASE || process.env.DB_NAME || 'dbox',
+            port: Number(process.env.PGPORT || process.env.DB_PORT || 5432),
+            max: Number(process.env.DB_POOL_SIZE || 10),
+            idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 30000),
+            connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10000),
+            ssl: dbSslEnabled
+                ? {
+                    rejectUnauthorized: dbSslRejectUnauthorized
+                }
+                : false,
+        };
 
 const pool = new Pool(poolConfig);
 
@@ -176,6 +193,8 @@ pool.query('SELECT 1')
         console.error('Database connection failed:', {
             code: error.code,
             message: error.message,
+            usingConnectionString: Boolean(connectionString),
+            productionConnection: isProductionConnection,
             host: process.env.PGHOST || process.env.DB_HOST || 'localhost',
             database: process.env.PGDATABASE || process.env.DB_NAME || 'dbox'
         });

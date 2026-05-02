@@ -35,9 +35,16 @@ exports.signup = async (req, res) => {
         const checkSql = "SELECT * FROM users WHERE email = ?";
         db.query(checkSql, [email], async (err, results) => {
             if (err) {
+                console.error('Signup email check failed:', {
+                    code: err.code || null,
+                    message: err.message || null,
+                    detail: err.detail || null,
+                    hint: err.hint || null,
+                });
                 return res.status(500).json({
                     message: "Database error",
-                    error: err
+                    error: err.message || err,
+                    code: err.code || null
                 });
             }
 
@@ -63,9 +70,16 @@ exports.signup = async (req, res) => {
                 [fullName, dob, email, country, capacity, purpose, 'User', hashedPassword],
                 async (err, result) => {
                     if (err) {
+                        console.error('Signup insert failed:', {
+                            code: err.code || null,
+                            message: err.message || null,
+                            detail: err.detail || null,
+                            hint: err.hint || null,
+                        });
                         return res.status(500).json({
                             message: "Signup failed",
-                            error: err
+                            error: err.message || err,
+                            code: err.code || null
                         });
                     }
 
@@ -131,10 +145,16 @@ exports.login = async (req, res) => {
 
     db.query(sql, [email], async (err, results) => {
         if (err) {
+            console.error('Login query failed:', {
+                code: err.code || null,
+                message: err.message || null,
+                detail: err.detail || null,
+                hint: err.hint || null,
+            });
             return res.status(500).json({
                 message: "DB error",
                 errorCode: err.code || null,
-                error: err
+                error: err.message || err
             });
         }
 
@@ -267,6 +287,12 @@ exports.checkAccountExists = async (req, res) => {
         [email],
         (err, rows) => {
             if (err) {
+                    console.error('Account existence check failed:', {
+                        code: err.code || null,
+                        message: err.message || null,
+                        detail: err.detail || null,
+                        hint: err.hint || null,
+                    });
                 return res.status(500).json({ message: 'Unable to check account' });
             }
 
