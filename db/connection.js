@@ -33,22 +33,35 @@ const dbSslEnabled = (() => {
 
 const dbSslRejectUnauthorized = parseBooleanNegated(process.env.DB_SSL_REJECT_UNAUTHORIZED, false);
 
-const pool = new Pool({
-    connectionString: connectionString || undefined,
-    host: process.env.PGHOST || process.env.DB_HOST || 'localhost',
-    user: process.env.PGUSER || process.env.DB_USER || 'postgres',
-    password: process.env.PGPASSWORD || process.env.DB_PASSWORD || '',
-    database: process.env.PGDATABASE || process.env.DB_NAME || 'dbox',
-    port: Number(process.env.PGPORT || process.env.DB_PORT || 5432),
-    max: Number(process.env.DB_POOL_SIZE || 10),
-    idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 30000),
-    connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10000),
-    ssl: dbSslEnabled
-        ? {
-            rejectUnauthorized: dbSslRejectUnauthorized
-        }
-        : false,
-});
+const poolConfig = connectionString
+    ? {
+        connectionString,
+        max: Number(process.env.DB_POOL_SIZE || 10),
+        idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 30000),
+        connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10000),
+        ssl: dbSslEnabled
+            ? {
+                rejectUnauthorized: dbSslRejectUnauthorized
+            }
+            : false,
+    }
+    : {
+        host: process.env.PGHOST || process.env.DB_HOST || 'localhost',
+        user: process.env.PGUSER || process.env.DB_USER || 'postgres',
+        password: process.env.PGPASSWORD || process.env.DB_PASSWORD || '',
+        database: process.env.PGDATABASE || process.env.DB_NAME || 'dbox',
+        port: Number(process.env.PGPORT || process.env.DB_PORT || 5432),
+        max: Number(process.env.DB_POOL_SIZE || 10),
+        idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 30000),
+        connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10000),
+        ssl: dbSslEnabled
+            ? {
+                rejectUnauthorized: dbSslRejectUnauthorized
+            }
+            : false,
+    };
+
+const pool = new Pool(poolConfig);
 
 const translatePlaceholders = (sqlText) => {
     let index = 0;
