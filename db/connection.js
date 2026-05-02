@@ -186,17 +186,22 @@ const end = () => pool.end();
 pool.query('SELECT 1')
     .then(() => ensureCoreTables())
     .then(() => {
-        console.log('Database connected successfully.');
-        console.log('Core tables are ready.');
+        console.log('✅ Database connected successfully.');
+        console.log('✅ Core tables are ready.');
     })
     .catch((error) => {
-        console.error('Database connection failed:', {
+        const suggestion = !connectionString && isProduction
+            ? 'CRITICAL: DATABASE_URL is not set. Attach PostgreSQL service in Railway and the URL will be auto-injected.'
+            : connectionString
+                ? `Error connecting to: ${connectionString.split('@')[1]}`
+                : `Error connecting to host=${process.env.PGHOST || 'localhost'} db=${process.env.PGDATABASE || 'dbox'}`;
+
+        console.error('❌ Database connection failed:', {
             code: error.code,
-            message: error.message,
+            message: error.message || 'Connection refused',
             usingConnectionString: Boolean(connectionString),
             productionConnection: isProductionConnection,
-            host: process.env.PGHOST || process.env.DB_HOST || 'localhost',
-            database: process.env.PGDATABASE || process.env.DB_NAME || 'dbox'
+            suggestion,
         });
     });
 

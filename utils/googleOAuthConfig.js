@@ -39,9 +39,9 @@ function loadGoogleOAuthConfig() {
     process.env.GOOGLE_OAUTH_CREDENTIALS_PATH || process.env.GOOGLE_APPLICATION_CREDENTIALS
   );
 
+  // CRITICAL: In Railway, ensure GOOGLE_CLIENT_ID is set to the long ID (xxx-yyy.apps.googleusercontent.com), not the secret
   const clientID = String(
     process.env.GOOGLE_CLIENT_ID ||
-    process.env.GOOGLE_CLIENT_iD ||
     fileConfig?.clientID ||
     ''
   ).trim();
