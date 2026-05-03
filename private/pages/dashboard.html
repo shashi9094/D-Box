@@ -228,7 +228,7 @@ async function render() {
                     ${isMainAdmin ? `<button class="action-btn danger" data-action="delete" data-id="${box.id}"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
                 </div>
             </div>
-            ${box.adminEmail ? `<div class="box-admin-email">${box.adminEmail}</div>` : ''}
+            ${box.adminEmail ? `<div class="box-admin-email-row"><div class="box-admin-email">Admin: ${box.adminEmail}</div></div>` : ''}
         `;
         card.appendChild(header);
 

@@ -1632,9 +1632,12 @@ textarea:focus {
   flex: 0 0 auto;
 }
 
-.box-admin-email {
+.box-admin-email-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
   width: 100%;
-  text-align: center;
+  padding: 6px 0;
 }
 
 .role-pill {
@@ -1660,6 +1663,9 @@ textarea:focus {
   opacity: 1;
   transform: scale(1);
   transition: opacity 0.3s ease, transform 0.3s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .exist-box-card:hover .box-admin-email {
