@@ -1,109 +1,12 @@
 require('dotenv').config();
 const { Pool } = require('pg');
 
-const connectionString = String(
-    process.env.DATABASE_URL ||
-    process.env.POSTGRES_URL ||
-    process.env.PG_CONNECTION_STRING ||
-    ''
-).trim();
-
-const parseBoolean = (value, fallback = false) => {
-    if (value === undefined || value === null || value === '') return fallback;
-    return ['1', 'true', 'yes', 'required', 'on'].includes(String(value).trim().toLowerCase());
-};
-
-const parseBooleanNegated = (value, fallback = false) => {
-    if (value === undefined || value === null || value === '') return fallback;
-    return !['0', 'false', 'no', 'off'].includes(String(value).trim().toLowerCase());
-};
-
-const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
-const dbSslEnabled = (() => {
-    if (process.env.DB_SSL !== undefined) {
-        return parseBoolean(process.env.DB_SSL, false);
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: {
+        rejectUnauthorized: false
     }
-
-    if (process.env.PGSSLMODE) {
-        return !['disable', 'allow', 'prefer'].includes(String(process.env.PGSSLMODE).trim().toLowerCase());
-    }
-
-    return isProduction || Boolean(connectionString);
-})();
-
-const dbSslRejectUnauthorized = parseBooleanNegated(process.env.DB_SSL_REJECT_UNAUTHORIZED, false);
-const isProductionConnection = isProduction && Boolean(connectionString);
-
-// In production, DATABASE_URL is REQUIRED - fail fast if not set
-if (isProduction && !connectionString) {
-    const errorMsg = `
-CRITICAL: DATABASE_URL not configured in production!
-
-Railway Setup:
-1. Go to Railway dashboard → Your App → Settings
-2. Click "Environment" tab
-3. If PostgreSQL service is attached, click "Generate" to auto-add DATABASE_URL
-   OR manually set: DATABASE_URL=postgresql://user:password@host:port/database
-
-Railway PostgreSQL service must be:
-  - Created and attached to your Web service
-  - Connection string available in PostgreSQL service → Connect tab
-
-For now, these env vars are missing:
-  - DATABASE_URL (primary)
-  - POSTGRES_URL (alternative)
-  - PG_CONNECTION_STRING (alternative)
-  - PGHOST/PGUSER/PGPASSWORD/PGDATABASE (individual vars)
-`;
-    console.error(errorMsg);
-    process.exit(1);
-}
-
-const poolConfig = connectionString
-    ? {
-        connectionString,
-        max: Number(process.env.DB_POOL_SIZE || 10),
-        idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 30000),
-        connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10000),
-        ssl: dbSslEnabled
-            ? {
-                rejectUnauthorized: dbSslRejectUnauthorized
-            }
-            : false,
-    }
-    : isProduction
-        ? {
-            host: process.env.PGHOST || 'localhost',
-            user: process.env.PGUSER || 'postgres',
-            password: process.env.PGPASSWORD || '',
-            database: process.env.PGDATABASE || 'dbox',
-            port: Number(process.env.PGPORT || 5432),
-            max: Number(process.env.DB_POOL_SIZE || 10),
-            idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 30000),
-            connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10000),
-            ssl: dbSslEnabled
-                ? {
-                    rejectUnauthorized: dbSslRejectUnauthorized
-                }
-                : false,
-        }
-        : {
-            host: process.env.PGHOST || process.env.DB_HOST || 'localhost',
-            user: process.env.PGUSER || process.env.DB_USER || 'postgres',
-            password: process.env.PGPASSWORD || process.env.DB_PASSWORD || '',
-            database: process.env.PGDATABASE || process.env.DB_NAME || 'dbox',
-            port: Number(process.env.PGPORT || process.env.DB_PORT || 5432),
-            max: Number(process.env.DB_POOL_SIZE || 10),
-            idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 30000),
-            connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10000),
-            ssl: dbSslEnabled
-                ? {
-                    rejectUnauthorized: dbSslRejectUnauthorized
-                }
-                : false,
-        };
-
-const pool = new Pool(poolConfig);
+});
 
 const translatePlaceholders = (sqlText) => {
     let index = 0;
@@ -204,13 +107,14 @@ async function ensureCoreTables() {
 }
 
 async function ensureUsersOAuthSchema() {
-    const [columnRows] = await pool.query(`
+    const columnResult = await pool.query(`
         SELECT column_name
         FROM information_schema.columns
         WHERE table_schema = current_schema()
           AND table_name = 'users'
     `);
 
+    const columnRows = Array.isArray(columnResult.rows) ? columnResult.rows : [];
     const columnNames = new Set(columnRows.map((row) => String(row.column_name || '')));
     const renameOrDropLegacyColumn = async (legacyName, canonicalName) => {
         const hasLegacy = columnNames.has(legacyName);
@@ -245,7 +149,7 @@ async function ensureUsersOAuthSchema() {
     await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN isprofilecomplete SET DEFAULT FALSE');
     await pool.query('UPDATE users SET isprofilecomplete = COALESCE(isprofilecomplete, FALSE)');
 
-    const [duplicateGoogleIds] = await pool.query(`
+    const duplicateGoogleIdsResult = await pool.query(`
         SELECT googleid
         FROM users
         WHERE googleid IS NOT NULL AND googleid <> ''
@@ -253,6 +157,8 @@ async function ensureUsersOAuthSchema() {
         HAVING COUNT(*) > 1
         LIMIT 1
     `);
+
+    const duplicateGoogleIds = Array.isArray(duplicateGoogleIdsResult.rows) ? duplicateGoogleIdsResult.rows : [];
 
     if (!duplicateGoogleIds.length) {
         await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_googleid ON users(googleid)');

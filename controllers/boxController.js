@@ -383,12 +383,20 @@ const getHostFromUrl = (value) => {
 };
 
 const resolvePublicBaseUrl = (req) => {
+    const railwayPublicDomain = String(process.env.RAILWAY_PUBLIC_DOMAIN || '').trim();
     const configuredPublicUrl = normalizeBaseUrl(
-        process.env.PUBLIC_APP_URL || process.env.INVITE_BASE_URL || process.env.APP_URL
+        process.env.PUBLIC_APP_URL ||
+        process.env.INVITE_BASE_URL ||
+        process.env.APP_URL ||
+        (railwayPublicDomain ? `https://${railwayPublicDomain}` : '')
     );
 
     if (configuredPublicUrl && !isLocalHost(getHostFromUrl(configuredPublicUrl))) {
         return configuredPublicUrl;
+    }
+
+    if (railwayPublicDomain) {
+        return `https://${railwayPublicDomain}`;
     }
 
     const forwardedHost = req.headers['x-forwarded-host'];
@@ -973,18 +981,38 @@ exports.addMemberByEmail = async (req, res) => {
         }
 
         if (isInviteEmailEnabled()) {
-            for (const notification of emailNotifications) {
-                emailQueuedCount += 1;
+            const emailResults = await Promise.allSettled(
+                emailNotifications.map(async (notification) => {
+                    emailQueuedCount += 1;
 
-                sendInvitationEmail(notification.email, boxTitle, senderName, notification.url)
-                    .then((emailResult) => {
-                        if (!emailResult.success) {
-                            console.warn(`Invitation email not sent to ${notification.email}:`, emailResult.error);
-                        }
-                    })
-                    .catch((emailErr) => {
-                        console.warn(`Invitation email error for ${notification.email}:`, emailErr && emailErr.message ? emailErr.message : emailErr);
-                    });
+                    const emailResult = await sendInvitationEmail(notification.email, boxTitle, senderName, notification.url);
+                    if (!emailResult.success) {
+                        throw new Error(emailResult.error || 'Invitation email failed to send');
+                    }
+
+                    return emailResult;
+                })
+            );
+
+            const failedEmails = emailResults
+                .map((result, index) => ({ result, email: emailNotifications[index] && emailNotifications[index].email }))
+                .filter(({ result }) => result.status === 'rejected');
+
+            for (const failed of failedEmails) {
+                console.warn(`Invitation email not sent to ${failed.email}:`, failed.result.reason && failed.result.reason.message ? failed.result.reason.message : failed.result.reason);
+            }
+
+            if (failedEmails.length) {
+                return res.status(500).json({
+                    success: false,
+                    invitedCount,
+                    emailQueuedCount,
+                    emailFailedCount: failedEmails.length,
+                    skippedSelfCount,
+                    missingEmails,
+                    inviteLinks,
+                    message: `Invites were created, but ${failedEmails.length} invitation email${failedEmails.length === 1 ? ' was' : ' were'} not sent. Check EMAIL_USER, EMAIL_PASSWORD, and the public app URL.`
+                });
             }
         }
 
@@ -998,10 +1026,11 @@ exports.addMemberByEmail = async (req, res) => {
             success: true,
             invitedCount,
             emailQueuedCount,
+            emailFailedCount: 0,
             skippedSelfCount,
             missingEmails,
             inviteLinks,
-            message: `Processed ${invitedCount} invite(s)${isInviteEmailEnabled() ? `. Email dispatch queued ${emailQueuedCount}` : '. Email sending disabled'}${skippedSelfCount ? `. Skipped your own email` : ''}`
+            message: `Processed ${invitedCount} invite(s)${isInviteEmailEnabled() ? `. Email sent to ${emailQueuedCount} recipient${emailQueuedCount === 1 ? '' : 's'}` : '. Email sending disabled'}${skippedSelfCount ? `. Skipped your own email` : ''}`
         });
     } catch (err) {
         return res.status(500).json({ message: 'Unable to add member', error: err.message });
