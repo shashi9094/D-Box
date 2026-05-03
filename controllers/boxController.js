@@ -770,8 +770,8 @@ exports.getMyBoxes = async (req, res) => {
                     b.description,
                     b.capacity,
                     b.created_at,
-                    u.email AS adminEmail,
-                    u.fullname AS adminName,
+                    u.email AS "adminEmail",
+                    u.fullname AS "adminName",
                     COUNT(DISTINCT bm_all.user_id) AS memberCount,
                     COUNT(DISTINCT CASE WHEN bi.status = 'pending' THEN bi.email END) AS pendingInviteCount,
                     COUNT(DISTINCT bm_all.user_id) AS reservedCount,
@@ -801,6 +801,13 @@ exports.getMyBoxes = async (req, res) => {
                 reservedCount: memberCount
             };
         });
+
+        // Log sample keys to ensure camelCase alias is preserved (adminEmail)
+        try {
+            console.log('getMyBoxes -> sampleRowKeys:', Object.keys(normalizedRows[0] || {}));
+        } catch (e) {
+            // ignore logging errors
+        }
 
         return res.json({
             success: true,
