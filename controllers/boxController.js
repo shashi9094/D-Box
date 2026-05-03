@@ -477,7 +477,7 @@ exports.acceptPendingInvitesForUser = async (userId, email, inviteToken = null) 
 
     const [invites] = await sql.query(inviteSqlParts.join(' '), inviteParams);
     const [joinerRows] = await sql.query(
-        'SELECT fullName, email FROM users WHERE id = ? LIMIT 1',
+        'SELECT fullname AS "fullName", email FROM users WHERE id = ? LIMIT 1',
         [userId]
     );
 
@@ -766,7 +766,7 @@ exports.getMyBoxes = async (req, res) => {
         const [rows] = await sql.query(
             `SELECT b.*,
                     u.email AS adminEmail,
-                    u.fullName AS adminName,
+                    u.fullname AS adminName,
                     COUNT(DISTINCT bm_all.user_id) AS memberCount,
                     COUNT(DISTINCT CASE WHEN bi.status = 'pending' THEN bi.email END) AS pendingInviteCount,
                     COUNT(DISTINCT bm_all.user_id) AS reservedCount,
@@ -802,6 +802,12 @@ exports.getMyBoxes = async (req, res) => {
             data: normalizedRows
         });
     } catch (err) {
+        console.error('getMyBoxes DB error:', {
+            code: err.code || null,
+            message: err.message || null,
+            detail: err.detail || null,
+            table: err.table || null,
+        });
         return res.status(500).json({ message: 'DB error', error: err.message });
     }
 };
@@ -813,7 +819,7 @@ exports.getOtherUsersBoxes = async (req, res) => {
         await ensureCollaborationTables();
 
         const [rows] = await sql.query(
-            `SELECT b.*, u.fullName, bm.role
+            `SELECT b.*, u.fullname AS "fullName", bm.role
              FROM box_members bm
              JOIN boxes b ON b.id = bm.box_id
              JOIN users u ON u.id = b.user_id
@@ -827,6 +833,12 @@ exports.getOtherUsersBoxes = async (req, res) => {
             data: rows
         });
     } catch (err) {
+        console.error('getOtherUsersBoxes DB error:', {
+            code: err.code || null,
+            message: err.message || null,
+            detail: err.detail || null,
+            table: err.table || null,
+        });
         return res.status(500).json({ message: 'DB error', error: err.message });
     }
 };
@@ -1140,7 +1152,7 @@ exports.listMembers = async (req, res) => {
         }
 
         const [members] = await sql.query(
-            `SELECT bm.user_id, u.fullName, u.email, bm.role, bm.created_at,
+            `SELECT bm.user_id, u.fullname AS "fullName", u.email, bm.role, bm.created_at,
                     CASE WHEN b.user_id = bm.user_id THEN 1 ELSE 0 END AS is_owner
              FROM box_members bm
              JOIN users u ON u.id = bm.user_id
@@ -1152,6 +1164,12 @@ exports.listMembers = async (req, res) => {
 
         return res.json({ success: true, data: members });
     } catch (err) {
+        console.error('listMembers DB error:', {
+            code: err.code || null,
+            message: err.message || null,
+            detail: err.detail || null,
+            table: err.table || null,
+        });
         return res.status(500).json({ message: 'Unable to list members', error: err.message });
     }
 };
@@ -1247,6 +1265,12 @@ exports.uploadBoxContent = [
             });
         } catch (err) {
             cleanupUploadedFile();
+            console.error('uploadBoxContent DB error:', {
+                code: err.code || null,
+                message: err.message || null,
+                detail: err.detail || null,
+                table: err.table || null,
+            });
             return res.status(500).json({ message: 'Unable to upload content', error: err.message });
         }
     }
@@ -1265,7 +1289,7 @@ exports.getBoxContents = async (req, res) => {
 
         const [dbRows] = await sql.query(
             `SELECT bc.id, bc.content_type, bc.file_name, bc.file_path, bc.original_name, bc.note_text, bc.admin_note, bc.folder_path,
-                    bc.created_at, bc.uploaded_by, u.fullName AS uploaded_by_name
+                    bc.created_at, bc.uploaded_by, u.fullname AS uploaded_by_name
              FROM box_contents bc
              LEFT JOIN users u ON u.id = bc.uploaded_by
              WHERE bc.box_id = ?
@@ -1274,7 +1298,7 @@ exports.getBoxContents = async (req, res) => {
         );
 
         const [legacyRows] = await sql.query(
-            `SELECT bf.id, bf.user_id, bf.file_name, bf.file_type, bf.file_path, bf.uploaded_at, u.fullName AS uploaded_by_name
+            `SELECT bf.id, bf.user_id, bf.file_name, bf.file_type, bf.file_path, bf.uploaded_at, u.fullname AS uploaded_by_name
              FROM box_files bf
              LEFT JOIN users u ON u.id = bf.user_id
              WHERE bf.box_id = ?
@@ -1339,6 +1363,12 @@ exports.getBoxContents = async (req, res) => {
 
         return res.json({ success: true, data });
     } catch (err) {
+        console.error('getBoxContents DB error:', {
+            code: err.code || null,
+            message: err.message || null,
+            detail: err.detail || null,
+            table: err.table || null,
+        });
         return res.status(500).json({ message: 'Unable to fetch contents', error: err.message });
     }
 };
