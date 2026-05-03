@@ -219,12 +219,16 @@ async function render() {
             }
         }
         header.innerHTML = `
-            <span class="box-title">${box.title}${roleLine ? ` <span class="role-pill">${roleLine}</span>` : ''}</span>
-            ${coAdminIcon}
-            ${box.adminEmail ? `<div class="box-admin-email">${box.adminEmail}</div>` : ''}
-            <div class="actions">
-                ${isMainAdmin ? `<button class="action-btn danger" data-action="delete" data-id="${box.id}"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
+            <div class="box-header-top">
+                <div class="box-title-wrap">
+                    <span class="box-title">${box.title}${roleLine ? ` <span class="role-pill">${roleLine}</span>` : ''}</span>
+                    ${coAdminIcon}
+                </div>
+                <div class="actions">
+                    ${isMainAdmin ? `<button class="action-btn danger" data-action="delete" data-id="${box.id}"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
+                </div>
             </div>
+            ${box.adminEmail ? `<div class="box-admin-email">${box.adminEmail}</div>` : ''}
         `;
         card.appendChild(header);
 
