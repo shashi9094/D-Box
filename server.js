@@ -236,7 +236,7 @@ app.post('/api/complete-profile', (req, res, next) => {
             `UPDATE users
              SET capacity = ?, purpose = ?, isprofilecomplete = TRUE
              WHERE id = ?
-             RETURNING id, fullName, email, capacity, purpose, isprofilecomplete`,
+             RETURNING id, fullname AS "fullName", email, capacity, purpose, isprofilecomplete`,
             [capacity, purpose, userId]
         );
 

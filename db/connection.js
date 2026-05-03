@@ -173,17 +173,17 @@ async function ensureCoreTables() {
     await pool.query(`
         CREATE TABLE IF NOT EXISTS users (
             id BIGSERIAL PRIMARY KEY,
-            fullName TEXT NOT NULL,
+            fullname TEXT NOT NULL,
             dob DATE NULL,
             email TEXT NOT NULL UNIQUE,
             country TEXT NULL,
-            googleid TEXT NULL,
+            googleid TEXT NULL UNIQUE,
             capacity TEXT NULL,
             purpose TEXT NULL,
-            role TEXT NOT NULL DEFAULT 'User',
+            role TEXT NULL DEFAULT 'User',
             password TEXT NULL,
             isprofilecomplete BOOLEAN NOT NULL DEFAULT FALSE,
-            profilePhoto TEXT NULL,
+            profilephoto TEXT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT users_role_check CHECK (role IN ('User', 'Admin'))
         )
@@ -204,14 +204,62 @@ async function ensureCoreTables() {
 }
 
 async function ensureUsersOAuthSchema() {
+    const [columnRows] = await pool.query(`
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'users'
+    `);
+
+    const columnNames = new Set(columnRows.map((row) => String(row.column_name || '')));
+    const renameOrDropLegacyColumn = async (legacyName, canonicalName) => {
+        const hasLegacy = columnNames.has(legacyName);
+        const hasCanonical = columnNames.has(canonicalName);
+
+        if (hasLegacy && !hasCanonical) {
+            await pool.query(`ALTER TABLE users RENAME COLUMN "${legacyName}" TO ${canonicalName}`);
+            columnNames.delete(legacyName);
+            columnNames.add(canonicalName);
+            return;
+        }
+
+        if (hasLegacy && hasCanonical) {
+            await pool.query(`ALTER TABLE users DROP COLUMN IF EXISTS "${legacyName}"`);
+            columnNames.delete(legacyName);
+        }
+    };
+
+    await renameOrDropLegacyColumn('fullName', 'fullname');
+    await renameOrDropLegacyColumn('googleId', 'googleid');
+    await renameOrDropLegacyColumn('profilePhoto', 'profilephoto');
+    await renameOrDropLegacyColumn('isProfileComplete', 'isprofilecomplete');
+
+    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS fullname TEXT NULL');
     await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS googleid TEXT NULL');
+    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS profilephoto TEXT NULL');
     await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS isprofilecomplete BOOLEAN NOT NULL DEFAULT FALSE');
     await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN password DROP NOT NULL');
     await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN capacity DROP NOT NULL');
     await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN purpose DROP NOT NULL');
+    await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN role DROP NOT NULL');
     await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN isprofilecomplete SET DEFAULT FALSE');
     await pool.query('UPDATE users SET isprofilecomplete = COALESCE(isprofilecomplete, FALSE)');
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_users_googleid ON users(googleid)');
+
+    const [duplicateGoogleIds] = await pool.query(`
+        SELECT googleid
+        FROM users
+        WHERE googleid IS NOT NULL AND googleid <> ''
+        GROUP BY googleid
+        HAVING COUNT(*) > 1
+        LIMIT 1
+    `);
+
+    if (!duplicateGoogleIds.length) {
+        await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_googleid ON users(googleid)');
+    } else {
+        console.warn('Skipping unique googleid index because duplicate googleid values already exist.');
+        await pool.query('CREATE INDEX IF NOT EXISTS idx_users_googleid ON users(googleid)');
+    }
 }
 
 const promise = () => ({

@@ -30,10 +30,21 @@ exports.signup = async (req, res) => {
             : '/home';
 
         const fullName = fullname; // Just to maintain the same variable name as before
+        const normalizedEmail = String(email || '').trim().toLowerCase();
+        const normalizedFullName = String(fullName || '').trim();
+        const normalizedPassword = String(password || '');
+
+        if (!normalizedFullName || !normalizedEmail) {
+            return res.status(400).json({ message: 'Full name and email are required' });
+        }
+
+        if (!normalizedPassword) {
+            return res.status(400).json({ message: 'Password is required' });
+        }
 
         // Step 1 → Pehle check karo ki email already exist to nahi karta
-        const checkSql = "SELECT * FROM users WHERE email = ?";
-        db.query(checkSql, [email], async (err, results) => {
+        const checkSql = "SELECT id FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1";
+        db.query(checkSql, [normalizedEmail], async (err, results) => {
             if (err) {
                 console.error('Signup email check failed:', {
                     code: err.code || null,
@@ -55,19 +66,20 @@ exports.signup = async (req, res) => {
             }
 
             // Step 2 → Password hash karo
-            const hashedPassword = await bcrypt.hash(password, 10);
+            const hashedPassword = await bcrypt.hash(normalizedPassword, 10);
 
             // Step 3 → Database me insert karo
             const insertSql = `
                 INSERT INTO users 
-                (fullName, dob, email, country, capacity, purpose, role, password) 
+                (fullname, dob, email, country, capacity, purpose, role, password) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (email) DO NOTHING
                 RETURNING id
             `;
 
             db.query(
                 insertSql,
-                [fullName, dob, email, country, capacity, purpose, 'User', hashedPassword],
+                [normalizedFullName, dob || null, normalizedEmail, country || null, capacity || null, purpose || null, 'User', hashedPassword],
                 async (err, result) => {
                     if (err) {
                         console.error('Signup insert failed:', {
@@ -83,6 +95,12 @@ exports.signup = async (req, res) => {
                         });
                     }
 
+                    if (!result || !result.insertId) {
+                        return res.status(400).json({
+                            message: 'Email already exists'
+                        });
+                    }
+
                     try {
                         await boxController.acceptPendingInvitesForUser(result.insertId, email, inviteToken);
                     } catch (inviteErr) {
@@ -91,7 +109,7 @@ exports.signup = async (req, res) => {
 
                     req.session.user = {
                         id: result.insertId,
-                        email: email,
+                        email: normalizedEmail,
                         loginAt: Date.now()
                     };
 
@@ -107,7 +125,7 @@ exports.signup = async (req, res) => {
 
                         logLoginHistory({
                             userId: result.insertId,
-                            email,
+                            email: normalizedEmail,
                             req
                         });
 

@@ -537,10 +537,15 @@ router.get("/profile", requireSessionUser, (req, res) => {
   const currentUserId = Number(req.session.user.id);
 
   db.query(
-    "SELECT id, fullName, email, role, profilePhoto, created_at FROM users WHERE id = ? LIMIT 1",
+    "SELECT id, fullname AS \"fullName\", email, role, profilephoto AS \"profilePhoto\", created_at FROM users WHERE id = ? LIMIT 1",
     [currentUserId],
     (userErr, userRows) => {
       if (userErr) {
+        console.error('Load profile failed:', {
+          code: userErr.code || null,
+          message: userErr.message || null,
+          detail: userErr.detail || null,
+        });
         return res.status(500).json({ message: "Unable to load profile" });
       }
 
@@ -563,12 +568,12 @@ router.get("/profile", requireSessionUser, (req, res) => {
           return res.json({
             profile: {
               id: Number(user.id),
-              name: String(user.fullName || "").trim(),
+              name: String(user.fullName || user.fullname || "").trim(),
               email: String(user.email || "").trim().toLowerCase(),
               role: String(user.role || "User"),
               joinedAt: user.created_at || null,
               lastLoginAt,
-              profilePhoto: String(user.profilePhoto || "").trim(),
+              profilePhoto: String(user.profilePhoto || user.profilephoto || "").trim(),
             },
           });
         }
@@ -611,10 +616,15 @@ router.post('/profile-photo', requireSessionUser, (req, res) => {
     await fs.promises.unlink(uploadedAbsolutePath).catch(() => {});
 
     db.query(
-      'UPDATE users SET profilePhoto = ? WHERE id = ?',
+      'UPDATE users SET profilephoto = ? WHERE id = ?',
       [profilePhotoUrl, currentUserId],
       (err) => {
         if (err) {
+          console.error('Update profile photo failed:', {
+            code: err.code || null,
+            message: err.message || null,
+            detail: err.detail || null,
+          });
           return res.status(500).json({ message: 'Unable to save profile photo' });
         }
 
@@ -648,10 +658,15 @@ router.put("/profile", requireSessionUser, (req, res) => {
   }
 
   db.query(
-    "UPDATE users SET fullName = ?, profilePhoto = ? WHERE id = ?",
+    "UPDATE users SET fullname = ?, profilephoto = ? WHERE id = ?",
     [fullName, profilePhoto || null, currentUserId],
     (err) => {
     if (err) {
+      console.error('Update profile failed:', {
+        code: err.code || null,
+        message: err.message || null,
+        detail: err.detail || null,
+      });
       return res.status(500).json({ message: "Unable to update profile" });
     }
 
@@ -762,7 +777,7 @@ router.get('/google/callback', (req, res, next) => {
 
       try {
         const [rows] = await sql.query(
-          'SELECT id, capacity, purpose, isprofilecomplete FROM users WHERE id = ? LIMIT 1',
+          'SELECT id, fullname AS "fullName", capacity, purpose, isprofilecomplete, googleid FROM users WHERE id = ? LIMIT 1',
           [userId]
         );
 
@@ -772,8 +787,8 @@ router.get('/google/callback', (req, res, next) => {
 
         req.session.user = {
           ...req.session.user,
-          fullName: String(user.fullName || profileRow?.fullName || '').trim(),
-          googleid: String(user.googleid || '').trim() || null,
+          fullName: String(user.fullName || profileRow?.fullName || profileRow?.fullname || '').trim(),
+          googleid: String(user.googleid || profileRow?.googleid || '').trim() || null,
           capacity: profileRow?.capacity ?? null,
           purpose: profileRow?.purpose ?? null,
           isProfileComplete: profileComplete,

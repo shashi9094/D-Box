@@ -6,6 +6,19 @@ const { loadGoogleOAuthConfig } = require("../utils/googleOAuthConfig");
 const googleConfig = loadGoogleOAuthConfig();
 const { clientID, clientSecret, callbackURL } = googleConfig;
 
+function normalizeUserRow(row, fallbackName, fallbackEmail, fallbackGoogleId) {
+  return {
+    id: Number(row?.id),
+    email: String(row?.email || fallbackEmail || '').trim().toLowerCase(),
+    fullName: String(row?.fullName || row?.fullname || fallbackName || '').trim(),
+    googleid: String(row?.googleid || fallbackGoogleId || '').trim() || null,
+    capacity: row?.capacity ?? null,
+    purpose: row?.purpose ?? null,
+    role: String(row?.role || 'User'),
+    isProfileComplete: Boolean(row?.isprofilecomplete ?? row?.isProfileComplete),
+  };
+}
+
 if (googleConfig.enabled) {
   passport.use(
     new GoogleStrategy(
@@ -26,7 +39,7 @@ if (googleConfig.enabled) {
         try {
           const sql = db.promise();
           const [existingRows] = await sql.query(
-            `SELECT id, fullName, email, googleid, capacity, purpose, isprofilecomplete
+            `SELECT id, fullname AS "fullName", email, googleid, capacity, purpose, role, isprofilecomplete
              FROM users
              WHERE LOWER(email) = LOWER(?) OR googleid = ?
              ORDER BY CASE
@@ -45,38 +58,32 @@ if (googleConfig.enabled) {
               existing.googleid = googleId;
             }
 
-            return done(null, {
-              id: Number(existing.id),
-              email: String(existing.email || email).trim().toLowerCase(),
-              fullName: String(existing.fullName || name).trim(),
-              googleid: googleId,
-              capacity: existing.capacity ?? null,
-              purpose: existing.purpose ?? null,
-              isProfileComplete: Boolean(existing.isprofilecomplete),
-            });
+            return done(null, normalizeUserRow(existing, name, email, googleId));
           }
 
           const [insertResult] = await sql.query(
             `INSERT INTO users
-             (fullName, dob, email, country, googleid, capacity, purpose, role, password, isprofilecomplete)
-             VALUES (?, NULL, ?, NULL, ?, NULL, NULL, 'User', NULL, FALSE)
-             RETURNING id, fullName, email, googleid, capacity, purpose, isprofilecomplete`,
+             (fullname, email, googleid)
+             VALUES (?, ?, ?)
+             ON CONFLICT (email)
+             DO UPDATE SET
+               googleid = COALESCE(users.googleid, EXCLUDED.googleid),
+               fullname = COALESCE(NULLIF(users.fullname, ''), EXCLUDED.fullname)
+             RETURNING id, fullname AS "fullName", email, googleid, capacity, purpose, role, isprofilecomplete`,
             [name, email, googleId]
           );
 
           const created = insertResult.rows?.[0] || insertResult;
 
-          return done(null, {
-            id: Number(created.id),
-            email: String(created.email || email).trim().toLowerCase(),
-            fullName: String(created.fullName || name).trim(),
-            googleid: googleId,
-            capacity: created.capacity ?? null,
-            purpose: created.purpose ?? null,
-            isProfileComplete: Boolean(created.isprofilecomplete),
-          });
+          return done(null, normalizeUserRow(created, name, email, googleId));
         } catch (error) {
-          console.log('GOOGLE AUTH ERROR:', error);
+          console.error('GOOGLE AUTH ERROR:', {
+            code: error.code || null,
+            message: error.message || null,
+            detail: error.detail || null,
+            constraint: error.constraint || null,
+            table: error.table || null,
+          });
           return done(error);
         }
       }
@@ -105,7 +112,7 @@ passport.deserializeUser(async (id, done) => {
     try {
       // Try fetching with isprofilecomplete column (new schema)
       [rows] = await db.promise().query(
-        `SELECT id, fullName, email, googleid, capacity, purpose, role, isprofilecomplete
+        `SELECT id, fullname AS "fullName", email, googleid, capacity, purpose, role, isprofilecomplete
          FROM users
          WHERE id = ?
          LIMIT 1`,
@@ -116,7 +123,7 @@ passport.deserializeUser(async (id, done) => {
       // Fallback for old schema without isprofilecomplete column
       try {
         [rows] = await db.promise().query(
-          `SELECT id, fullName, email, googleid, capacity, purpose, role
+          `SELECT id, fullname AS "fullName", email, googleid, capacity, purpose, role
            FROM users
            WHERE id = ?
            LIMIT 1`,
@@ -137,7 +144,7 @@ passport.deserializeUser(async (id, done) => {
     const userObj = {
       id: Number(user.id),
       email: String(user.email || '').trim().toLowerCase(),
-      fullName: String(user.fullName || '').trim(),
+      fullName: String(user.fullName || user.fullname || '').trim(),
       googleid: user.googleid || null,
       capacity: user.capacity ?? null,
       purpose: user.purpose ?? null,
