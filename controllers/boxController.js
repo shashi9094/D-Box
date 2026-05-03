@@ -764,7 +764,12 @@ exports.getMyBoxes = async (req, res) => {
         await ensureCollaborationTables();
 
         const [rows] = await sql.query(
-            `SELECT b.*,
+            `SELECT b.id,
+                    b.user_id,
+                    b.title,
+                    b.description,
+                    b.capacity,
+                    b.created_at,
                     u.email AS adminEmail,
                     u.fullname AS adminName,
                     COUNT(DISTINCT bm_all.user_id) AS memberCount,
@@ -780,7 +785,7 @@ exports.getMyBoxes = async (req, res) => {
              LEFT JOIN box_members bm_all ON bm_all.box_id = b.id
              LEFT JOIN box_invites bi ON bi.box_id = b.id
              LEFT JOIN users u ON u.id = b.user_id
-             GROUP BY b.id
+             GROUP BY b.id, b.user_id, b.title, b.description, b.capacity, b.created_at, u.email, u.fullname
              ORDER BY b.id DESC`,
             [userId, userId]
         );
