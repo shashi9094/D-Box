@@ -182,7 +182,7 @@ async function ensureCoreTables() {
             purpose TEXT NULL,
             role TEXT NOT NULL DEFAULT 'User',
             password TEXT NULL,
-            isProfileComplete BOOLEAN NOT NULL DEFAULT FALSE,
+            isprofilecomplete BOOLEAN NOT NULL DEFAULT FALSE,
             profilePhoto TEXT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT users_role_check CHECK (role IN ('User', 'Admin'))
@@ -205,12 +205,12 @@ async function ensureCoreTables() {
 
 async function ensureUsersOAuthSchema() {
     await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS googleid TEXT NULL');
-    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS isProfileComplete BOOLEAN NOT NULL DEFAULT FALSE');
+    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS isprofilecomplete BOOLEAN NOT NULL DEFAULT FALSE');
     await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN password DROP NOT NULL');
     await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN capacity DROP NOT NULL');
     await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN purpose DROP NOT NULL');
-    await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN isProfileComplete SET DEFAULT FALSE');
-    await pool.query('UPDATE users SET isProfileComplete = COALESCE(isProfileComplete, FALSE)');
+    await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN isprofilecomplete SET DEFAULT FALSE');
+    await pool.query('UPDATE users SET isprofilecomplete = COALESCE(isprofilecomplete, FALSE)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_users_googleid ON users(googleid)');
 }
 

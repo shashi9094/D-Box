@@ -26,7 +26,7 @@ if (googleConfig.enabled) {
         try {
           const sql = db.promise();
           const [existingRows] = await sql.query(
-            `SELECT id, fullName, email, googleid, capacity, purpose, isProfileComplete
+            `SELECT id, fullName, email, googleid, capacity, purpose, isprofilecomplete
              FROM users
              WHERE LOWER(email) = LOWER(?) OR googleid = ?
              ORDER BY CASE
@@ -52,15 +52,15 @@ if (googleConfig.enabled) {
               googleid: googleId,
               capacity: existing.capacity ?? null,
               purpose: existing.purpose ?? null,
-              isProfileComplete: Boolean(existing.isprofilecomplete ?? existing.isProfileComplete),
+              isProfileComplete: Boolean(existing.isprofilecomplete),
             });
           }
 
           const [insertResult] = await sql.query(
             `INSERT INTO users
-             (fullName, dob, email, country, googleid, capacity, purpose, role, password, isProfileComplete)
+             (fullName, dob, email, country, googleid, capacity, purpose, role, password, isprofilecomplete)
              VALUES (?, NULL, ?, NULL, ?, NULL, NULL, 'User', NULL, FALSE)
-             RETURNING id, fullName, email, googleid, capacity, purpose, isProfileComplete`,
+             RETURNING id, fullName, email, googleid, capacity, purpose, isprofilecomplete`,
             [name, email, googleId]
           );
 
@@ -73,7 +73,7 @@ if (googleConfig.enabled) {
             googleid: googleId,
             capacity: created.capacity ?? null,
             purpose: created.purpose ?? null,
-            isProfileComplete: Boolean(created.isprofilecomplete ?? created.isProfileComplete),
+            isProfileComplete: Boolean(created.isprofilecomplete),
           });
         } catch (error) {
           console.log('GOOGLE AUTH ERROR:', error);
@@ -97,23 +97,44 @@ passport.deserializeUser(async (id, done) => {
     const userId = Number(id);
 
     if (!Number.isFinite(userId) || userId <= 0) {
+      console.warn('deserializeUser: invalid userId', id);
       return done(null, false);
     }
 
-    const [rows] = await db.promise().query(
-      `SELECT id, fullName, email, googleid, capacity, purpose, role, isProfileComplete
-       FROM users
-       WHERE id = ?
-       LIMIT 1`,
-      [userId]
-    );
+    let rows = [];
+    try {
+      // Try fetching with isprofilecomplete column (new schema)
+      [rows] = await db.promise().query(
+        `SELECT id, fullName, email, googleid, capacity, purpose, role, isprofilecomplete
+         FROM users
+         WHERE id = ?
+         LIMIT 1`,
+        [userId]
+      );
+    } catch (queryErr) {
+      console.warn('deserializeUser: first query failed, trying without isprofilecomplete:', queryErr.message);
+      // Fallback for old schema without isprofilecomplete column
+      try {
+        [rows] = await db.promise().query(
+          `SELECT id, fullName, email, googleid, capacity, purpose, role
+           FROM users
+           WHERE id = ?
+           LIMIT 1`,
+          [userId]
+        );
+      } catch (fallbackErr) {
+        console.error('deserializeUser: both queries failed:', fallbackErr.message);
+        return done(fallbackErr);
+      }
+    }
 
     if (!rows.length) {
+      console.warn('deserializeUser: user not found', userId);
       return done(null, false);
     }
 
     const user = rows[0];
-    return done(null, {
+    const userObj = {
       id: Number(user.id),
       email: String(user.email || '').trim().toLowerCase(),
       fullName: String(user.fullName || '').trim(),
@@ -121,9 +142,12 @@ passport.deserializeUser(async (id, done) => {
       capacity: user.capacity ?? null,
       purpose: user.purpose ?? null,
       role: String(user.role || 'User'),
-      isProfileComplete: Boolean(user.isprofilecomplete ?? user.isProfileComplete),
-    });
+      isProfileComplete: Boolean(user.isprofilecomplete),
+    };
+
+    return done(null, userObj);
   } catch (error) {
+    console.error('deserializeUser error:', error.message);
     return done(error);
   }
 });

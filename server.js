@@ -67,7 +67,7 @@ function isProfileCompleteRow(row) {
 
     const capacity = String(row.capacity || '').trim();
     const purpose = String(row.purpose || '').trim();
-    const explicitFlag = row.isprofilecomplete ?? row.isProfileComplete;
+const explicitFlag = row.isprofilecomplete;
 
     if (typeof explicitFlag === 'boolean') {
         return explicitFlag;
@@ -141,7 +141,7 @@ app.get('/complete-profile', (req, res) => {
     }
 
     db.query(
-        'SELECT id, capacity, purpose, isProfileComplete FROM users WHERE id = ? LIMIT 1',
+        'SELECT id, capacity, purpose, isprofilecomplete FROM users WHERE id = ? LIMIT 1',
         [req.session.user.id],
         (err, rows) => {
             if (err) {
@@ -234,9 +234,9 @@ app.post('/api/complete-profile', (req, res, next) => {
     try {
         const [rows] = await db.promise().query(
             `UPDATE users
-             SET capacity = ?, purpose = ?, isProfileComplete = TRUE
+             SET capacity = ?, purpose = ?, isprofilecomplete = TRUE
              WHERE id = ?
-             RETURNING id, fullName, email, capacity, purpose, isProfileComplete`,
+             RETURNING id, fullName, email, capacity, purpose, isprofilecomplete`,
             [capacity, purpose, userId]
         );
 

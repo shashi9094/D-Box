@@ -762,7 +762,7 @@ router.get('/google/callback', (req, res, next) => {
 
       try {
         const [rows] = await sql.query(
-          'SELECT id, capacity, purpose, isProfileComplete FROM users WHERE id = ? LIMIT 1',
+          'SELECT id, capacity, purpose, isprofilecomplete FROM users WHERE id = ? LIMIT 1',
           [userId]
         );
 
