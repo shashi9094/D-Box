@@ -1678,6 +1678,7 @@ textarea:focus {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  margin-left: 40px;
 }
 
 .exist-box-card:hover .box-admin-email {
