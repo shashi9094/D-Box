@@ -24,6 +24,7 @@ logUploadsStorageWarning();
 // Routes
 const authRoutes = require('./routes/authRoutes');
 const boxRoutes = require('./routes/boxRoutes');
+const fileRoutes = require('./routes/fileRoutes');
 
 // CORS
 app.use(cors({
@@ -169,6 +170,7 @@ if (path.resolve(uploadsRoot) !== path.resolve(defaultUploadsRoot)) {
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/box', boxRoutes);
+app.use('/api/files', fileRoutes);
 
 // Auth middleware
 function isAuth(req, res, next) {
