@@ -177,10 +177,12 @@ async function ensureCoreTables() {
             dob DATE NULL,
             email TEXT NOT NULL UNIQUE,
             country TEXT NULL,
+            googleid TEXT NULL,
             capacity TEXT NULL,
             purpose TEXT NULL,
             role TEXT NOT NULL DEFAULT 'User',
-            password TEXT NOT NULL,
+            password TEXT NULL,
+            isProfileComplete BOOLEAN NOT NULL DEFAULT FALSE,
             profilePhoto TEXT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT users_role_check CHECK (role IN ('User', 'Admin'))
@@ -201,6 +203,17 @@ async function ensureCoreTables() {
     await pool.query('CREATE INDEX IF NOT EXISTS idx_boxes_user_id ON boxes(user_id)');
 }
 
+async function ensureUsersOAuthSchema() {
+    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS googleid TEXT NULL');
+    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS isProfileComplete BOOLEAN NOT NULL DEFAULT FALSE');
+    await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN password DROP NOT NULL');
+    await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN capacity DROP NOT NULL');
+    await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN purpose DROP NOT NULL');
+    await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN isProfileComplete SET DEFAULT FALSE');
+    await pool.query('UPDATE users SET isProfileComplete = COALESCE(isProfileComplete, FALSE)');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_users_googleid ON users(googleid)');
+}
+
 const promise = () => ({
     query: executeQuery,
     end: () => pool.end(),
@@ -210,6 +223,7 @@ const end = () => pool.end();
 
 pool.query('SELECT 1')
     .then(() => ensureCoreTables())
+    .then(() => ensureUsersOAuthSchema())
     .then(() => {
         console.log('✅ Database connected successfully.');
         console.log('✅ Core tables are ready.');

@@ -14,70 +14,71 @@ if (googleConfig.enabled) {
         clientSecret,
         callbackURL,
       },
-      (accessToken, refreshToken, profile, done) => {
-        const email = profile.emails[0].value;
-        const name = profile.displayName;
-        const googleId = String(profile.id || '').trim();
+      async (accessToken, refreshToken, profile, done) => {
+        const email = String(profile?.emails?.[0]?.value || '').trim().toLowerCase();
+        const name = String(profile?.displayName || '').trim() || email;
+        const googleId = String(profile?.id || '').trim();
 
-        db.query(
-          "SELECT * FROM users WHERE email = ?",
-          [email],
-          (err, results) => {
-            if (err) return done(err);
+        if (!email || !googleId) {
+          return done(new Error('Google profile is missing email or Google ID'));
+        }
 
-            if (results.length > 0) {
-              const existing = results[0];
-              // Ensure googleid is stored for this user
-              if (googleId && !existing.googleid) {
-                db.query(
-                  'UPDATE users SET googleid = ? WHERE email = ?',
-                  [googleId, email],
-                  (updateErr) => {
-                    if (updateErr) console.warn('Unable to update user googleid:', updateErr.message || updateErr);
-                    return done(null, existing);
-                  }
-                );
-              } else {
-                return done(null, existing);
-              }
+        try {
+          const sql = db.promise();
+          const [existingRows] = await sql.query(
+            `SELECT id, fullName, email, googleid, capacity, purpose, isProfileComplete
+             FROM users
+             WHERE LOWER(email) = LOWER(?) OR googleid = ?
+             ORDER BY CASE
+               WHEN googleid = ? THEN 0
+               WHEN LOWER(email) = LOWER(?) THEN 1
+               ELSE 2
+             END
+             LIMIT 1`,
+            [email, googleId, googleId, email]
+          );
+
+          if (existingRows.length > 0) {
+            const existing = existingRows[0];
+            if (!existing.googleid) {
+              await sql.query('UPDATE users SET googleid = ? WHERE id = ?', [googleId, existing.id]);
+              existing.googleid = googleId;
             }
 
-            const sql = `
-              INSERT INTO users
-              (fullName, dob, email, country, capacity, purpose, role, password, googleid)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-              RETURNING id
-            `;
-
-            db.query(
-              sql,
-              [
-                name,
-                "2000-01-01",
-                email,
-                "Google",
-                "Solo",
-                "Google Login",
-                "User",
-                "google_auth",
-                googleId || null,
-              ],
-              (err, result) => {
-                if (err) {
-                  console.log("GOOGLE INSERT ERROR:", err);
-                  return done(err);
-                }
-
-                const newId = result && (result.insertId || result.rows?.[0]?.id);
-                return done(null, {
-                  id: newId,
-                  email: email,
-                  fullName: name,
-                });
-              }
-            );
+            return done(null, {
+              id: Number(existing.id),
+              email: String(existing.email || email).trim().toLowerCase(),
+              fullName: String(existing.fullName || name).trim(),
+              googleid: googleId,
+              capacity: existing.capacity ?? null,
+              purpose: existing.purpose ?? null,
+              isProfileComplete: Boolean(existing.isprofilecomplete ?? existing.isProfileComplete),
+            });
           }
-        );
+
+          const [insertResult] = await sql.query(
+            `INSERT INTO users
+             (fullName, dob, email, country, googleid, capacity, purpose, role, password, isProfileComplete)
+             VALUES (?, NULL, ?, NULL, ?, NULL, NULL, 'User', NULL, FALSE)
+             RETURNING id, fullName, email, googleid, capacity, purpose, isProfileComplete`,
+            [name, email, googleId]
+          );
+
+          const created = insertResult.rows?.[0] || insertResult;
+
+          return done(null, {
+            id: Number(created.id),
+            email: String(created.email || email).trim().toLowerCase(),
+            fullName: String(created.fullName || name).trim(),
+            googleid: googleId,
+            capacity: created.capacity ?? null,
+            purpose: created.purpose ?? null,
+            isProfileComplete: Boolean(created.isprofilecomplete ?? created.isProfileComplete),
+          });
+        } catch (error) {
+          console.log('GOOGLE AUTH ERROR:', error);
+          return done(error);
+        }
       }
     )
   );

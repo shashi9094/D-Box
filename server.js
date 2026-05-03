@@ -62,6 +62,24 @@ function hasInviteQuery(req) {
     return Boolean(req.query && (req.query.invite || req.query.email || req.query.token));
 }
 
+function isProfileCompleteRow(row) {
+    if (!row) return false;
+
+    const capacity = String(row.capacity || '').trim();
+    const purpose = String(row.purpose || '').trim();
+    const explicitFlag = row.isprofilecomplete ?? row.isProfileComplete;
+
+    if (typeof explicitFlag === 'boolean') {
+        return explicitFlag;
+    }
+
+    if (explicitFlag === 1 || explicitFlag === 't' || explicitFlag === 'true') {
+        return true;
+    }
+
+    return Boolean(capacity && purpose);
+}
+
 app.get('/scripts/back-nav.js', isAuth, (req, res) => {
     setNoStore(res);
     return res.sendFile(path.join(__dirname, 'private', 'scripts', 'back-nav.js'));
@@ -106,6 +124,39 @@ app.get('/signup.html', (req, res) => {
 
     setNoStore(res);
     return res.sendFile(path.join(__dirname, 'Public', 'pages', 'signup.html'));
+});
+
+app.get('/complete-profile', (req, res) => {
+    if (!req.session?.user?.id) {
+        return res.redirect('/login.html');
+    }
+
+    const loginAt = Number(req.session.user.loginAt || 0);
+    const isExpired = !Number.isFinite(loginAt) || (Date.now() - loginAt) > SESSION_MAX_AGE_MS;
+    if (isExpired) {
+        return req.session.destroy(() => {
+            res.clearCookie('connect.sid');
+            return res.redirect('/login.html?reason=session-expired');
+        });
+    }
+
+    db.query(
+        'SELECT id, capacity, purpose, isProfileComplete FROM users WHERE id = ? LIMIT 1',
+        [req.session.user.id],
+        (err, rows) => {
+            if (err) {
+                return res.status(500).send('Unable to load profile completion page');
+            }
+
+            const user = rows[0] || null;
+            if (isProfileCompleteRow(user)) {
+                return res.redirect('/dashboard');
+            }
+
+            setNoStore(res);
+            return res.sendFile(path.join(__dirname, 'Public', 'pages', 'complete-profile.html'));
+        }
+    );
 });
 
 // Static
@@ -157,6 +208,75 @@ app.get('/home', isAuth, (req, res) => {
 app.get('/uploads', isAuth, (req, res) => {
     setNoStore(res);
     res.sendFile(path.join(__dirname, 'private', 'pages', 'uploads.html'));
+});
+
+app.post('/api/complete-profile', (req, res, next) => {
+    if (req.isAuthenticated && req.isAuthenticated() && req.user) {
+        return next();
+    }
+
+    if (req.session?.user?.id) {
+        req.user = req.session.user;
+        return next();
+    }
+
+    return res.status(401).json({ message: 'Not authenticated' });
+}, async (req, res) => {
+    const userId = Number(req.user?.id);
+    const capacity = String(req.body?.capacity || '').trim();
+    const purpose = String(req.body?.purpose || '').trim();
+
+    if (!Number.isFinite(userId) || userId <= 0) {
+        return res.status(401).json({ message: 'Not authenticated' });
+    }
+
+    if (!capacity || !purpose) {
+        return res.status(400).json({ message: 'Capacity and purpose are required' });
+    }
+
+    try {
+        const [rows] = await db.promise().query(
+            `UPDATE users
+             SET capacity = ?, purpose = ?, isProfileComplete = TRUE
+             WHERE id = ?
+             RETURNING id, fullName, email, capacity, purpose, isProfileComplete`,
+            [capacity, purpose, userId]
+        );
+
+        const updated = rows[0];
+        if (!updated) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        if (req.session?.user) {
+            req.session.user = {
+                ...req.session.user,
+                capacity: updated.capacity,
+                purpose: updated.purpose,
+                isProfileComplete: true,
+            };
+        }
+
+        if (req.user) {
+            req.user = {
+                ...req.user,
+                capacity: updated.capacity,
+                purpose: updated.purpose,
+                isProfileComplete: true,
+            };
+        }
+
+        return res.json({
+            success: true,
+            message: 'Profile completed successfully',
+            redirectUrl: '/dashboard'
+        });
+    } catch (error) {
+        return res.status(500).json({
+            message: 'Unable to complete profile',
+            error: error.message,
+        });
+    }
 });
 
 // Start

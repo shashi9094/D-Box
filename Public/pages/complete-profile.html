@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Complete Profile - D-Box</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="allow-scroll">
+  <div class="container login-container">
+    <h1 class="title">Complete your <span class="gradient-text">D-Box</span> profile</h1>
+
+    <div class="login-card">
+      <p class="muted">Google login created your account. Finish the missing profile fields to continue.</p>
+
+      <form id="completeProfileForm">
+        <label for="capacity">User capacity</label>
+        <select id="capacity" name="capacity" required>
+          <option value="">--Select--</option>
+          <option>Solo</option>
+          <option>Informal groups</option>
+          <option>Formal groups</option>
+        </select>
+
+        <label for="purpose">Purpose of use</label>
+        <select id="purpose" name="purpose" required>
+          <option value="">--Select--</option>
+          <option>Personal - Notes/Data Management</option>
+          <option>Maintaining Research groups</option>
+          <option>Maintaining Professor-Student groups</option>
+          <option>Maintaining Professional groups</option>
+          <option>Other</option>
+        </select>
+
+        <button type="submit" class="btn primary">Save and continue</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    async function ensureStillAuthenticated() {
+      try {
+        const response = await fetch('/api/auth/session', {
+          credentials: 'same-origin',
+          cache: 'no-store'
+        });
+
+        if (!response.ok) {
+          window.location.replace('/login.html');
+          return;
+        }
+
+        const data = await response.json();
+        if (!data.authenticated) {
+          window.location.replace('/login.html');
+        }
+      } catch (error) {
+        window.location.replace('/login.html');
+      }
+    }
+
+    ensureStillAuthenticated();
+
+    document.getElementById('completeProfileForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const capacity = document.getElementById('capacity').value;
+      const purpose = document.getElementById('purpose').value;
+
+      try {
+        const response = await fetch('/api/complete-profile', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ capacity, purpose })
+        });
+
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(result.message || 'Unable to complete profile');
+        }
+
+        window.location.replace(result.redirectUrl || '/dashboard');
+      } catch (error) {
+        alert(error.message || 'Unable to save profile');
+      }
+    });
+  </script>
+</body>
+</html>

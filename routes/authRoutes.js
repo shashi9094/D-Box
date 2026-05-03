@@ -73,6 +73,23 @@ function isValidGoogleClientId(value) {
   return /^\d+-[a-z0-9-]+\.apps\.googleusercontent\.com$/i.test(String(value || '').trim());
 }
 
+function isProfileCompleteRow(row) {
+  if (!row) return false;
+  const capacity = String(row.capacity || '').trim();
+  const purpose = String(row.purpose || '').trim();
+  const explicitFlag = row.isprofilecomplete ?? row.isProfileComplete;
+
+  if (typeof explicitFlag === 'boolean') {
+    return explicitFlag;
+  }
+
+  if (explicitFlag === 1 || explicitFlag === 't' || explicitFlag === 'true') {
+    return true;
+  }
+
+  return Boolean(capacity && purpose);
+}
+
 function maskClientId(value) {
   const id = String(value || '').trim();
   if (!id) return '(empty)';
@@ -723,56 +740,146 @@ router.get('/google/callback', (req, res, next) => {
       return res.redirect('/login.html?google=failed');
     }
 
-    // attach user and establish session (same flow as previous implementation)
-    req.user = user;
-    req.session.user = {
-      id: user.id,
-      email: user.email,
-      loginAt: Date.now(),
-    };
+    const userId = Number(user.id);
+    const email = String(user.email || '').trim().toLowerCase();
 
-    req.session.cookie.maxAge = SESSION_MAX_AGE_MS;
-
-    let shouldNotifyNewDevice = false;
-    try {
-      shouldNotifyNewDevice = await isNewDeviceLogin({ userId: user.id, req });
-    } catch (deviceErr) {
-      console.warn('Unable to evaluate device novelty for Google login:', deviceErr.message);
-    }
-
-    req.session.save(() => {
-      logLoginHistory({
-        userId: user.id,
-        email: user.email,
-        req,
-      });
-
-      if (shouldNotifyNewDevice) {
-        const ipAddress = String(req?.headers?.['x-forwarded-for'] || '').split(',')[0].trim()
-          || req?.ip
-          || req?.socket?.remoteAddress
-          || 'Unknown IP';
-
-        const userAgent = String(req?.headers?.['user-agent'] || '').trim() || 'Unknown device';
-
-        createNotification({
-          userId: user.id,
-          type: 'new_device_login',
-          title: 'New device login detected',
-          message: 'Your account was logged in from a new device/browser.',
-          details: {
-            ipAddress,
-            userAgent,
-            email: String(user.email || '').trim().toLowerCase(),
-          },
-        }).catch((notifyErr) => {
-          console.warn('Google login device notification failed:', notifyErr.message);
-        });
+    req.login(user, async (loginErr) => {
+      if (loginErr) {
+        console.warn('Unable to establish Passport session for Google login:', loginErr.message);
+        return res.redirect('/login.html?google=error&reason=session_failed');
       }
 
-      res.redirect('/home');
+      req.session.user = {
+        id: userId,
+        email,
+        loginAt: Date.now(),
+      };
+
+      req.session.cookie.maxAge = SESSION_MAX_AGE_MS;
+
+      const sql = db.promise();
+      let redirectUrl = '/dashboard';
+
+      try {
+        const [rows] = await sql.query(
+          'SELECT id, capacity, purpose, isProfileComplete FROM users WHERE id = ? LIMIT 1',
+          [userId]
+        );
+
+        const profileRow = rows[0] || null;
+        const profileComplete = isProfileCompleteRow(profileRow);
+        redirectUrl = profileComplete ? '/dashboard' : '/complete-profile';
+
+        req.session.user = {
+          ...req.session.user,
+          fullName: String(user.fullName || profileRow?.fullName || '').trim(),
+          googleid: String(user.googleid || '').trim() || null,
+          capacity: profileRow?.capacity ?? null,
+          purpose: profileRow?.purpose ?? null,
+          isProfileComplete: profileComplete,
+        };
+
+        req.user = {
+          ...(req.user || {}),
+          ...req.session.user,
+        };
+      } catch (profileErr) {
+        console.warn('Unable to check Google profile completion:', profileErr.message);
+        redirectUrl = '/complete-profile';
+      }
+
+      let shouldNotifyNewDevice = false;
+      try {
+        shouldNotifyNewDevice = await isNewDeviceLogin({ userId, req });
+      } catch (deviceErr) {
+        console.warn('Unable to evaluate device novelty for Google login:', deviceErr.message);
+      }
+
+      req.session.save(() => {
+        logLoginHistory({
+          userId,
+          email,
+          req,
+        });
+
+        if (shouldNotifyNewDevice) {
+          const ipAddress = String(req?.headers?.['x-forwarded-for'] || '').split(',')[0].trim()
+            || req?.ip
+            || req?.socket?.remoteAddress
+            || 'Unknown IP';
+
+          const userAgent = String(req?.headers?.['user-agent'] || '').trim() || 'Unknown device';
+
+          createNotification({
+            userId,
+            type: 'new_device_login',
+            title: 'New device login detected',
+            message: 'Your account was logged in from a new device/browser.',
+            details: {
+              ipAddress,
+              userAgent,
+              email,
+            },
+          }).catch((notifyErr) => {
+            console.warn('Google login device notification failed:', notifyErr.message);
+          });
+        }
+
+        return res.redirect(redirectUrl);
+      });
     });
   })(req, res, next);
+});
+
+router.post('/complete-profile', async (req, res) => {
+  const sessionUser = req.user || req.session?.user;
+  const userId = Number(sessionUser?.id);
+  const capacity = String(req.body?.capacity || '').trim();
+  const purpose = String(req.body?.purpose || '').trim();
+
+  if (!Number.isFinite(userId) || userId <= 0) {
+    return res.status(401).json({ message: 'Not authenticated' });
+  }
+
+  if (!capacity || !purpose) {
+    return res.status(400).json({ message: 'Capacity and purpose are required' });
+  }
+
+  try {
+    const sql = db.promise();
+    const [rows] = await sql.query(
+      `UPDATE users
+       SET capacity = ?, purpose = ?, isProfileComplete = TRUE
+       WHERE id = ?
+             RETURNING id, fullName, email, capacity, purpose, isProfileComplete`,
+      [capacity, purpose, userId]
+    );
+
+    const updated = rows[0];
+    if (!updated) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (req.session?.user) {
+      req.session.user = {
+        ...req.session.user,
+        capacity: updated.capacity,
+        purpose: updated.purpose,
+        isProfileComplete: true,
+      };
+    }
+
+    return res.json({
+      success: true,
+      message: 'Profile completed successfully',
+      redirectUrl: '/dashboard',
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Unable to complete profile',
+      error: error.message,
+    });
+  }
 });
 
 module.exports = router;
