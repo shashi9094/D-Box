@@ -45,8 +45,8 @@ app.use(session({
     saveUninitialized: false,
     cookie: {
         maxAge: SESSION_MAX_AGE_MS,
-        secure: isProduction,
-        sameSite: isProduction ? 'none' : 'lax'
+        secure: false,
+        sameSite: 'lax'
     }
 }));
 
@@ -215,18 +215,15 @@ app.post('/api/complete-profile', (req, res, next) => {
         return next();
     }
 
-    if (req.session?.user?.id) {
-        req.user = req.session.user;
-        return next();
-    }
-
     return res.status(401).json({ message: 'Not authenticated' });
 }, async (req, res) => {
+    console.log('complete-profile req.user:', req.user);
+
     const userId = Number(req.user?.id);
     const capacity = String(req.body?.capacity || '').trim();
     const purpose = String(req.body?.purpose || '').trim();
 
-    if (!Number.isFinite(userId) || userId <= 0) {
+    if (!req.user || !Number.isFinite(userId) || userId <= 0) {
         return res.status(401).json({ message: 'Not authenticated' });
     }
 

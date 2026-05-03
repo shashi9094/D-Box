@@ -88,7 +88,44 @@ if (googleConfig.enabled) {
   );
 }
 
-passport.serializeUser((user, done) => done(null, user));
-passport.deserializeUser((user, done) => done(null, user));
+passport.serializeUser((user, done) => {
+  done(null, Number(user?.id));
+});
+
+passport.deserializeUser(async (id, done) => {
+  try {
+    const userId = Number(id);
+
+    if (!Number.isFinite(userId) || userId <= 0) {
+      return done(null, false);
+    }
+
+    const [rows] = await db.promise().query(
+      `SELECT id, fullName, email, googleid, capacity, purpose, role, isProfileComplete
+       FROM users
+       WHERE id = ?
+       LIMIT 1`,
+      [userId]
+    );
+
+    if (!rows.length) {
+      return done(null, false);
+    }
+
+    const user = rows[0];
+    return done(null, {
+      id: Number(user.id),
+      email: String(user.email || '').trim().toLowerCase(),
+      fullName: String(user.fullName || '').trim(),
+      googleid: user.googleid || null,
+      capacity: user.capacity ?? null,
+      purpose: user.purpose ?? null,
+      role: String(user.role || 'User'),
+      isProfileComplete: Boolean(user.isprofilecomplete ?? user.isProfileComplete),
+    });
+  } catch (error) {
+    return done(error);
+  }
+});
 
 module.exports = passport;
