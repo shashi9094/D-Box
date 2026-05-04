@@ -995,11 +995,20 @@ exports.addMemberByEmail = async (req, res) => {
             );
 
             const failedEmails = emailResults
-                .map((result, index) => ({ result, email: emailNotifications[index] && emailNotifications[index].email }))
+                .map((result, index) => {
+                    const reason = result.status === 'rejected'
+                        ? (result.reason && result.reason.message ? result.reason.message : String(result.reason || 'Unknown email error'))
+                        : null;
+                    return {
+                        result,
+                        email: emailNotifications[index] && emailNotifications[index].email,
+                        reason
+                    };
+                })
                 .filter(({ result }) => result.status === 'rejected');
 
             for (const failed of failedEmails) {
-                console.warn(`Invitation email not sent to ${failed.email}:`, failed.result.reason && failed.result.reason.message ? failed.result.reason.message : failed.result.reason);
+                console.warn(`Invitation email not sent to ${failed.email}:`, failed.reason);
             }
 
             if (failedEmails.length) {
@@ -1008,6 +1017,7 @@ exports.addMemberByEmail = async (req, res) => {
                     invitedCount,
                     emailQueuedCount,
                     emailFailedCount: failedEmails.length,
+                    emailFailures: failedEmails.map((failed) => ({ email: failed.email, reason: failed.reason })),
                     skippedSelfCount,
                     missingEmails,
                     inviteLinks,
