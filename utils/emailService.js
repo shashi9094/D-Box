@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const dns = require('dns');
 
 const emailUser = String(process.env.EMAIL_USER || '').trim();
 const emailPassword = String(process.env.EMAIL_PASSWORD || '').replace(/\s+/g, '').trim();
@@ -8,15 +9,30 @@ const smtpPort = Number(process.env.SMTP_PORT || 465);
 const smtpSecure = String(process.env.SMTP_SECURE || 'true').toLowerCase() !== 'false';
 const smtpForceIpv4 = String(process.env.SMTP_FORCE_IPV4 || 'true').toLowerCase() !== 'false';
 
+// IPv4-only DNS lookup for Railway compatibility
+const ipv4Lookup = (hostname, callback) => {
+  if (smtpForceIpv4) {
+    dns.resolve4(hostname, (err, addresses) => {
+      if (err) {
+        return callback(err);
+      }
+      callback(null, addresses[0] || hostname, 4);
+    });
+  } else {
+    dns.lookup(hostname, { family: 0 }, callback);
+  }
+};
+
 const transporter = emailEnabled
   ? nodemailer.createTransport({
       host: smtpHost,
       port: smtpPort,
       secure: smtpSecure,
       family: smtpForceIpv4 ? 4 : 0,
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 15000,
+      lookup: smtpForceIpv4 ? ipv4Lookup : undefined,
+      connectionTimeout: 30000,
+      greetingTimeout: 30000,
+      socketTimeout: 30000,
       auth: {
         user: emailUser,
         pass: emailPassword
@@ -28,14 +44,44 @@ if (transporter) {
   transporter
     .verify()
     .then(() => {
-      console.log('Email service ready');
+      console.log('Email service ready (IPv4 mode: ' + (smtpForceIpv4 ? 'enabled' : 'disabled') + ')');
     })
     .catch((error) => {
-      console.warn('Email service not configured:', error.message);
+      console.warn('Email service not configured:', error.code, '|', error.message);
     });
 } else {
   console.warn('Email service disabled because EMAIL_USER or EMAIL_PASSWORD is missing.');
 }
+
+/**
+ * Retry helper for transient SMTP failures (timeout, socket errors)
+ */
+const sendMailWithRetry = async (mailOptions, maxRetries = 3) => {
+  let lastError = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await transporter.sendMail(mailOptions);
+      return result;
+    } catch (error) {
+      lastError = error;
+      const isTransient = ['ETIMEDOUT', 'ESOCKET', 'ECONNREFUSED', 'ENETUNREACH'].includes(error.code);
+      
+      if (isTransient && attempt < maxRetries) {
+        const delayMs = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // exponential backoff
+        console.warn(
+          `[Email Retry ${attempt}/${maxRetries}] Transient error (${error.code}), retrying in ${delayMs}ms...`
+        );
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      } else if (!isTransient) {
+        // Non-transient error, fail immediately
+        throw error;
+      }
+    }
+  }
+  
+  throw lastError;
+};
 
 /**
  * Send invitation email to join a box/group
@@ -60,8 +106,7 @@ const sendInvitationEmail = (recipientEmail, boxTitle, senderName, joinUrl) => {
       text: `You're invited to join "${boxTitle}" on D-Box\n\n${senderName} has invited you to join the group "${boxTitle}".\n\nClick the link below to join:\n${joinUrl}\n\nIf you did not expect this invitation, you can safely ignore this email.`
     };
 
-    transporter
-      .sendMail(mailOptions)
+    sendMailWithRetry(mailOptions)
       .then((result) => {
         console.log(`Invitation email sent to ${recipientEmail}:`, result.messageId);
         resolve({ success: true, messageId: result.messageId });
