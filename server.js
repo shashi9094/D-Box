@@ -25,6 +25,7 @@ logUploadsStorageWarning();
 const authRoutes = require('./routes/authRoutes');
 const boxRoutes = require('./routes/boxRoutes');
 const fileRoutes = require('./routes/fileRoutes');
+const { sendEmail } = require('./emailService');
 
 // CORS
 app.use(cors({
@@ -173,6 +174,48 @@ if (path.resolve(uploadsRoot) !== path.resolve(defaultUploadsRoot)) {
 app.use('/api/auth', authRoutes);
 app.use('/api/box', boxRoutes);
 app.use('/api/files', fileRoutes);
+
+app.get('/test-email', async (req, res) => {
+    const to = String(req.query?.to || process.env.TEST_EMAIL_TO || process.env.SMTP_USER || '').trim();
+
+    if (!to) {
+        console.error('GET /test-email failed: no recipient provided');
+        return res.status(400).json({
+            success: false,
+            error: 'Recipient is required. Set TEST_EMAIL_TO/SMTP_USER or pass ?to=email@example.com'
+        });
+    }
+
+    try {
+        console.log(`GET /test-email requested for ${to}`);
+
+        const result = await sendEmail(
+            to,
+            'D-Box SES SMTP Test Email',
+            'Working'
+        );
+
+        if (!result.success) {
+            console.error('GET /test-email sendEmail returned failure', result.error);
+            return res.status(500).json({
+                success: false,
+                error: result.error
+            });
+        }
+
+        return res.json({
+            success: true,
+            messageId: result.messageId
+        });
+    } catch (error) {
+        const detail = [error.code, error.message].filter(Boolean).join(' | ');
+        console.error('GET /test-email unexpected error:', detail || error.toString());
+        return res.status(500).json({
+            success: false,
+            error: detail || 'Failed to send test email'
+        });
+    }
+});
 
 // Auth middleware
 function isAuth(req, res, next) {
