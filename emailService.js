@@ -7,13 +7,17 @@ const smtpPass = String(process.env.SMTP_PASS || '').trim();
 const smtpFrom = String(process.env.SMTP_FROM || '').trim();
 
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: 587,
-  secure: false,
+  host: smtpHost,
+  port: smtpPort,
+  secure: false, // SES SMTP typically uses STARTTLS on port 587
   auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS
-  }
+    user: smtpUser,
+    pass: smtpPass
+  },
+    tls: {
+    rejectUnauthorized: false
+  },
+  requireTLS: true
 });
 
 console.log('SES SMTP email service initialized', {
