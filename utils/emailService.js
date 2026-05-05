@@ -1,18 +1,96 @@
-const { Resend } = require('resend');
+const nodemailer = require('nodemailer');
 
-const resendApiKey = String(process.env.RESEND_API_KEY || '').trim();
-const emailEnabled = Boolean(resendApiKey);
+const smtpHost = String(process.env.SMTP_HOST || '').trim();
+const smtpPort = Number.parseInt(process.env.SMTP_PORT || '587', 10) || 587;
+const smtpUser = String(process.env.SMTP_USER || '').trim();
+const smtpPass = String(process.env.SMTP_PASS || '').trim();
+const fromAddress = String(process.env.SMTP_FROM || smtpUser).trim();
 
-const client = emailEnabled ? new Resend(resendApiKey) : null;
+const transporter = nodemailer.createTransport({
+  host: smtpHost,
+  port: 587,
+  secure: false,
+  auth: {
+    user: smtpUser,
+    pass: smtpPass
+  }
+});
 
-if (client) {
-  console.log('Email service ready (Resend API configured)');
-} else {
-  console.warn('Email service disabled because RESEND_API_KEY is missing.');
+console.log('Email service configured for AWS SES SMTP with Nodemailer', {
+  host: smtpHost || '(missing)',
+  requestedPort: smtpPort,
+  port: 587,
+  from: fromAddress || '(missing)'
+});
+
+if (smtpPort !== 587) {
+  console.warn(`SMTP_PORT is set to ${smtpPort}, but Nodemailer is configured to use port 587 for SES SMTP.`);
+}
+
+async function sendEmail(to, subject, text) {
+  const recipient = String(to || '').trim();
+  const mailSubject = String(subject || '').trim();
+  const bodyText = String(text || '').trim();
+
+  if (!recipient) {
+    console.error('Email send failed: missing recipient address');
+    return { success: false, error: 'Recipient email is required' };
+  }
+
+  if (!mailSubject) {
+    console.error(`Email send failed for ${recipient}: missing subject`);
+    return { success: false, error: 'Email subject is required' };
+  }
+
+  if (!bodyText) {
+    console.error(`Email send failed for ${recipient}: missing body text`);
+    return { success: false, error: 'Email text is required' };
+  }
+
+  if (!smtpHost || !smtpUser || !smtpPass) {
+    const missingConfig = [
+      !smtpHost ? 'SMTP_HOST' : null,
+      !smtpUser ? 'SMTP_USER' : null,
+      !smtpPass ? 'SMTP_PASS' : null
+    ].filter(Boolean).join(', ');
+
+    console.error(`Email send failed for ${recipient}: missing SMTP config (${missingConfig})`);
+    return { success: false, error: `Missing SMTP config: ${missingConfig}` };
+  }
+
+  if (!fromAddress) {
+    console.error(`Email send failed for ${recipient}: missing from address`);
+    return { success: false, error: 'SMTP_FROM or SMTP_USER must provide a verified sender email' };
+  }
+
+  try {
+    console.log(`Sending email to ${recipient} from ${fromAddress}`);
+
+    const info = await transporter.sendMail({
+      from: fromAddress,
+      to: recipient,
+      subject: mailSubject,
+      text: bodyText
+    });
+
+    console.log(`Email sent to ${recipient}`, {
+      messageId: info.messageId,
+      response: info.response
+    });
+
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    const detail = [error.code, error.response, error.message]
+      .filter(Boolean)
+      .join(' | ');
+
+    console.error(`Failed to send email to ${recipient}:`, detail || error.toString());
+    return { success: false, error: detail || 'Unknown email error' };
+  }
 }
 
 /**
- * Send invitation email to join a box/group using Resend API
+ * Send invitation email to join a box/group using AWS SES SMTP via Nodemailer
  * @param {string} recipientEmail - Email to send to
  * @param {string} boxTitle - Name of the box/group
  * @param {string} senderName - Name of person sending invite
@@ -21,25 +99,24 @@ if (client) {
  */
 const sendInvitationEmail = async (recipientEmail, boxTitle, senderName, joinUrl) => {
   try {
-    if (!client) {
-      return { success: false, error: 'Email service is disabled' };
-    }
-
     const recipientEmailTrimmed = String(recipientEmail || '').trim();
     if (!recipientEmailTrimmed) {
       return { success: false, error: 'Invalid recipient email' };
     }
 
-    const result = await client.emails.send({
-      from: 'D-Box <noreply@dbox.com>',
-      to: recipientEmailTrimmed,
-      subject: `You're invited to join "${boxTitle}" on D-Box`,
-      html: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;"><div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;"><h2 style="color: #333; margin-top: 0;">Welcome to D-Box!</h2><p style="color: #666; font-size: 16px;"><strong>${senderName}</strong> has invited you to join the group <strong>"${boxTitle}"</strong></p></div><div style="background-color: #f0f7ff; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #0084ff;"><p style="color: #333; margin: 0 0 10px 0;">Click the button below to join the group and start collaborating:</p><a href="${joinUrl}" style="display: inline-block; background-color: #0084ff; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: bold; margin-top: 10px;">Join Now</a><p style="color: #999; font-size: 12px; margin-top: 15px;">Or copy this link in your browser: <br/><a href="${joinUrl}" style="color: #0084ff; word-break: break-all;">${joinUrl}</a></p></div><div style="border-top: 1px solid #ddd; padding-top: 20px; color: #999; font-size: 12px;"><p style="margin: 0 0 10px 0;">D-Box is a secure file sharing and collaboration platform.</p><p style="margin: 0;">If you did not expect this invitation, you can safely ignore this email.</p></div></div>`,
-      text: `You're invited to join "${boxTitle}" on D-Box\n\n${senderName} has invited you to join the group "${boxTitle}".\n\nClick the link below to join:\n${joinUrl}\n\nIf you did not expect this invitation, you can safely ignore this email.`
-    });
+    const subject = `You're invited to join "${boxTitle}" on D-Box`;
+    const text = [
+      `You're invited to join "${boxTitle}" on D-Box`,
+      '',
+      `${senderName} has invited you to join the group "${boxTitle}".`,
+      '',
+      'Click the link below to join:',
+      joinUrl,
+      '',
+      'If you did not expect this invitation, you can safely ignore this email.'
+    ].join('\n');
 
-    console.log(`Invitation email sent to ${recipientEmailTrimmed}:`, result.id);
-    return { success: true, messageId: result.id };
+    return await sendEmail(recipientEmailTrimmed, subject, text);
   } catch (error) {
     const detail = [error.code, error.message]
       .filter(Boolean)
@@ -53,5 +130,6 @@ const sendInvitationEmail = async (recipientEmail, boxTitle, senderName, joinUrl
 };
 
 module.exports = {
+  sendEmail,
   sendInvitationEmail
 };
