@@ -37,6 +37,21 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+//debug test email route
+app.get('/test-email', async (req, res) => {
+  const email = req.query.email;
+
+  const { sendEmail } = require('./utils/emailService');
+
+  const result = await sendEmail(
+    email,
+    "Test Email",
+    "Hello from AWS SES 🚀"
+  );
+
+  res.json(result);
+});
+
 // Render and other managed hosts run behind a reverse proxy
 app.set('trust proxy', 1);
 
