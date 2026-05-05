@@ -66,9 +66,11 @@ function hasInviteQuery(req) {
 function isProfileCompleteRow(row) {
     if (!row) return false;
 
+    const dob = String(row.dob || '').trim();
+    const country = String(row.country || '').trim();
     const capacity = String(row.capacity || '').trim();
     const purpose = String(row.purpose || '').trim();
-const explicitFlag = row.isprofilecomplete;
+    const explicitFlag = row.isprofilecomplete;
 
     if (typeof explicitFlag === 'boolean') {
         return explicitFlag;
@@ -78,7 +80,7 @@ const explicitFlag = row.isprofilecomplete;
         return true;
     }
 
-    return Boolean(capacity && purpose);
+    return Boolean(dob && country && capacity && purpose);
 }
 
 app.get('/scripts/back-nav.js', isAuth, (req, res) => {
@@ -142,7 +144,7 @@ app.get('/complete-profile', (req, res) => {
     }
 
     db.query(
-        'SELECT id, capacity, purpose, isprofilecomplete FROM users WHERE id = ? LIMIT 1',
+        'SELECT id, dob, country, capacity, purpose, isprofilecomplete FROM users WHERE id = ? LIMIT 1',
         [req.session.user.id],
         (err, rows) => {
             if (err) {
@@ -222,6 +224,8 @@ app.post('/api/complete-profile', (req, res, next) => {
     console.log('complete-profile req.user:', req.user);
 
     const userId = Number(req.user?.id);
+    const dob = String(req.body?.dob || '').trim();
+    const country = String(req.body?.country || '').trim();
     const capacity = String(req.body?.capacity || '').trim();
     const purpose = String(req.body?.purpose || '').trim();
 
@@ -229,17 +233,17 @@ app.post('/api/complete-profile', (req, res, next) => {
         return res.status(401).json({ message: 'Not authenticated' });
     }
 
-    if (!capacity || !purpose) {
-        return res.status(400).json({ message: 'Capacity and purpose are required' });
+    if (!dob || !country || !capacity || !purpose) {
+        return res.status(400).json({ message: 'DOB, country, capacity, and purpose are required' });
     }
 
     try {
         const [rows] = await db.promise().query(
             `UPDATE users
-             SET capacity = ?, purpose = ?, isprofilecomplete = TRUE
+             SET dob = ?, country = ?, capacity = ?, purpose = ?, isprofilecomplete = TRUE
              WHERE id = ?
-             RETURNING id, fullname AS "fullName", email, capacity, purpose, isprofilecomplete`,
-            [capacity, purpose, userId]
+             RETURNING id, fullname AS "fullName", email, dob, country, capacity, purpose, isprofilecomplete`,
+            [dob, country, capacity, purpose, userId]
         );
 
         const updated = rows[0];
@@ -250,6 +254,8 @@ app.post('/api/complete-profile', (req, res, next) => {
         if (req.session?.user) {
             req.session.user = {
                 ...req.session.user,
+                dob: updated.dob,
+                country: updated.country,
                 capacity: updated.capacity,
                 purpose: updated.purpose,
                 isProfileComplete: true,
@@ -259,6 +265,8 @@ app.post('/api/complete-profile', (req, res, next) => {
         if (req.user) {
             req.user = {
                 ...req.user,
+                dob: updated.dob,
+                country: updated.country,
                 capacity: updated.capacity,
                 purpose: updated.purpose,
                 isProfileComplete: true,

@@ -12,6 +12,8 @@ function normalizeUserRow(row, fallbackName, fallbackEmail, fallbackGoogleId) {
     email: String(row?.email || fallbackEmail || '').trim().toLowerCase(),
     fullName: String(row?.fullName || row?.fullname || fallbackName || '').trim(),
     googleid: String(row?.googleid || fallbackGoogleId || '').trim() || null,
+    dob: row?.dob ?? null,
+    country: row?.country ?? null,
     capacity: row?.capacity ?? null,
     purpose: row?.purpose ?? null,
     role: String(row?.role || 'User'),
@@ -39,7 +41,7 @@ if (googleConfig.enabled) {
         try {
           const sql = db.promise();
           const [existingRows] = await sql.query(
-            `SELECT id, fullname AS "fullName", email, googleid, capacity, purpose, role, isprofilecomplete
+            `SELECT id, fullname AS "fullName", email, googleid, dob, country, capacity, purpose, role, isprofilecomplete
              FROM users
              WHERE LOWER(email) = LOWER(?) OR googleid = ?
              ORDER BY CASE
@@ -69,7 +71,7 @@ if (googleConfig.enabled) {
              DO UPDATE SET
                googleid = COALESCE(users.googleid, EXCLUDED.googleid),
                fullname = COALESCE(NULLIF(users.fullname, ''), EXCLUDED.fullname)
-             RETURNING id, fullname AS "fullName", email, googleid, capacity, purpose, role, isprofilecomplete`,
+             RETURNING id, fullname AS "fullName", email, googleid, dob, country, capacity, purpose, role, isprofilecomplete`,
             [name, email, googleId]
           );
 
@@ -112,7 +114,7 @@ passport.deserializeUser(async (id, done) => {
     try {
       // Try fetching with isprofilecomplete column (new schema)
       [rows] = await db.promise().query(
-        `SELECT id, fullname AS "fullName", email, googleid, capacity, purpose, role, isprofilecomplete
+        `SELECT id, fullname AS "fullName", email, googleid, dob, country, capacity, purpose, role, isprofilecomplete
          FROM users
          WHERE id = ?
          LIMIT 1`,
@@ -123,7 +125,7 @@ passport.deserializeUser(async (id, done) => {
       // Fallback for old schema without isprofilecomplete column
       try {
         [rows] = await db.promise().query(
-          `SELECT id, fullname AS "fullName", email, googleid, capacity, purpose, role
+          `SELECT id, fullname AS "fullName", email, googleid, dob, country, capacity, purpose, role
            FROM users
            WHERE id = ?
            LIMIT 1`,
@@ -146,6 +148,8 @@ passport.deserializeUser(async (id, done) => {
       email: String(user.email || '').trim().toLowerCase(),
       fullName: String(user.fullName || user.fullname || '').trim(),
       googleid: user.googleid || null,
+      dob: user.dob ?? null,
+      country: user.country ?? null,
       capacity: user.capacity ?? null,
       purpose: user.purpose ?? null,
       role: String(user.role || 'User'),

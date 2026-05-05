@@ -480,13 +480,26 @@ document.getElementById('addMemberForm').addEventListener('submit', async (event
     const boxId = Number(document.getElementById('addMemberBoxId').value);
     try {
         const result = await addMember(boxId);
+        const modalErrorText = document.getElementById('modalErrorText');
+        modalErrorText.classList.remove('warning', 'success');
+
+        if (result?.emailFailedCount > 0) {
+            modalErrorText.textContent = result.message || 'Invite created, but email delivery failed.';
+            modalErrorText.classList.add('warning');
+            await loadBoxes();
+            return;
+        }
+
         if (result?.message) {
             alert(result.message);
         }
+
         closeModal();
         await loadBoxes();
     } catch (error) {
-        document.getElementById('modalErrorText').textContent = error.message || 'Unable to add user';
+        const modalErrorText = document.getElementById('modalErrorText');
+        modalErrorText.classList.remove('warning', 'success');
+        modalErrorText.textContent = error.message || 'Unable to add user';
     }
 });
 

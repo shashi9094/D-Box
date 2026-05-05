@@ -1999,6 +1999,14 @@ body.modal-open {
   font-size: 0.9rem;
 }
 
+.modal-error.warning {
+  color: #ffd08a;
+}
+
+.modal-error.success {
+  color: #a7f3d0;
+}
+
 .modal-help-text-inline {
   font-size: 0.8rem;
   color: #9bdfff;

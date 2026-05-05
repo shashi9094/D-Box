@@ -11,9 +11,23 @@
     <h1 class="title">Complete your <span class="gradient-text">D-Box</span> profile</h1>
 
     <div class="login-card">
-      <p class="muted">Google login created your account. Finish the missing profile fields to continue.</p>
+      <p class="muted">Finish the missing profile fields to continue.</p>
 
       <form id="completeProfileForm">
+        <label for="dob">Date of birth</label>
+        <input type="date" id="dob" name="dob" required>
+
+        <label for="country">Country</label>
+        <select id="country" name="country" required>
+          <option value="">--Select--</option>
+          <option value="India">India</option>
+          <option value="USA">USA</option>
+          <option value="UK">UK</option>
+          <option value="Canada">Canada</option>
+          <option value="Australia">Australia</option>
+          <option value="Other">Other</option>
+        </select>
+
         <label for="capacity">User capacity</label>
         <select id="capacity" name="capacity" required>
           <option value="">--Select--</option>
@@ -64,6 +78,8 @@
     document.getElementById('completeProfileForm').addEventListener('submit', async (event) => {
       event.preventDefault();
 
+      const dob = document.getElementById('dob').value;
+      const country = document.getElementById('country').value;
       const capacity = document.getElementById('capacity').value;
       const purpose = document.getElementById('purpose').value;
 
@@ -74,7 +90,7 @@
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ capacity, purpose })
+          body: JSON.stringify({ dob, country, capacity, purpose })
         });
 
         const result = await response.json().catch(() => ({}));

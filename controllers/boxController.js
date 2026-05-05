@@ -956,6 +956,7 @@ exports.addMemberByEmail = async (req, res) => {
         const inviteBaseUrl = resolvePublicBaseUrl(req);
         const inviteLinks = [];
         const emailNotifications = [];
+        let emailFailedCount = 0;
 
         for (const target of uniqueInviteTargets) {
             const inviteToken = createInviteToken();
@@ -987,7 +988,10 @@ exports.addMemberByEmail = async (req, res) => {
 
                     const emailResult = await sendInvitationEmail(notification.email, boxTitle, senderName, notification.url);
                     if (!emailResult.success) {
-                        throw new Error(emailResult.error || 'Invitation email failed to send');
+                        console.warn(
+                            `Invitation email failed for ${notification.email}:`,
+                            emailResult.error || 'Unknown email error'
+                        );
                     }
 
                     return emailResult;
@@ -998,31 +1002,19 @@ exports.addMemberByEmail = async (req, res) => {
                 .map((result, index) => {
                     const reason = result.status === 'rejected'
                         ? (result.reason && result.reason.message ? result.reason.message : String(result.reason || 'Unknown email error'))
-                        : null;
+                        : (result.value && result.value.success === false ? (result.value.error || 'Unknown email error') : null);
                     return {
                         result,
                         email: emailNotifications[index] && emailNotifications[index].email,
                         reason
                     };
                 })
-                .filter(({ result }) => result.status === 'rejected');
+                .filter(({ result }) => result.status === 'rejected' || (result.value && result.value.success === false));
+
+            emailFailedCount = failedEmails.length;
 
             for (const failed of failedEmails) {
                 console.warn(`Invitation email not sent to ${failed.email}:`, failed.reason);
-            }
-
-            if (failedEmails.length) {
-                return res.status(500).json({
-                    success: false,
-                    invitedCount,
-                    emailQueuedCount,
-                    emailFailedCount: failedEmails.length,
-                    emailFailures: failedEmails.map((failed) => ({ email: failed.email, reason: failed.reason })),
-                    skippedSelfCount,
-                    missingEmails,
-                    inviteLinks,
-                    message: `Invites were created, but ${failedEmails.length} invitation email${failedEmails.length === 1 ? ' was' : ' were'} not sent. Check EMAIL_USER, EMAIL_PASSWORD, and the public app URL.`
-                });
             }
         }
 
@@ -1036,11 +1028,11 @@ exports.addMemberByEmail = async (req, res) => {
             success: true,
             invitedCount,
             emailQueuedCount,
-            emailFailedCount: 0,
+            emailFailedCount,
             skippedSelfCount,
             missingEmails,
             inviteLinks,
-            message: `Processed ${invitedCount} invite(s)${isInviteEmailEnabled() ? `. Email sent to ${emailQueuedCount} recipient${emailQueuedCount === 1 ? '' : 's'}` : '. Email sending disabled'}${skippedSelfCount ? `. Skipped your own email` : ''}`
+            message: `Processed ${invitedCount} invite(s)${isInviteEmailEnabled() ? `. Email dispatch attempted for ${emailQueuedCount} recipient${emailQueuedCount === 1 ? '' : 's'}` : '. Email sending disabled'}${skippedSelfCount ? `. Skipped your own email` : ''}`
         });
     } catch (err) {
         return res.status(500).json({ message: 'Unable to add member', error: err.message });

@@ -75,6 +75,8 @@ function isValidGoogleClientId(value) {
 
 function isProfileCompleteRow(row) {
   if (!row) return false;
+  const dob = String(row.dob || '').trim();
+  const country = String(row.country || '').trim();
   const capacity = String(row.capacity || '').trim();
   const purpose = String(row.purpose || '').trim();
   const explicitFlag = row.isprofilecomplete ?? row.isProfileComplete;
@@ -87,7 +89,7 @@ function isProfileCompleteRow(row) {
     return true;
   }
 
-  return Boolean(capacity && purpose);
+  return Boolean(dob && country && capacity && purpose);
 }
 
 function maskClientId(value) {
@@ -777,7 +779,7 @@ router.get('/google/callback', (req, res, next) => {
 
       try {
         const [rows] = await sql.query(
-          'SELECT id, fullname AS "fullName", capacity, purpose, isprofilecomplete, googleid FROM users WHERE id = ? LIMIT 1',
+          'SELECT id, fullname AS "fullName", dob, country, capacity, purpose, isprofilecomplete, googleid FROM users WHERE id = ? LIMIT 1',
           [userId]
         );
 
@@ -789,6 +791,8 @@ router.get('/google/callback', (req, res, next) => {
           ...req.session.user,
           fullName: String(user.fullName || profileRow?.fullName || profileRow?.fullname || '').trim(),
           googleid: String(user.googleid || profileRow?.googleid || '').trim() || null,
+          dob: profileRow?.dob ?? null,
+          country: profileRow?.country ?? null,
           capacity: profileRow?.capacity ?? null,
           purpose: profileRow?.purpose ?? null,
           isProfileComplete: profileComplete,

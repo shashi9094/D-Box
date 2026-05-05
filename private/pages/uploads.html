@@ -1565,11 +1565,25 @@
           body: JSON.stringify({ email })
         });
 
-        alert(result.message || 'Invite processed. Invitation email queued.');
+        const modalError = document.getElementById('uploadsModalError');
+        modalError.classList.remove('warning', 'success');
+
+        if (result?.emailFailedCount > 0) {
+          modalError.textContent = result.message || 'Invite created, but email delivery failed.';
+          modalError.classList.add('warning');
+          await loadGroupData();
+          return;
+        } else {
+          alert(result.message || 'Invite processed. Invitation email queued.');
+          modalError.textContent = '';
+        }
+
         closeModal();
         await loadGroupData();
       } catch (error) {
-        document.getElementById('uploadsModalError').textContent = error.message || 'Unable to add member';
+        const modalError = document.getElementById('uploadsModalError');
+        modalError.classList.remove('warning', 'success');
+        modalError.textContent = error.message || 'Unable to add member';
       }
     });
 
