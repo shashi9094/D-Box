@@ -23,6 +23,11 @@ async function sendEmail(to, subject, text) {
   const mailSubject = String(subject || '').trim();
   const bodyText = String(text || '').trim();
 
+  console.log("FROM:", smtpFrom); // Debug log to verify SMTP_FROM value
+  console.log("TO:", recipient); // Debug log to verify recipient email
+  }
+
+
   if (!recipient) {
     console.error('sendEmail failed: missing recipient');
     return { success: false, error: 'Recipient email is required' };
