@@ -1,35 +1,22 @@
-const nodemailer = require('nodemailer');
+const { SESClient, SendEmailCommand } = require('@aws-sdk/client-ses');
 
-const smtpHost = String(process.env.SMTP_HOST || '').trim();
-const smtpPort = Number.parseInt(process.env.SMTP_PORT || '587', 10) || 587;
-const smtpUser = String(process.env.SMTP_USER || '').trim();
-const smtpPass = String(process.env.SMTP_PASS || '').trim();
+const awsAccessKeyId = String(process.env.AWS_ACCESS_KEY_ID || '').trim();
+const awsSecretAccessKey = String(process.env.AWS_SECRET_ACCESS_KEY || '').trim();
+const awsRegion = String(process.env.AWS_REGION || '').trim();
 const smtpFrom = String(process.env.SMTP_FROM || '').trim();
 
-const transporter = nodemailer.createTransport({
-  host: smtpHost,
-  port: smtpPort,
-  secure: false, // SES SMTP typically uses STARTTLS on port 587
-  auth: {
-    user: smtpUser,
-    pass: smtpPass
-  },
-    tls: {
-    rejectUnauthorized: false
-  },
-  requireTLS: true
+const sesClient = new SESClient({
+  region: awsRegion || undefined,
+  credentials: awsAccessKeyId && awsSecretAccessKey ? {
+    accessKeyId: awsAccessKeyId,
+    secretAccessKey: awsSecretAccessKey
+  } : undefined
 });
 
-console.log('SES SMTP email service initialized', {
-  host: smtpHost || '(missing)',
-  configuredPort: smtpPort,
-  activePort: 587,
+console.log('AWS SES email service initialized', {
+  region: awsRegion || '(missing)',
   from: smtpFrom || '(missing)'
 });
-
-if (smtpPort !== 587) {
-  console.warn(`SMTP_PORT is ${smtpPort}, but SES SMTP transport is configured to use port 587.`);
-}
 
 async function sendEmail(to, subject, text) {
   const recipient = String(to || '').trim();
@@ -52,45 +39,62 @@ async function sendEmail(to, subject, text) {
   }
 
   const missingConfig = [
-    !smtpHost ? 'SMTP_HOST' : null,
-    !process.env.SMTP_PORT ? 'SMTP_PORT' : null,
-    !smtpUser ? 'SMTP_USER' : null,
-    !smtpPass ? 'SMTP_PASS' : null,
+    !awsAccessKeyId ? 'AWS_ACCESS_KEY_ID' : null,
+    !awsSecretAccessKey ? 'AWS_SECRET_ACCESS_KEY' : null,
+    !awsRegion ? 'AWS_REGION' : null,
     !smtpFrom ? 'SMTP_FROM' : null
   ].filter(Boolean);
 
   if (missingConfig.length > 0) {
-    const message = `Missing required SMTP environment variables: ${missingConfig.join(', ')}`;
+    const message = `Missing required AWS SES environment variables: ${missingConfig.join(', ')}`;
     console.error(`sendEmail failed for ${recipient}: ${message}`);
     return { success: false, error: message };
   }
 
   try {
-    console.log(`Sending SES SMTP email to ${recipient} from ${smtpFrom}`);
+    console.log(`Sending SES email to ${recipient} from ${smtpFrom}`);
 
-    const info = await transporter.sendMail({
-      from: smtpFrom,
-      to: recipient,
-      subject: mailSubject,
-      text: bodyText
-    });
+    const command = new SendEmailCommand({
+      Source: smtpFrom,
+      Destination: {
+        ToAddresses: [recipient]
+      },
+      Message: {
+        Subject: {
+          Data: mailSubject,
+          Charset: 'UTF-8'
+        },
+        Body: {
+      Text: {
+        Data: bodyText,
+        Charset: 'UTF-8'
+      },
+      Html: {
+        Data: `<p>${bodyText}</p>`,
+        Charset: 'UTF-8'
+      }
+    }
+  }
+});
+    
+
+    const result = await sesClient.send(command);
 
     console.log(`Email sent successfully to ${recipient}`, {
-      messageId: info.messageId,
-      response: info.response
+      messageId: result.MessageId,
+      requestId: result.$metadata && result.$metadata.requestId
     });
 
     return {
       success: true,
-      messageId: info.messageId,
-      response: info.response
+      messageId: result.MessageId
     };
   } catch (error) {
-    const detail = [error.code, error.response, error.message].filter(Boolean).join(' | ');
+    const detail = [error.name, error.Code, error.message].filter(Boolean).join(' | ');
     console.error(`sendEmail failed for ${recipient}:`, detail || error.toString());
     return {
       success: false,
-      error: detail || 'Unknown SMTP send error'
+      error: detail || 'Unknown SES send error'
     };
   }
 }
