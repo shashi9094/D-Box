@@ -45,11 +45,12 @@
 <script>
   const inviteParams = new URLSearchParams(window.location.search);
   const inviteEmail = String(inviteParams.get('email') || '').trim();
+  const inviteEmailNormalized = inviteEmail.toLowerCase();
   const inviteBoxId = Number(inviteParams.get('invite'));
   const inviteToken = String(inviteParams.get('token') || '').trim();
   let inviteAccountExists = null;
 
-  function getInviteSignupUrl() {
+  function buildInviteUrl(pageName) {
     const params = new URLSearchParams();
 
     if (Number.isFinite(inviteBoxId) && inviteBoxId > 0) {
@@ -65,7 +66,19 @@
     }
 
     const query = params.toString();
-    return query ? `signup.html?${query}` : 'signup.html';
+    return query ? `${pageName}?${query}` : pageName;
+  }
+
+  function getInviteSignupUrl() {
+    return buildInviteUrl('signup.html');
+  }
+
+  function getInviteLoginUrl() {
+    return buildInviteUrl('login.html');
+  }
+
+  function normalizeEmail(value) {
+    return String(value || '').trim().toLowerCase();
   }
 
   function showInviteNotice() {
@@ -90,9 +103,14 @@
     inviteNotice.hidden = false;
   }
 
-  async function checkInviteAccount() {
+  async function fetchInviteAccountExists() {
     if (!inviteEmail) {
-      return;
+      inviteAccountExists = null;
+      return null;
+    }
+
+    if (inviteAccountExists !== null) {
+      return inviteAccountExists;
     }
 
     try {
@@ -102,22 +120,35 @@
 
       const data = await res.json().catch(() => ({}));
       inviteAccountExists = Boolean(data.exists);
-
-      const signupLink = document.getElementById('signupLink');
-      signupLink.href = getInviteSignupUrl();
-
-      showInviteNotice();
-
-      if (!inviteAccountExists) {
-        alert('No account found for this invite email. Please sign up first.');
-        window.location.replace(getInviteSignupUrl());
-      }
+      return inviteAccountExists;
     } catch (error) {
       console.error('Invite account check failed:', error);
-      const signupLink = document.getElementById('signupLink');
-      signupLink.href = getInviteSignupUrl();
-      showInviteNotice();
+      return null;
     }
+  }
+
+  function syncInviteLinks() {
+    const signupLink = document.getElementById('signupLink');
+    signupLink.href = getInviteSignupUrl();
+  }
+
+  async function logoutCurrentUserAndRedirect(targetUrl) {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'same-origin'
+      });
+    } catch (error) {
+      console.error('Invite logout failed:', error);
+    }
+
+    try {
+      localStorage.removeItem('authState');
+    } catch (error) {
+      console.error('Unable to clear auth state marker:', error);
+    }
+
+    window.location.replace(targetUrl);
   }
 
   async function consumeInviteForLoggedInUser() {
@@ -152,15 +183,37 @@
     }
   }
 
-  async function redirectIfLoggedIn() {
+  async function bootstrapInviteFlow() {
+    const accountExists = await fetchInviteAccountExists();
+    syncInviteLinks();
+    showInviteNotice();
+
     try {
       const res = await fetch('/api/auth/session', {
         credentials: 'same-origin'
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (data.authenticated) {
-        await consumeInviteForLoggedInUser();
+        const sessionEmail = normalizeEmail(data?.user?.email);
+
+        if (inviteEmailNormalized && sessionEmail && sessionEmail !== inviteEmailNormalized) {
+          const targetUrl = accountExists === false ? getInviteSignupUrl() : getInviteLoginUrl();
+          await logoutCurrentUserAndRedirect(targetUrl);
+          return;
+        }
+
+        if (Number.isFinite(inviteBoxId) && inviteBoxId > 0) {
+          await consumeInviteForLoggedInUser();
+          return;
+        }
+
+        window.location.replace('/home');
+        return;
+      }
+
+      if (inviteEmail && accountExists === false) {
+        window.location.replace(getInviteSignupUrl());
       }
     } catch (error) {
       console.error('Session check failed:', error);
@@ -214,27 +267,19 @@
     }
   }
 
-  redirectIfLoggedIn();
+  bootstrapInviteFlow();
   showGoogleDisabledNotice();
   showGoogleErrorNotice();
   showSessionExpiredNotice();
   showInviteNotice();
-  checkInviteAccount();
-  window.addEventListener('pageshow', redirectIfLoggedIn);
-  window.addEventListener('focus', redirectIfLoggedIn);
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) {
-      redirectIfLoggedIn();
-    }
-  });
 
   document.getElementById('loginForm').addEventListener('submit', async function (e){
-    e.preventDefault(); // Prevent page reload
+    e.preventDefault();
 
     const email = document.getElementById('email').value;
     const password = document.getElementById('password').value;
 
-    try{
+    try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         credentials: 'same-origin',
@@ -258,23 +303,25 @@
         data = { message: text || 'Unexpected server response' };
       }
 
-      if (!res.ok){
+      if (!res.ok) {
         if (data.message === 'User not found' && inviteEmail) {
           alert('No account found for this invite email. Please sign up first.');
         } else {
-          alert(data.message || `Invalid login`);
+          alert(data.message || 'Invalid login');
         }
-        return; //wrong: stay on login page
+        return;
       }
 
-      // Notify other tabs/pages that auth state changed.
-      localStorage.setItem('authState', `logged-in:${Date.now()}`);
+      try {
+        localStorage.setItem('authState', `logged-in:${Date.now()}`);
+      } catch (error) {
+        console.error('Unable to record auth state marker:', error);
+      }
 
-      //Redirect after login
       window.location.replace(data.redirectUrl || '/home');
     } catch (error) {
       console.error('Login failed:', error);
-      alert(`server error: could not login`);
+      alert('server error: could not login');
     }
   });
 </script>

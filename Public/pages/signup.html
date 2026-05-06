@@ -84,69 +84,180 @@
   <script>
     const inviteParams = new URLSearchParams(window.location.search);
     const inviteEmail = String(inviteParams.get('email') || '').trim();
+    const inviteEmailNormalized = inviteEmail.toLowerCase();
     const inviteBoxId = Number(inviteParams.get('invite'));
     const inviteToken = String(inviteParams.get('token') || '').trim();
+    let inviteAccountExists = null;
 
-    if (inviteEmail) {
-      const emailInput = document.getElementById('email');
-      emailInput.value = inviteEmail;
-      emailInput.title = 'Invite email locked for joining shared box';
+    function buildInviteUrl(pageName) {
+      const params = new URLSearchParams();
 
+      if (Number.isFinite(inviteBoxId) && inviteBoxId > 0) {
+        params.set('invite', String(inviteBoxId));
+      }
+
+      if (inviteEmail) {
+        params.set('email', inviteEmail);
+      }
+
+      if (inviteToken) {
+        params.set('token', inviteToken);
+      }
+
+      const query = params.toString();
+      return query ? `${pageName}?${query}` : pageName;
+    }
+
+    function getInviteSignupUrl() {
+      return buildInviteUrl('signup.html');
+    }
+
+    function getInviteLoginUrl() {
+      return buildInviteUrl('login.html');
+    }
+
+    function normalizeEmail(value) {
+      return String(value || '').trim().toLowerCase();
+    }
+
+    function syncInviteUi() {
       const inviteNotice = document.getElementById('inviteNotice');
-      inviteNotice.textContent = Number.isFinite(inviteBoxId) && inviteBoxId > 0
-        ? `No account found for ${inviteEmail}. Create this account to auto-join the shared group.`
-        : `You were invited as ${inviteEmail}. Sign up with this email to auto-join the shared group.`;
+
+      if (!inviteEmail && !(Number.isFinite(inviteBoxId) && inviteBoxId > 0)) {
+        return;
+      }
+
+      if (inviteEmail) {
+        const emailInput = document.getElementById('email');
+        emailInput.value = inviteEmail;
+        emailInput.readOnly = true;
+        emailInput.title = 'Invite email locked for joining shared box';
+      }
+
+      if (inviteAccountExists === false) {
+        inviteNotice.textContent = Number.isFinite(inviteBoxId) && inviteBoxId > 0
+          ? `No account found for ${inviteEmail}. Create this account to auto-join the shared group.`
+          : `You were invited as ${inviteEmail}. Sign up with this email to auto-join the shared group.`;
+      } else {
+        inviteNotice.textContent = Number.isFinite(inviteBoxId) && inviteBoxId > 0
+          ? `Invite detected for ${inviteEmail}. Create this account to auto-join the shared group.`
+          : `You were invited as ${inviteEmail}. Sign up with this email to auto-join the shared group.`;
+      }
+
       inviteNotice.hidden = false;
-    }
 
-    if (Number.isFinite(inviteBoxId) && inviteBoxId > 0) {
       const signInLink = document.getElementById('signinLink');
-      const extraEmail = inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : '';
-      const extraToken = inviteToken ? `&token=${encodeURIComponent(inviteToken)}` : '';
-      signInLink.href = `login.html?invite=${inviteBoxId}${extraEmail}${extraToken}`;
+      signInLink.href = getInviteLoginUrl();
     }
 
-    async function redirectIfLoggedInForInvite() {
+    async function fetchInviteAccountExists() {
+      if (!inviteEmail) {
+        inviteAccountExists = null;
+        return null;
+      }
+
+      if (inviteAccountExists !== null) {
+        return inviteAccountExists;
+      }
+
+      try {
+        const res = await fetch(`/api/auth/account-exists?email=${encodeURIComponent(inviteEmail)}`, {
+          credentials: 'same-origin'
+        });
+
+        const data = await res.json().catch(() => ({}));
+        inviteAccountExists = Boolean(data.exists);
+        return inviteAccountExists;
+      } catch (error) {
+        console.error('Invite account check failed:', error);
+        return null;
+      }
+    }
+
+    async function logoutCurrentUserAndRedirect(targetUrl) {
+      try {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          credentials: 'same-origin'
+        });
+      } catch (error) {
+        console.error('Invite logout failed:', error);
+      }
+
+      try {
+        localStorage.removeItem('authState');
+      } catch (error) {
+        console.error('Unable to clear auth state marker:', error);
+      }
+
+      window.location.replace(targetUrl);
+    }
+
+    async function consumeInviteForLoggedInUser() {
+      if (!(Number.isFinite(inviteBoxId) && inviteBoxId > 0)) {
+        window.location.replace('/home');
+        return;
+      }
+
+      const consumeRes = await fetch('/api/auth/accept-invite', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          inviteBoxId,
+          inviteEmail: inviteEmail || null,
+          inviteToken: inviteToken || null
+        })
+      });
+
+      const consumeData = await consumeRes.json().catch(() => ({}));
+      if (!consumeRes.ok) {
+        throw new Error(consumeData.message || 'Unable to process invite');
+      }
+
+      window.location.replace(consumeData.redirectUrl || `/uploads?boxId=${inviteBoxId}`);
+    }
+
+    async function bootstrapInviteFlow() {
+      const accountExists = await fetchInviteAccountExists();
+      syncInviteUi();
+
       try {
         const sessionRes = await fetch('/api/auth/session', {
           credentials: 'same-origin'
         });
-        const sessionData = await sessionRes.json();
+        const sessionData = await sessionRes.json().catch(() => ({}));
 
         if (!sessionData.authenticated) {
+          if (inviteEmail && accountExists === false) {
+            // Stay on signup and let the invite email prefill drive the form.
+            return;
+          }
+
           return;
         }
 
-        if (!(Number.isFinite(inviteBoxId) && inviteBoxId > 0)) {
-          window.location.replace('/home');
+        const sessionEmail = normalizeEmail(sessionData?.user?.email);
+        if (inviteEmailNormalized && sessionEmail && sessionEmail !== inviteEmailNormalized) {
+          const targetUrl = accountExists === false ? getInviteSignupUrl() : getInviteLoginUrl();
+          await logoutCurrentUserAndRedirect(targetUrl);
           return;
         }
 
-        const consumeRes = await fetch('/api/auth/accept-invite', {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            inviteBoxId,
-            inviteEmail: inviteEmail || null,
-            inviteToken: inviteToken || null
-          })
-        });
-
-        const consumeData = await consumeRes.json().catch(() => ({}));
-        if (!consumeRes.ok) {
-          throw new Error(consumeData.message || 'Unable to process invite');
+        if (Number.isFinite(inviteBoxId) && inviteBoxId > 0) {
+          await consumeInviteForLoggedInUser();
+          return;
         }
 
-        window.location.replace(consumeData.redirectUrl || `/uploads?boxId=${inviteBoxId}`);
+        window.location.replace('/home');
       } catch (error) {
         console.error('Invite consume failed:', error);
       }
     }
 
-    redirectIfLoggedInForInvite();
+    bootstrapInviteFlow();
 
     document.getElementById("signupForm").addEventListener("submit", async function (e) {
     e.preventDefault();
