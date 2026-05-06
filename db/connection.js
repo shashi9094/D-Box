@@ -1,11 +1,14 @@
 require('dotenv').config();
 const { Pool } = require('pg');
 
+const connectionString = String(process.env.DATABASE_URL || '').trim();
+const isProduction = process.env.NODE_ENV === 'production';
+
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: {
+    connectionString: connectionString || undefined,
+    ssl: connectionString ? {
         rejectUnauthorized: false
-    }
+    } : undefined
 });
 
 const translatePlaceholders = (sqlText) => {
@@ -85,6 +88,9 @@ async function ensureCoreTables() {
             purpose TEXT NULL,
             role TEXT NULL DEFAULT 'User',
             password TEXT NULL,
+            verification_token TEXT NULL,
+            is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+            token_expires TIMESTAMPTZ NULL,
             isprofilecomplete BOOLEAN NOT NULL DEFAULT FALSE,
             profilephoto TEXT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -142,12 +148,23 @@ async function ensureUsersOAuthSchema() {
     await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS googleid TEXT NULL');
     await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS profilephoto TEXT NULL');
     await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS isprofilecomplete BOOLEAN NOT NULL DEFAULT FALSE');
+    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS verification_token TEXT NULL');
+    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN NOT NULL DEFAULT FALSE');
+    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS token_expires TIMESTAMPTZ NULL');
     await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN password DROP NOT NULL');
     await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN capacity DROP NOT NULL');
     await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN purpose DROP NOT NULL');
     await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN role DROP NOT NULL');
+    await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN is_verified SET DEFAULT FALSE');
     await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN isprofilecomplete SET DEFAULT FALSE');
     await pool.query('UPDATE users SET isprofilecomplete = COALESCE(isprofilecomplete, FALSE)');
+        await pool.query(`
+                UPDATE users
+                SET is_verified = TRUE
+                WHERE is_verified = FALSE
+                    AND verification_token IS NULL
+                    AND token_expires IS NULL
+        `);
 
     const duplicateGoogleIdsResult = await pool.query(`
         SELECT googleid
@@ -193,7 +210,7 @@ pool.query('SELECT 1')
             code: error.code,
             message: error.message || 'Connection refused',
             usingConnectionString: Boolean(connectionString),
-            productionConnection: isProductionConnection,
+            productionConnection: isProduction,
             suggestion,
         });
     });

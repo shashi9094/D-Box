@@ -1,11 +1,41 @@
 const db = require(`../db/connection`);
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");    
+const crypto = require('crypto');
 const boxController = require('./boxController');
 const { logLoginHistory, isNewDeviceLogin } = require('../utils/loginHistory');
 const { createNotification } = require('../utils/notifications');
+const { sendEmail } = require('../emailService');
 
 const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+function getAppBaseUrl(req) {
+    const configured = String(process.env.APP_BASE_URL || process.env.PUBLIC_URL || '').trim().replace(/\/+$/, '');
+    if (configured) {
+        return configured;
+    }
+
+    const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+    const host = String(req.get('host') || '').trim();
+    return `${proto}://${host}`.replace(/\/+$/, '');
+}
+
+function buildVerificationEmail(fullName, verificationUrl) {
+    const safeName = String(fullName || '').trim() || 'there';
+    return {
+        subject: 'Verify Your D-Box Account',
+        text: [
+            `Hi ${safeName},`,
+            '',
+            'Please verify your D-Box account by clicking the link below:',
+            verificationUrl,
+            '',
+            'This verification link expires in 1 hour.',
+            '',
+            'If you did not create this account, you can safely ignore this email.'
+        ].join('\n')
+    };
+}
 
 // SIGNUP
 exports.signup = async (req, res) => {
@@ -33,6 +63,8 @@ exports.signup = async (req, res) => {
         const normalizedEmail = String(email || '').trim().toLowerCase();
         const normalizedFullName = String(fullName || '').trim();
         const normalizedPassword = String(password || '');
+        const verificationToken = crypto.randomBytes(32).toString('hex');
+        const tokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
         if (!normalizedFullName || !normalizedEmail) {
             return res.status(400).json({ message: 'Full name and email are required' });
@@ -71,15 +103,15 @@ exports.signup = async (req, res) => {
             // Step 3 → Database me insert karo
             const insertSql = `
                 INSERT INTO users 
-                (fullname, dob, email, country, capacity, purpose, role, password) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (fullname, dob, email, country, capacity, purpose, role, password, verification_token, is_verified, token_expires) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (email) DO NOTHING
                 RETURNING id
             `;
 
             db.query(
                 insertSql,
-                [normalizedFullName, dob || null, normalizedEmail, country || null, capacity || null, purpose || null, 'User', hashedPassword],
+                [normalizedFullName, dob || null, normalizedEmail, country || null, capacity || null, purpose || null, 'User', hashedPassword, verificationToken, false, tokenExpiresAt],
                 async (err, result) => {
                     if (err) {
                         console.error('Signup insert failed:', {
@@ -107,32 +139,25 @@ exports.signup = async (req, res) => {
                         console.error('Pending invite sync failed after signup:', inviteErr.message);
                     }
 
-                    req.session.user = {
-                        id: result.insertId,
-                        email: normalizedEmail,
-                        loginAt: Date.now()
-                    };
+                    const verificationUrl = `${getAppBaseUrl(req)}/verify-email?token=${verificationToken}`;
+                    const emailBody = buildVerificationEmail(normalizedFullName, verificationUrl);
 
-                    req.session.cookie.maxAge = SESSION_MAX_AGE_MS;
+                    const emailResult = await sendEmail(normalizedEmail, emailBody.subject, emailBody.text);
+                    if (!emailResult.success) {
+                        console.error('Verification email send failed after signup:', emailResult.error);
 
-                    req.session.save((saveErr) => {
-                        if (saveErr) {
-                            return res.status(500).json({
-                                message: "Session save failed",
-                                error: saveErr
-                            });
-                        }
+                        db.query('DELETE FROM users WHERE id = ?', [result.insertId], () => {});
 
-                        logLoginHistory({
-                            userId: result.insertId,
-                            email: normalizedEmail,
-                            req
+                        return res.status(500).json({
+                            message: 'Signup failed while sending verification email',
+                            error: emailResult.error
                         });
+                    }
 
-                        res.json({
-                            message: "Signup successful",
-                            redirectUrl
-                        });
+                    return res.status(201).json({
+                        message: 'Signup successful. Please verify your email before logging in.',
+                        success: true,
+                        redirectUrl: '/login.html?verification=pending'
                     });
                 }
             );
@@ -181,6 +206,12 @@ exports.login = async (req, res) => {
         }
 
         const user = results[0];
+
+        if (!user.is_verified) {
+            return res.status(403).json({
+                message: 'Please verify your email before logging in.'
+            });
+        }
 
         let isMatch = false;
 
@@ -264,6 +295,61 @@ exports.login = async (req, res) => {
             });
         });
     });
+};
+
+exports.verifyEmail = async (req, res) => {
+    const token = String(req.query?.token || '').trim();
+
+    if (!token) {
+        return res.status(400).json({
+            success: false,
+            error: 'Verification token is required'
+        });
+    }
+
+    try {
+        const [rows] = await db.promise().query(
+            'SELECT id, email, verification_token, token_expires, is_verified FROM users WHERE verification_token = ? LIMIT 1',
+            [token]
+        );
+
+        if (!rows.length) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid verification token'
+            });
+        }
+
+        const user = rows[0];
+        const expiresAt = user.token_expires ? new Date(user.token_expires).getTime() : NaN;
+
+        if (Number.isFinite(expiresAt) && expiresAt < Date.now()) {
+            return res.status(400).json({
+                success: false,
+                error: 'Verification token has expired'
+            });
+        }
+
+        await db.promise().query(
+            `UPDATE users
+             SET is_verified = TRUE,
+                 verification_token = NULL,
+                 token_expires = NULL
+             WHERE id = ?`,
+            [user.id]
+        );
+
+        return res.json({
+            success: true,
+            message: 'Email verified successfully. You can now log in.'
+        });
+    } catch (error) {
+        console.error('verifyEmail failed:', error.message);
+        return res.status(500).json({
+            success: false,
+            error: 'Unable to verify email'
+        });
+    }
 };
 
 // PASSWORD RESET

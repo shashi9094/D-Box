@@ -15,6 +15,7 @@ const {
 require('./config/googleAuth'); // Google Strategy load
 const passport = require('passport');
 const session = require('express-session');
+const authController = require('./controllers/authController');
 const isProduction = process.env.NODE_ENV === 'production';
 const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -216,6 +217,8 @@ app.get('/test-email', async (req, res) => {
         });
     }
 });
+
+app.get('/verify-email', authController.verifyEmail);
 
 // Auth middleware
 function isAuth(req, res, next) {

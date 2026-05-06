@@ -20,6 +20,44 @@ console.log('AWS SES email service initialized', {
   from: smtpFrom || '(missing)'
 });
 
+function extractFirstUrl(text) {
+  const match = String(text || '').match(/https?:\/\/[^\s<>"')]+/i);
+  return match ? match[0] : '';
+}
+
+function buildHtmlBody(subject, text) {
+  const safeSubject = String(subject || '').trim();
+  const safeText = String(text || '').trim();
+  const verifyUrl = extractFirstUrl(safeText);
+
+  const escapedText = safeText
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br/>');
+
+  if (!verifyUrl) {
+    return `
+      <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;color:#111827;line-height:1.6">
+        <h2 style="margin:0 0 16px 0">${safeSubject}</h2>
+        <div>${escapedText}</div>
+      </div>
+    `;
+  }
+
+  return `
+    <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px;background:#ffffff;color:#111827;line-height:1.6">
+      <h2 style="margin:0 0 16px 0">${safeSubject}</h2>
+      <div style="margin:0 0 24px 0">${escapedText}</div>
+      <a href="${verifyUrl}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:700">Verify Account</a>
+      <div style="margin-top:20px;font-size:12px;color:#6b7280;word-break:break-all">
+        If the button does not work, copy and paste this link:<br/>
+        <a href="${verifyUrl}" style="color:#2563eb">${verifyUrl}</a>
+      </div>
+    </div>
+  `;
+}
+
 // MAIN FUNCTION
 async function sendEmail(to, subject, text) {
   const recipient = String(to || '').trim();
@@ -83,7 +121,7 @@ async function sendEmail(to, subject, text) {
             Charset: 'UTF-8'
           },
           Html: {
-            Data: `<p>${bodyText}</p>`,
+            Data: buildHtmlBody(mailSubject, bodyText),
             Charset: 'UTF-8'
           }
         }
