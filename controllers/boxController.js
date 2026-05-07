@@ -144,7 +144,7 @@ async function uploadBufferToS3(buffer, key, contentType) {
         Key: key,
         Body: buffer,
         ContentType: contentType,
-        ACL: 'public-read'
+        
     };
 
     const cmd = new PutObjectCommand(params);
