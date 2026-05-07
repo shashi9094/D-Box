@@ -8,6 +8,11 @@ const { PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const fs = require('fs');
 const { sendInvitationEmail } = require('../utils/emailService');
 const { createNotificationsForUsers } = require('../utils/notifications');
+const pool = require('../config/db');
+const compressImage = require('../utils/compressImage');
+
+
+
 
 // Local uploads folder removed - using S3 for storage
 const storeFileMetadataInDb = String(process.env.STORE_FILE_METADATA_IN_DB || 'true').toLowerCase() === 'true';
@@ -143,8 +148,7 @@ async function uploadBufferToS3(buffer, key, contentType) {
         Bucket: process.env.AWS_BUCKET_NAME,
         Key: key,
         Body: buffer,
-        ContentType: contentType,
-        
+        ContentType: contentType
     };
 
     const cmd = new PutObjectCommand(params);
@@ -1256,21 +1260,17 @@ exports.uploadBoxContent = [
             const safeAdminNote = isMainAdmin ? sanitizeAdminNote(adminNote) : '';
 
             if (req.file) {
-                contentType = inferContentType(req.file);
                 originalName = req.file.originalname;
 
-                // Process images: resize and convert to WEBP
                 let uploadBuffer = req.file.buffer;
                 let targetMime = req.file.mimetype || 'application/octet-stream';
-                const isImage = String(req.file.mimetype || '').startsWith('image/');
+                const isImage = Boolean(req.file.mimetype && req.file.mimetype.startsWith('image/'));
+
+                contentType = isImage ? 'file' : inferContentType(req.file);
 
                 if (isImage) {
                     try {
-                        uploadBuffer = await sharp(req.file.buffer)
-                            .rotate()
-                            .resize({ width: 1920, withoutEnlargement: true })
-                            .webp({ quality: 80 })
-                            .toBuffer();
+                        uploadBuffer = await compressImage(req.file.buffer);
                         targetMime = 'image/webp';
                     } catch (err) {
                         console.error('Image processing failed:', err.message || err);
@@ -1297,6 +1297,7 @@ exports.uploadBoxContent = [
                 // set req.file.location to be compatible with multer-s3 consumers
                 req.file.location = fileUrl;
                 req.file.size = uploadBuffer.length;
+                req.file.contentType = targetMime;
             }
 
             const [result] = await sql.query(

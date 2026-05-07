@@ -10,37 +10,20 @@ function generateUniqueFilename(originalName) {
 }
 
 // Configure multerS3 storage
-const s3Storage = multerS3({
-    s3: s3Client,
-    bucket: process.env.AWS_BUCKET_NAME || 'd-box-2026',
-        metadata: (req, file, cb) => {
-        cb(null, {
-            fieldName: file.fieldname,
-            userId: req.session?.user?.id || 'anonymous'
-        });
-    },
-    key: (req, file, cb) => {
-        const uniqueName = generateUniqueFilename(file.originalname);
-        cb(null, `uploads/${uniqueName}`);
-    }
-});
+const multer = require('multer');
 
-// Create multer upload middleware
 const upload = multer({
-    storage: s3Storage,
+    storage: multer.memoryStorage(),
+
     limits: {
-        fileSize: 100 * 1024 * 1024 // 100 MB limit
+        fileSize: 100 * 1024 * 1024
     },
+
     fileFilter: (req, file, cb) => {
-        // Optional: Add file type filtering
-        // const allowedMimes = ['image/jpeg', 'image/png', 'application/pdf'];
-        // if (allowedMimes.includes(file.mimetype)) {
-        //     cb(null, true);
-        // } else {
-        //     cb(new Error('Invalid file type'));
-        // }
         cb(null, true);
     }
 });
 
 module.exports = upload;
+
+
