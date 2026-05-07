@@ -9,8 +9,7 @@ function generateUniqueFilename(originalName) {
     return `${timestamp}-${randomString}-${originalName}`;
 }
 
-// Configure multerS3 storage
-const multer = require('multer');
+
 
 const upload = multer({
     storage: multer.memoryStorage(),
