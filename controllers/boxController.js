@@ -1,16 +1,15 @@
 const db = require('../db/connection');
-const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const crypto = require('crypto');
+const sharp = require('sharp');
+const s3Client = require('../config/s3');
+const { PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const fs = require('fs');
 const { sendInvitationEmail } = require('../utils/emailService');
 const { createNotificationsForUsers } = require('../utils/notifications');
 
-const uploadsDir = path.join(__dirname, '..', 'uploads', 'boxes');
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
+// Local uploads folder removed - using S3 for storage
 const storeFileMetadataInDb = String(process.env.STORE_FILE_METADATA_IN_DB || 'true').toLowerCase() === 'true';
 
 const sanitizeFolderPath = (value) => {
@@ -33,13 +32,10 @@ const sanitizeAdminNote = (value) => {
     return text.slice(0, 300);
 };
 
-const getBoxUploadsRoot = (boxId) => path.join(uploadsDir, String(boxId));
 
-const ensureDirExists = (dirPath) => {
-    if (!fs.existsSync(dirPath)) {
-        fs.mkdirSync(dirPath, { recursive: true });
-    }
-};
+const getBoxUploadsRoot = (boxId) => null; // Not used - S3 storage
+
+const ensureDirExists = (dirPath) => { /* no-op for S3 */ };
 
 const toPosixPath = (value) => String(value || '').replace(/\\/g, '/');
 
@@ -94,58 +90,12 @@ const removeEmptyParentDirs = (basePath, fromDir) => {
 };
 
 const readFsContentsForBox = (boxId) => {
-    const root = getBoxUploadsRoot(boxId);
-    if (!fs.existsSync(root)) return [];
-    const rows = [];
-    const walk = (currentDir, relativeDir) => {
-        const entries = fs.readdirSync(currentDir, { withFileTypes: true });
-        for (const entry of entries) {
-            const absolutePath = path.join(currentDir, entry.name);
-            const relativePath = relativeDir ? path.join(relativeDir, entry.name) : entry.name;
-            if (entry.isDirectory()) {
-                walk(absolutePath, relativePath);
-                continue;
-            }
-            const stats = fs.statSync(absolutePath);
-            const relativePosixPath = toPosixPath(relativePath);
-            const folderPath = toPosixPath(path.dirname(relativePath)).replace(/^\.$/g, '');
-            const fileName = entry.name;
-            const originalName = deriveOriginalName(fileName);
-            rows.push({
-                id: encodeFsContentId(relativePosixPath),
-                content_type: inferContentTypeFromName(fileName),
-                file_name: fileName,
-                file_path: `/uploads/boxes/${boxId}/${relativePosixPath}`,
-                original_name: originalName || fileName,
-                note_text: null,
-                admin_note: null,
-                folder_path: folderPath || null,
-                created_at: stats.birthtime || stats.mtime,
-                uploaded_by: null,
-                uploaded_by_name: 'Local upload'
-            });
-        }
-    };
-    walk(root, '');
-    return rows;
+    // Local file listing removed; rely on DB entries stored with S3 URLs
+    return [];
 };
 
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const { boxId } = req.params;
-        const safeFolderPath = sanitizeFolderPath(req.body && req.body.folderPath);
-        const destinationRoot = getBoxUploadsRoot(boxId);
-        const destinationPath = safeFolderPath
-            ? path.join(destinationRoot, safeFolderPath.replace(/\//g, path.sep))
-            : destinationRoot;
-        ensureDirExists(destinationPath);
-        cb(null, destinationPath);
-    },
-    filename: (req, file, cb) => {
-        const safeOriginalName = sanitizeFileName(file.originalname) || 'upload.bin';
-        cb(null, `${Date.now()}-${safeOriginalName}`);
-    }
-});
+// Use memory storage for multer so we get buffers for S3 upload and processing
+const storage = multer.memoryStorage();
 
 const allowedDocumentMimeTypes = new Set([
     'application/pdf',
@@ -176,6 +126,50 @@ const upload = multer({
         return cb(new Error('Only PDF, DOC, DOCX, image, and video files are allowed'));
     }
 });
+
+// Helper: generate unique filename preserving extension where appropriate
+const generateUniqueFilenameForBox = (originalName, forceWebp = false) => {
+    const ts = Date.now();
+    const rand = crypto.randomBytes(6).toString('hex');
+    const base = sanitizeFileName(originalName || 'upload');
+    if (forceWebp) return `${ts}-${rand}-${base.replace(/\.[^/.]+$/, '')}.webp`;
+    const ext = path.extname(base) || '';
+    return `${ts}-${rand}-${base}${ext}`;
+};
+
+// Helper: upload buffer to S3 and return public URL
+async function uploadBufferToS3(buffer, key, contentType) {
+    const params = {
+        Bucket: process.env.AWS_BUCKET_NAME,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+        ACL: 'public-read'
+    };
+
+    const cmd = new PutObjectCommand(params);
+    await s3Client.send(cmd);
+
+    const region = process.env.AWS_REGION || 'eu-north-1';
+    const bucket = process.env.AWS_BUCKET_NAME;
+    return `https://${bucket}.s3.${region}.amazonaws.com/${encodeURI(key)}`;
+}
+
+// Helper: delete object from S3 by key
+async function deleteS3ObjectByUrl(fileUrl) {
+    try {
+        if (!fileUrl) return;
+        const bucket = process.env.AWS_BUCKET_NAME;
+        const region = process.env.AWS_REGION || 'eu-north-1';
+        const prefix = `https://${bucket}.s3.${region}.amazonaws.com/`;
+        if (!fileUrl.startsWith(prefix)) return;
+        const key = decodeURIComponent(fileUrl.slice(prefix.length));
+        const cmd = new DeleteObjectCommand({ Bucket: bucket, Key: key });
+        await s3Client.send(cmd);
+    } catch (err) {
+        console.error('deleteS3ObjectByUrl error', err.message || err);
+    }
+}
 
 const sql = db.promise();
 let tablesReady = false;
@@ -1232,9 +1226,7 @@ exports.uploadBoxContent = [
         const userId = req.user.id;
         const { note, folderPath, adminNote } = req.body;
         const cleanupUploadedFile = () => {
-            if (req.file && req.file.path && fs.existsSync(req.file.path)) {
-                fs.unlink(req.file.path, () => {});
-            }
+            // no local file to cleanup when using S3/memory storage
         };
 
         try {
@@ -1265,19 +1257,46 @@ exports.uploadBoxContent = [
 
             if (req.file) {
                 contentType = inferContentType(req.file);
-                fileName = req.file.filename;
-                const boxRoot = getBoxUploadsRoot(boxId);
-                const relativePath = toPosixPath(path.relative(boxRoot, req.file.path));
-                filePath = `/uploads/boxes/${boxId}/${relativePath}`;
                 originalName = req.file.originalname;
 
-                if (!storeFileMetadataInDb) {
-                    return res.json({
-                        success: true,
-                        message: 'File uploaded to local storage successfully',
-                        id: encodeFsContentId(relativePath)
-                    });
+                // Process images: resize and convert to WEBP
+                let uploadBuffer = req.file.buffer;
+                let targetMime = req.file.mimetype || 'application/octet-stream';
+                const isImage = String(req.file.mimetype || '').startsWith('image/');
+
+                if (isImage) {
+                    try {
+                        uploadBuffer = await sharp(req.file.buffer)
+                            .rotate()
+                            .resize({ width: 1920, withoutEnlargement: true })
+                            .webp({ quality: 80 })
+                            .toBuffer();
+                        targetMime = 'image/webp';
+                    } catch (err) {
+                        console.error('Image processing failed:', err.message || err);
+                        return res.status(400).json({ message: 'Invalid image file' });
+                    }
                 }
+
+                // Generate unique filename and S3 key
+                const uniqueFileName = generateUniqueFilenameForBox(originalName, Boolean(isImage));
+                const key = `boxes/${boxId}/${uniqueFileName}`;
+
+                // Upload to S3
+                let fileUrl;
+                try {
+                    fileUrl = await uploadBufferToS3(uploadBuffer, key, targetMime);
+                } catch (err) {
+                    console.error('S3 upload failed:', err.message || err);
+                    return res.status(500).json({ message: 'Failed to upload file to storage' });
+                }
+
+                // populate values for DB insert
+                fileName = uniqueFileName;
+                filePath = fileUrl; // store S3 url in DB
+                // set req.file.location to be compatible with multer-s3 consumers
+                req.file.location = fileUrl;
+                req.file.size = uploadBuffer.length;
             }
 
             const [result] = await sql.query(
@@ -1351,8 +1370,10 @@ exports.getBoxContents = async (req, res) => {
 
         const existingRows = dbRows.filter((row) => {
             if (row.content_type === 'note') return true;
-            const absolutePath = resolveUploadAbsolutePath(row.file_path);
-            return absolutePath && fs.existsSync(absolutePath);
+            const fp = String(row.file_path || '').trim();
+            // Treat HTTP(S) URLs (S3) as existing; local files no longer used
+            if (/^https?:\/\//i.test(fp)) return true;
+            return false;
         });
 
         const existingFileKeys = new Set(
@@ -1365,8 +1386,8 @@ exports.getBoxContents = async (req, res) => {
             .filter((row) => {
                 const key = String(row.file_path || '');
                 if (!key || existingFileKeys.has(key)) return false;
-                const absolutePath = resolveUploadAbsolutePath(row.file_path);
-                return absolutePath && fs.existsSync(absolutePath);
+                // Keep legacy rows only if they reference a valid URL (S3)
+                return /^https?:\/\//i.test(key);
             })
             .map((row) => {
                 const relativePath = deriveRelativePathFromFilePath(boxId, row.file_path);
@@ -1491,38 +1512,27 @@ exports.renameBoxContent = async (req, res) => {
             return res.json({ success: true, message: 'Upload renamed successfully' });
         }
 
-        const currentFilePath = resolveUploadAbsolutePath(content.file_path);
-        const originalExt = path.extname(String(content.original_name || content.file_name || '')).toLowerCase();
-        const nextBaseName = path.extname(safeName) ? path.basename(safeName, path.extname(safeName)) : safeName;
-        const nextFileName = `${Date.now()}-${nextBaseName}${originalExt || ''}`;
-        const currentRelativeFilePath = String(content.file_path || '').replace(/^\/uploads\/boxes\//, '').replace(/^\/+/, '');
-        const currentRelativeDir = toPosixPath(path.dirname(currentRelativeFilePath)).replace(/^\.$/, '');
-        const targetRelativeDir = currentRelativeDir || String(boxId);
-        const nextRelativePath = `/uploads/boxes/${targetRelativeDir}/${nextFileName}`;
-        const nextAbsolutePath = path.join(__dirname, '..', 'uploads', 'boxes', targetRelativeDir.replace(/\//g, path.sep), nextFileName);
-
-        ensureDirExists(path.dirname(nextAbsolutePath));
-
-        if (currentFilePath && fs.existsSync(currentFilePath)) {
-            fs.renameSync(currentFilePath, nextAbsolutePath);
-        }
+        // For S3-backed files, renaming the stored object is costly (copy+delete).
+        // We'll update metadata in DB only (file_name, original_name) and leave S3 object key unchanged.
+        const updatedFileName = safeName;
 
         await sql.query(
-            `UPDATE box_contents SET file_name = ?, file_path = ?, original_name = ? WHERE id = ? AND box_id = ?`,
-            [nextFileName, nextRelativePath, safeName, contentId, boxId]
+            `UPDATE box_contents SET file_name = ?, original_name = ? WHERE id = ? AND box_id = ?`,
+            [updatedFileName, safeName, contentId, boxId]
         );
 
         if (content.file_path && content.uploaded_by) {
+            // Try to keep legacy table in sync by updating file_name/file_path references
             await syncLegacyFileRename({
                 boxId,
                 userId: content.uploaded_by,
                 oldFilePath: content.file_path,
                 newFileName: safeName,
-                newFilePath: nextRelativePath
+                newFilePath: content.file_path
             });
         }
 
-        return res.json({ success: true, message: 'Upload renamed successfully' });
+        return res.json({ success: true, message: 'Upload renamed successfully (metadata updated)' });
     } catch (err) {
         return res.status(500).json({ message: 'Unable to rename upload', error: err.message });
     }
@@ -1542,24 +1552,8 @@ exports.deleteBoxContent = async (req, res) => {
 
         const fsRelativePath = decodeFsContentId(contentId);
         if (fsRelativePath) {
-            const boxRoot = getBoxUploadsRoot(boxId);
-            const safeRelativePath = toPosixPath(String(fsRelativePath || '').replace(/^\/+/, ''));
-            const absolutePath = path.join(boxRoot, safeRelativePath.replace(/\//g, path.sep));
-
-            if (!isSafeResolvedPath(boxRoot, absolutePath) || !fs.existsSync(absolutePath)) {
-                return res.status(404).json({ message: 'Upload not found' });
-            }
-
-            fs.unlinkSync(absolutePath);
-            removeEmptyParentDirs(boxRoot, path.dirname(absolutePath));
-
-            const legacyFilePath = `/uploads/boxes/${boxId}/${safeRelativePath}`;
-            await syncLegacyFileDelete({
-                boxId,
-                filePath: legacyFilePath
-            });
-
-            return res.json({ success: true, message: 'Upload deleted successfully' });
+            // Legacy local uploads are no longer stored; cannot delete from filesystem
+            return res.status(404).json({ message: 'Legacy local upload not found or already migrated' });
         }
 
         const [rows] = await sql.query(
@@ -1573,9 +1567,11 @@ exports.deleteBoxContent = async (req, res) => {
 
         const content = rows[0];
         if (content.file_path) {
-            const absolutePath = resolveUploadAbsolutePath(content.file_path);
-            if (fs.existsSync(absolutePath)) {
-                fs.unlinkSync(absolutePath);
+            // If the file_path is an S3 URL, attempt to delete the object from S3
+            if (/^https?:\/\//i.test(String(content.file_path || ''))) {
+                await deleteS3ObjectByUrl(content.file_path).catch((e) => {
+                    console.error('S3 delete failed (continuing):', e.message || e);
+                });
             }
         }
 

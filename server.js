@@ -166,15 +166,12 @@ app.get('/complete-profile', (req, res) => {
 
 // Static
 app.use(express.static(path.join(__dirname, 'Public')));
-app.use("/uploads", express.static(uploadsRoot));
-if (path.resolve(uploadsRoot) !== path.resolve(defaultUploadsRoot)) {
-    app.use("/uploads", express.static(defaultUploadsRoot));
-}
 
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/box', boxRoutes);
 app.use('/api/files', fileRoutes);
+app.use('/api/images', require('./routes/imageRoutes'));
 
 app.get('/test-email', async (req, res) => {
     const to = String(req.query?.to || process.env.TEST_EMAIL_TO || process.env.SMTP_USER || '').trim();
