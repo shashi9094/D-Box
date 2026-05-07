@@ -13,8 +13,7 @@ function generateUniqueFilename(originalName) {
 const s3Storage = multerS3({
     s3: s3Client,
     bucket: process.env.AWS_BUCKET_NAME || 'd-box-2026',
-    acl: 'public-read', // Make uploaded files public
-    metadata: (req, file, cb) => {
+        metadata: (req, file, cb) => {
         cb(null, {
             fieldName: file.fieldname,
             userId: req.session?.user?.id || 'anonymous'
