@@ -2,9 +2,37 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../utils/authMiddleware');
 const fileController = require('../controllers/fileController');
+const upload = require('../middleware/upload');
 
 // Protect file routes with session auth
 router.use(authMiddleware);
+
+// S3 file upload endpoint
+router.post('/upload', upload.single('file'), (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                error: 'No file provided'
+            });
+        }
+
+        // req.file.location is provided by multer-s3
+        return res.status(200).json({
+            success: true,
+            fileUrl: req.file.location,
+            filename: req.file.originalname,
+            size: req.file.size,
+            key: req.file.key
+        });
+    } catch (error) {
+        console.error('Upload error:', error.message);
+        return res.status(500).json({
+            success: false,
+            error: 'File upload failed: ' + error.message
+        });
+    }
+});
 
 // Dynamic route param must be named :id to access req.params.id
 router.get('/:id', fileController.getFileById);
