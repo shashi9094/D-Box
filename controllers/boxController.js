@@ -8,7 +8,6 @@ const { PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const fs = require('fs');
 const { sendInvitationEmail } = require('../utils/emailService');
 const { createNotificationsForUsers } = require('../utils/notifications');
-const pool = require('../config/db');
 const compressImage = require('../utils/compressImage');
 
 
