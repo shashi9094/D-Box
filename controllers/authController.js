@@ -139,6 +139,18 @@ exports.signup = async (req, res) => {
                         console.error('Pending invite sync failed after signup:', inviteErr.message);
                     }
 
+                    // Create session so new users are treated as logged-in immediately
+                    try {
+                        req.session.user = {
+                            id: result.insertId,
+                            email: normalizedEmail,
+                            loginAt: Date.now()
+                        };
+                        req.session.cookie.maxAge = SESSION_MAX_AGE_MS;
+                    } catch (sessErr) {
+                        console.warn('Unable to create session after signup:', sessErr && sessErr.message ? sessErr.message : sessErr);
+                    }
+
                     const verificationUrl = `${getAppBaseUrl(req)}/verify-email?token=${verificationToken}`;
                     const emailBody = buildVerificationEmail(normalizedFullName, verificationUrl);
 
@@ -146,6 +158,7 @@ exports.signup = async (req, res) => {
                     if (!emailResult.success) {
                         console.error('Verification email send failed after signup:', emailResult.error);
 
+                        // best-effort cleanup: if email fails, rollback the user so system remains consistent
                         db.query('DELETE FROM users WHERE id = ?', [result.insertId], () => {});
 
                         return res.status(500).json({
@@ -154,10 +167,17 @@ exports.signup = async (req, res) => {
                         });
                     }
 
-                    return res.status(201).json({
-                        message: 'Signup successful. Please verify your email before logging in.',
-                        success: true,
-                        redirectUrl: '/login.html?verification=pending'
+                    // Respond with redirect to home (or invite target) so frontend can continue flow
+                    return req.session.save((saveErr) => {
+                        if (saveErr) {
+                            console.warn('Session save after signup failed:', saveErr && saveErr.message ? saveErr.message : saveErr);
+                        }
+
+                        return res.status(201).json({
+                            message: 'Signup successful. Verification email sent.',
+                            success: true,
+                            redirectUrl: redirectUrl
+                        });
                     });
                 }
             );
