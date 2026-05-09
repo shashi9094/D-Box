@@ -217,7 +217,7 @@
         throw new Error(consumeData.message || 'Unable to process invite');
       }
 
-      window.location.replace(consumeData.redirectUrl || `/uploads?boxId=${inviteBoxId}`);
+      window.location.replace(consumeData.redirectUrl || '/dashboard');
     }
 
     async function bootstrapInviteFlow() {
@@ -260,19 +260,18 @@
     bootstrapInviteFlow();
 
     document.getElementById("signupForm").addEventListener("submit", async function (e) {
-    e.preventDefault();
+      e.preventDefault();
 
-    // Validate passwords match
+      const submitButton = this.querySelector('button[type="submit"]');
+      const password = document.getElementById("password").value;
+      const confirmPassword = document.getElementById("confirmPassword").value;
 
-    const password = document.getElementById("password").value;
-    const confirmPassword = document.getElementById("confirmPassword").value;
-
-    if (password !== confirmPassword) {
+      if (password !== confirmPassword) {
         alert("Passwords do not match!");
         return;
-    }
+      }
 
-    const data = {
+      const data = {
         fullname: document.getElementById("fullName").value,
         dob: document.getElementById("dob").value,
         email: document.getElementById("email").value,
@@ -282,32 +281,48 @@
         password: password,
         inviteBoxId: Number.isFinite(inviteBoxId) && inviteBoxId > 0 ? inviteBoxId : null,
         inviteToken: inviteToken || null
-    };
+      };
 
-    try {
+      try {
+        submitButton.disabled = true;
+
         const response = await fetch("/api/auth/signup", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(data)
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(data)
         });
 
-        const result = await response.json();
+        const result = await response.json().catch(() => ({}));
+        console.log('signup response:', { status: response.status, ok: response.ok, result });
 
-        // Handle response
-
-        if (response.ok) {
-          window.location.href = result.redirectUrl || "/home";
-        } else {
-            alert(result.message || "Signup failed");
+        if (!response.ok) {
+          alert(result.message || "Signup failed");
+          return;
         }
 
-    } catch (err) {
-        console.error(err);
+        try {
+          const sessionRes = await fetch('/api/auth/session', {
+            credentials: 'include',
+            cache: 'no-store'
+          });
+          const sessionData = await sessionRes.json().catch(() => ({}));
+          console.log('signup session check:', { status: sessionRes.status, sessionData });
+        } catch (sessionErr) {
+          console.warn('Session confirmation after signup failed:', sessionErr);
+        }
+
+        window.location.href = result.redirectUrl || "/complete-profile";
+
+      } catch (err) {
+        console.error('Signup submit failed:', err);
         alert("Server error!");
-    }
-});
+      } finally {
+        submitButton.disabled = false;
+      }
+    });
 
   </script>
 </body>

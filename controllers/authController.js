@@ -20,6 +20,22 @@ function getAppBaseUrl(req) {
     return `${proto}://${host}`.replace(/\/+$/, '');
 }
 
+function saveSession(req) {
+    return new Promise((resolve, reject) => {
+        if (!req.session || typeof req.session.save !== 'function') {
+            return resolve();
+        }
+
+        req.session.save((err) => {
+            if (err) {
+                return reject(err);
+            }
+
+            return resolve();
+        });
+    });
+}
+
 function buildVerificationEmail(fullName, verificationUrl) {
     const safeName = String(fullName || '').trim() || 'there';
     return {
@@ -39,8 +55,9 @@ function buildVerificationEmail(fullName, verificationUrl) {
 
 // SIGNUP
 exports.signup = async (req, res) => {
-    console.log("SIGNUP HIT");
-    console.log("BODY:", req.body);
+    console.log('SIGNUP HIT');
+    console.log('BODY:', req.body);
+
     try {
         const {
             fullname,
@@ -56,12 +73,11 @@ exports.signup = async (req, res) => {
 
         const safeInviteBoxId = Number(inviteBoxId);
         const redirectUrl = Number.isFinite(safeInviteBoxId) && safeInviteBoxId > 0
-            ? `/uploads?boxId=${safeInviteBoxId}`
-            : '/home';
+            ? '/dashboard'
+            : '/complete-profile';
 
-        const fullName = fullname; // Just to maintain the same variable name as before
         const normalizedEmail = String(email || '').trim().toLowerCase();
-        const normalizedFullName = String(fullName || '').trim();
+        const normalizedFullName = String(fullname || '').trim();
         const normalizedPassword = String(password || '');
         const verificationToken = crypto.randomBytes(32).toString('hex');
         const tokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
@@ -74,117 +90,85 @@ exports.signup = async (req, res) => {
             return res.status(400).json({ message: 'Password is required' });
         }
 
-        // Step 1 → Pehle check karo ki email already exist to nahi karta
-        const checkSql = "SELECT id FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1";
-        db.query(checkSql, [normalizedEmail], async (err, results) => {
-            if (err) {
-                console.error('Signup email check failed:', {
-                    code: err.code || null,
-                    message: err.message || null,
-                    detail: err.detail || null,
-                    hint: err.hint || null,
-                });
-                return res.status(500).json({
-                    message: "Database error",
-                    error: err.message || err,
-                    code: err.code || null
-                });
-            }
+        const sql = db.promise();
 
-            if (results.length > 0) {
-                return res.status(400).json({
-                    message: "Email already exists"
-                });
-            }
+        const [existingRows] = await sql.query(
+            'SELECT id FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1',
+            [normalizedEmail]
+        );
 
-            // Step 2 → Password hash karo
-            const hashedPassword = await bcrypt.hash(normalizedPassword, 10);
+        if (existingRows.length > 0) {
+            return res.status(400).json({ message: 'Email already exists' });
+        }
 
-            // Step 3 → Database me insert karo
-            const insertSql = `
-                INSERT INTO users 
-                (fullname, dob, email, country, capacity, purpose, role, password, verification_token, is_verified, token_expires) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (email) DO NOTHING
-                RETURNING id
-            `;
+        const hashedPassword = await bcrypt.hash(normalizedPassword, 10);
+        const [insertResult] = await sql.query(
+            `INSERT INTO users
+             (fullname, dob, email, country, capacity, purpose, role, password, verification_token, is_verified, token_expires)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             RETURNING id, fullname AS "fullName", email, dob, country, capacity, purpose, role, is_verified, isprofilecomplete`,
+            [normalizedFullName, dob || null, normalizedEmail, country || null, capacity || null, purpose || null, 'User', hashedPassword, verificationToken, false, tokenExpiresAt]
+        );
 
-            db.query(
-                insertSql,
-                [normalizedFullName, dob || null, normalizedEmail, country || null, capacity || null, purpose || null, 'User', hashedPassword, verificationToken, false, tokenExpiresAt],
-                async (err, result) => {
-                    if (err) {
-                        console.error('Signup insert failed:', {
-                            code: err.code || null,
-                            message: err.message || null,
-                            detail: err.detail || null,
-                            hint: err.hint || null,
-                        });
-                        return res.status(500).json({
-                            message: "Signup failed",
-                            error: err.message || err,
-                            code: err.code || null
-                        });
-                    }
+        const createdUser = Array.isArray(insertResult?.rows) ? insertResult.rows[0] : insertResult;
 
-                    if (!result || !result.insertId) {
-                        return res.status(400).json({
-                            message: 'Email already exists'
-                        });
-                    }
+        if (!createdUser || !createdUser.id) {
+            console.error('Signup insert did not return a user:', insertResult);
+            return res.status(500).json({ message: 'Signup failed', error: 'Unable to create user' });
+        }
 
-                    try {
-                        await boxController.acceptPendingInvitesForUser(result.insertId, email, inviteToken);
-                    } catch (inviteErr) {
-                        console.error('Pending invite sync failed after signup:', inviteErr.message);
-                    }
-
-                    // Create session so new users are treated as logged-in immediately
-                    try {
-                        req.session.user = {
-                            id: result.insertId,
-                            email: normalizedEmail,
-                            loginAt: Date.now()
-                        };
-                        req.session.cookie.maxAge = SESSION_MAX_AGE_MS;
-                    } catch (sessErr) {
-                        console.warn('Unable to create session after signup:', sessErr && sessErr.message ? sessErr.message : sessErr);
-                    }
-
-                    const verificationUrl = `${getAppBaseUrl(req)}/verify-email?token=${verificationToken}`;
-                    const emailBody = buildVerificationEmail(normalizedFullName, verificationUrl);
-
-                    const emailResult = await sendEmail(normalizedEmail, emailBody.subject, emailBody.text);
-                    if (!emailResult.success) {
-                        console.error('Verification email send failed after signup:', emailResult.error);
-
-                        // best-effort cleanup: if email fails, rollback the user so system remains consistent
-                        db.query('DELETE FROM users WHERE id = ?', [result.insertId], () => {});
-
-                        return res.status(500).json({
-                            message: 'Signup failed while sending verification email',
-                            error: emailResult.error
-                        });
-                    }
-
-                    // Respond with redirect to home (or invite target) so frontend can continue flow
-                    return req.session.save((saveErr) => {
-                        if (saveErr) {
-                            console.warn('Session save after signup failed:', saveErr && saveErr.message ? saveErr.message : saveErr);
-                        }
-
-                        return res.status(201).json({
-                            message: 'Signup successful. Verification email sent.',
-                            success: true,
-                            redirectUrl: redirectUrl
-                        });
-                    });
-                }
-            );
+        console.log('Signup created user:', {
+            id: createdUser.id,
+            email: createdUser.email,
+            redirectUrl,
         });
 
+        try {
+            await boxController.acceptPendingInvitesForUser(createdUser.id, normalizedEmail, inviteToken || null);
+        } catch (inviteErr) {
+            console.error('Pending invite sync failed after signup:', inviteErr.message);
+        }
+
+        const verificationUrl = `${getAppBaseUrl(req)}/verify-email?token=${verificationToken}`;
+        const emailBody = buildVerificationEmail(normalizedFullName, verificationUrl);
+        const emailResult = await sendEmail(normalizedEmail, emailBody.subject, emailBody.text);
+
+        if (!emailResult.success) {
+            console.error('Verification email send failed after signup:', emailResult.error);
+
+            await sql.query('DELETE FROM users WHERE id = ?', [createdUser.id]);
+
+            return res.status(500).json({
+                message: 'Signup failed while sending verification email',
+                error: emailResult.error
+            });
+        }
+
+        req.session.user = {
+            id: Number(createdUser.id),
+            email: normalizedEmail,
+            loginAt: Date.now(),
+            isProfileComplete: Boolean(createdUser.isprofilecomplete),
+        };
+        req.session.cookie.maxAge = SESSION_MAX_AGE_MS;
+
+        await saveSession(req);
+
+        return res.status(201).json({
+            message: 'Signup successful. Verification email sent.',
+            success: true,
+            user: createdUser,
+            redirectUrl,
+            authReady: true
+        });
     } catch (err) {
-        res.status(500).json({ message: "Signup failed", error: err });
+        console.error('Signup failed:', {
+            message: err.message || err,
+            code: err.code || null,
+            detail: err.detail || null,
+            hint: err.hint || null,
+        });
+        return res.status(500).json({ message: 'Signup failed', error: err.message || err });
     }
 };
 
@@ -197,7 +181,7 @@ exports.login = async (req, res) => {
     const inviteBoxId = Number(req.body.inviteBoxId);
     const inviteToken = String(req.body.inviteToken || '').trim();
     const redirectUrl = Number.isFinite(inviteBoxId) && inviteBoxId > 0
-        ? `/uploads?boxId=${inviteBoxId}`
+        ? '/dashboard'
         : '/home';
 
     if (!email || !password) {
@@ -398,6 +382,106 @@ exports.resetPassword = async (req, res) => {
         return res.status(500).json({ message: "Error hashing password", error: err });
     }
 };
+
+// Send OTP to currently authenticated user's email for inline verification
+exports.sendOtp = async (req, res) => {
+    try {
+        const userId = Number(req.user?.id || req.session?.user?.id || 0);
+        if (!Number.isFinite(userId) || userId <= 0) {
+            return res.status(401).json({ message: 'Not authenticated' });
+        }
+
+        const sql = db.promise();
+        const [rows] = await sql.query('SELECT id, email, is_verified, otp_sent_at, otp_attempts FROM users WHERE id = ? LIMIT 1', [userId]);
+        const user = rows[0] || null;
+        if (!user) return res.status(404).json({ message: 'User not found' });
+        if (user.is_verified) return res.status(400).json({ message: 'Already verified' });
+
+        const now = Date.now();
+        const lastSent = user.otp_sent_at ? new Date(user.otp_sent_at).getTime() : 0;
+        const cooldownMs = Number(process.env.OTP_RESEND_COOLDOWN_MS || 60 * 1000);
+        if (lastSent && (now - lastSent) < cooldownMs) {
+            const wait = Math.ceil((cooldownMs - (now - lastSent)) / 1000);
+            return res.status(429).json({ message: 'Too many requests', retryAfterSeconds: wait });
+        }
+
+        // Generate 6-digit OTP
+        const otp = String(crypto.randomInt(100000, 1000000));
+        const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+        const hashedOtp = await bcrypt.hash(otp, 10);
+
+        // Save hashed OTP and expiry
+        await sql.query('UPDATE users SET otp_hash = ?, otp_expiry = ?, otp_sent_at = ?, otp_attempts = 0 WHERE id = ?', [hashedOtp, otpExpiry, new Date(), userId]);
+
+        // Send email
+        const subject = 'Your D-Box verification code';
+        const body = `Your verification code is:\n\n${otp}\n\nThis code expires in 10 minutes.`;
+        const emailResult = await sendEmail(user.email, subject, body);
+
+        if (!emailResult.success) {
+            console.error('sendOtp: email send failed', emailResult.error);
+            return res.status(500).json({ message: 'Unable to send OTP' });
+        }
+
+        return res.json({ success: true, message: 'OTP sent', cooldownSeconds: Math.ceil(cooldownMs / 1000) });
+    } catch (error) {
+        console.error('sendOtp failed:', error);
+        return res.status(500).json({ message: 'Unable to send OTP', error: error.message });
+    }
+};
+
+// Verify OTP submitted by authenticated user
+exports.verifyOtp = async (req, res) => {
+    try {
+        const userId = Number(req.user?.id || req.session?.user?.id || 0);
+        if (!Number.isFinite(userId) || userId <= 0) {
+            return res.status(401).json({ message: 'Not authenticated' });
+        }
+
+        const code = String(req.body?.code || '').trim();
+        if (!/^[0-9]{6}$/.test(code)) {
+            return res.status(400).json({ message: 'Invalid code format' });
+        }
+
+        const sql = db.promise();
+        const [rows] = await sql.query('SELECT id, email, otp_hash, otp_expiry, otp_attempts FROM users WHERE id = ? LIMIT 1', [userId]);
+        const user = rows[0] || null;
+        if (!user) return res.status(404).json({ message: 'User not found' });
+        if (!user.otp_hash || !user.otp_expiry) return res.status(400).json({ message: 'No OTP requested' });
+
+        const now = Date.now();
+        const expiry = user.otp_expiry ? new Date(user.otp_expiry).getTime() : 0;
+        if (!expiry || now > expiry) {
+            return res.status(400).json({ message: 'OTP expired' });
+        }
+
+        const maxAttempts = Number(process.env.OTP_MAX_ATTEMPTS || 5);
+        if (Number(user.otp_attempts || 0) >= maxAttempts) {
+            return res.status(429).json({ message: 'Too many attempts' });
+        }
+
+        const match = await bcrypt.compare(code, String(user.otp_hash || ''));
+        if (!match) {
+            // increment attempts
+            await sql.query('UPDATE users SET otp_attempts = COALESCE(otp_attempts,0) + 1 WHERE id = ?', [userId]);
+            return res.status(400).json({ message: 'Invalid code' });
+        }
+
+        // Success: clear OTP and mark verified
+        await sql.query('UPDATE users SET is_verified = TRUE, otp_hash = NULL, otp_expiry = NULL, otp_sent_at = NULL, otp_attempts = 0, status = ? WHERE id = ?', ['active', userId]);
+
+        // Update session if present
+        if (req.session?.user) {
+            req.session.user.isVerified = true;
+        }
+
+        return res.json({ success: true, message: 'Email verified' });
+    } catch (error) {
+        console.error('verifyOtp failed:', error);
+        return res.status(500).json({ message: 'Unable to verify OTP', error: error.message });
+    }
+};
+
 
 exports.checkAccountExists = async (req, res) => {
     const email = String(req.query?.email || '').trim().toLowerCase();

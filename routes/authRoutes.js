@@ -178,6 +178,10 @@ router.get("/status", async (req, res) => {
   });
 });
 
+// Inline OTP endpoints for email verification
+router.post('/send-otp', requireSessionUser, authController.sendOtp);
+router.post('/verify-otp', requireSessionUser, authController.verifyOtp);
+
 router.get('/account-exists', authController.checkAccountExists);
 
 router.get('/notifications', requireSessionUser, async (req, res) => {

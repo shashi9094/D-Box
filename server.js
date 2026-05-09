@@ -257,22 +257,30 @@ app.get('/uploads', isAuth, (req, res) => {
     res.sendFile(path.join(__dirname, 'private', 'pages', 'uploads.html'));
 });
 
-app.post('/api/complete-profile', (req, res, next) => {
-    if (req.isAuthenticated && req.isAuthenticated() && req.user) {
-        return next();
-    }
+app.get('/profile', isAuth, (req, res) => {
+    setNoStore(res);
+    res.sendFile(path.join(__dirname, 'private', 'pages', 'profile.html'));
+});
 
-    return res.status(401).json({ message: 'Not authenticated' });
-}, async (req, res) => {
-    console.log('complete-profile req.user:', req.user);
-
-    const userId = Number(req.user?.id);
+app.post('/api/complete-profile', async (req, res) => {
+    const sessionUser = req.session?.user || null;
+    const passportUser = req.user || null;
+    const userId = Number(req.user?.id || sessionUser?.id || passportUser?.id);
     const dob = String(req.body?.dob || '').trim();
     const country = String(req.body?.country || '').trim();
     const capacity = String(req.body?.capacity || '').trim();
     const purpose = String(req.body?.purpose || '').trim();
 
-    if (!req.user || !Number.isFinite(userId) || userId <= 0) {
+    console.log('complete-profile request:', {
+        reqUser: req.user || null,
+        sessionUser: sessionUser || null,
+        passportUser: passportUser || null,
+        body: req.body || null,
+        bodyKeys: Object.keys(req.body || {}),
+    });
+
+    if (!Number.isFinite(userId) || userId <= 0) {
+        console.warn('complete-profile rejected: no authenticated user');
         return res.status(401).json({ message: 'Not authenticated' });
     }
 
@@ -281,7 +289,7 @@ app.post('/api/complete-profile', (req, res, next) => {
     }
 
     try {
-        const [rows] = await db.promise().query(
+        const [result] = await db.promise().query(
             `UPDATE users
              SET dob = ?, country = ?, capacity = ?, purpose = ?, isprofilecomplete = TRUE
              WHERE id = ?
@@ -289,14 +297,29 @@ app.post('/api/complete-profile', (req, res, next) => {
             [dob, country, capacity, purpose, userId]
         );
 
-        const updated = rows[0];
+        console.log('complete-profile db result:', result);
+
+        // Normalize the returned row. db.promise().query returns a normalized write result
+        // for non-SELECT commands; that object contains a `rows` array. Handle both shapes.
+        const updated = (result && Array.isArray(result.rows) && result.rows[0]) || (Array.isArray(result) && result[0]) || null;
+
         if (!updated) {
+            console.error('complete-profile user update returned no rows', {
+                userId,
+                sessionUserId: sessionUser?.id || null,
+                passportUserId: passportUser?.id || null,
+                rawResult: result,
+            });
+
+            // Return 404 without an alert on the frontend; frontend will show inline message.
             return res.status(404).json({ message: 'User not found' });
         }
 
         if (req.session?.user) {
             req.session.user = {
                 ...req.session.user,
+                id: Number(updated.id || userId),
+                email: String(updated.email || req.session.user.email || '').trim().toLowerCase(),
                 dob: updated.dob,
                 country: updated.country,
                 capacity: updated.capacity,
@@ -316,12 +339,32 @@ app.post('/api/complete-profile', (req, res, next) => {
             };
         }
 
-        return res.json({
+        console.log('complete-profile updated:', updated);
+
+        const finishResponse = () => res.json({
             success: true,
             message: 'Profile completed successfully',
             redirectUrl: '/dashboard'
         });
+
+        if (req.session && typeof req.session.save === 'function') {
+            return req.session.save((saveErr) => {
+                if (saveErr) {
+                    console.warn('complete-profile session save failed:', saveErr.message || saveErr);
+                }
+
+                return finishResponse();
+            });
+        }
+
+        return finishResponse();
     } catch (error) {
+        console.error('Unable to complete profile:', {
+            message: error.message || error,
+            code: error.code || null,
+            detail: error.detail || null,
+            hint: error.hint || null,
+        });
         return res.status(500).json({
             message: 'Unable to complete profile',
             error: error.message,

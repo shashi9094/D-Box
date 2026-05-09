@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Profile - D-Box</title>
+  <link rel="stylesheet" href="/style.css" />
+  <style>
+    /* Minimal self-contained styles for verification card (dark theme) */
+    .verify-card { max-width:760px; margin:24px auto; padding:20px; border-radius:12px; background:linear-gradient(180deg,#0f1724, #071022); color:#e6eef8; box-shadow:0 8px 30px rgba(2,6,23,.6); }
+    .verify-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .verify-title { font-size:18px; font-weight:600; color:#dffcf0; }
+    .verify-desc { font-size:13px; color:#9fb2c9; margin-top:8px; }
+    .verify-body { margin-top:18px; }
+    .muted { color:#9fb2c9; }
+    .btn { border:0; padding:10px 14px; border-radius:8px; cursor:pointer; font-weight:600; }
+    .btn.primary { background:linear-gradient(90deg,#00ffd5,#00b3ff); color:#04121b; }
+    .btn.ghost { background:transparent; border:1px solid rgba(255,255,255,.06); color:#cfeaf8; }
+    .input { width:100%; padding:10px 12px; border-radius:8px; border:1px solid rgba(255,255,255,.06); background:rgba(255,255,255,0.02); color:#e6eef8; }
+    .row { display:flex; gap:12px; align-items:center; }
+    .center { display:flex; align-items:center; justify-content:center; }
+    .success { color:#1fd77a; font-weight:700; }
+    .small { font-size:12px; }
+    @media(max-width:600px){ .verify-card{margin:12px;padding:14px} }
+  </style>
+</head>
+<body class="allow-scroll">
+  <div class="verify-card" id="verify-root">
+    <!-- React mounts here -->
+  </div>
+
+  <!-- React + Framer Motion UMD -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/framer-motion/dist/framer-motion.umd.js"></script>
+
+  <script>
+    const { useState, useEffect, useRef } = React;
+    const { motion, AnimatePresence } = window['framer-motion'];
+
+    function VerifyCard(){
+      const [user, setUser] = useState(null);
+      const [step, setStep] = useState('pending');
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState('');
+      const [cooldown, setCooldown] = useState(0);
+      const [otp, setOtp] = useState('');
+      const cooldownRef = useRef(null);
+
+      useEffect(()=>{
+        // load session
+        fetch('/api/auth/session', { credentials:'include', cache:'no-store' })
+          .then(r=>r.json()).then(data=>{
+            if(!data || !data.authenticated) return;
+            setUser(data.user || null);
+            if(data.user && data.user.isVerified) setStep('verified');
+          }).catch(()=>{});
+
+        return ()=>{ if(cooldownRef.current) clearInterval(cooldownRef.current); };
+      },[]);
+
+      useEffect(()=>{
+        if(cooldown <= 0 && cooldownRef.current){ clearInterval(cooldownRef.current); cooldownRef.current = null; }
+      },[cooldown]);
+
+      function startCooldown(seconds){
+        setCooldown(seconds);
+        if(cooldownRef.current) clearInterval(cooldownRef.current);
+        cooldownRef.current = setInterval(()=>{
+          setCooldown(c=>{
+            if(c<=1){ clearInterval(cooldownRef.current); cooldownRef.current=null; return 0; }
+            return c-1;
+          });
+        },1000);
+      }
+
+      async function handleSendOtp(){
+        setError('');
+        setLoading(true);
+        try{
+          const res = await fetch('/api/auth/send-otp', { method:'POST', credentials:'include' });
+          const data = await res.json().catch(()=>({}));
+          if(!res.ok){ setError(data.message || 'Unable to send OTP'); setLoading(false); return; }
+          setStep('enterOtp');
+          startCooldown(data.cooldownSeconds || 60);
+        }catch(e){ setError('Unable to send OTP'); }
+        setLoading(false);
+      }
+
+      async function handleVerifyOtp(e){
+        e && e.preventDefault && e.preventDefault();
+        setError('');
+        if(!/^[0-9]{6}$/.test(otp)){ setError('Enter 6-digit code'); return; }
+        setLoading(true);
+        try{
+          const res = await fetch('/api/auth/verify-otp', { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ code: otp }) });
+          const data = await res.json().catch(()=>({}));
+          if(!res.ok){ setError(data.message || 'Invalid code'); setLoading(false); return; }
+          setStep('verified');
+          // update session view
+          setUser(u=>u?{...u,isVerified:true}:u);
+        }catch(e){ setError('Unable to verify code'); }
+        setLoading(false);
+      }
+
+      function renderPending(){
+        return (
+          React.createElement(motion.div, { initial:{opacity:0,y:-6}, animate:{opacity:1,y:0}, exit:{opacity:0,y:6} },
+            React.createElement('div',{className:'verify-head'},
+              React.createElement('div', null,
+                React.createElement('div',{className:'verify-title'}, 'Email verification'),
+                React.createElement('div',{className:'verify-desc small'}, 'Status: Pending — verify your email inline without leaving the page')
+              ),
+              React.createElement('div',null,
+                React.createElement('button',{className:'btn primary', onClick:()=>setStep('sendOtp')}, 'Verify Email')
+              )
+            )
+          )
+        );
+      }
+
+      function renderSendOtp(){
+        return (
+          React.createElement(motion.div, { initial:{opacity:0,y:-6}, animate:{opacity:1,y:0}, exit:{opacity:0,y:6} },
+            React.createElement('div',{className:'verify-head'},
+              React.createElement('div', null,
+                React.createElement('div',{className:'verify-title'}, 'Verify your email'),
+                React.createElement('div',{className:'verify-desc small'}, user?.email || 'Your registered email will receive a 6-digit code')
+              ),
+              React.createElement('div',null,
+                React.createElement('button',{className:'btn primary', onClick:handleSendOtp, disabled:loading}, loading? 'Sending...' : 'Send OTP')
+              )
+            )
+          )
+        );
+      }
+
+      function renderEnterOtp(){
+        return (
+          React.createElement(motion.div, { initial:{opacity:0,y:-6}, animate:{opacity:1,y:0}, exit:{opacity:0,y:6} },
+            React.createElement('div',{className:'verify-head'},
+              React.createElement('div', null,
+                React.createElement('div',{className:'verify-title'}, 'Enter verification code'),
+                React.createElement('div',{className:'verify-desc small'}, 'We sent a 6-digit code to ' + (user?.email || 'your email') )
+              ),
+              React.createElement('div',null,
+                React.createElement('form',{onSubmit:handleVerifyOtp, style:{display:'flex',gap:12,alignItems:'center'}},
+                  React.createElement('input',{className:'input', placeholder:'123456', value:otp, onChange:(e)=>setOtp(e.target.value), maxLength:6, inputMode:'numeric', style:{width:120}}),
+                  React.createElement('button',{className:'btn primary', type:'submit', disabled:loading}, loading? 'Verifying...' : 'Submit')
+                )
+              )
+            ),
+            React.createElement('div',{className:'verify-body'},
+              React.createElement('div',{className:'muted small'}, 'Didn\'t get the code?'),
+              React.createElement('div',{style:{marginTop:8,display:'flex',gap:8,alignItems:'center'}},
+                React.createElement('button',{className:'btn ghost', onClick:handleSendOtp, disabled:loading || cooldown>0}, cooldown>0? `Resend (${cooldown}s)` : 'Resend OTP'),
+                React.createElement('div',{className:'muted small'}, `Attempts left: ${Math.max(0, 5 - (user?.otp_attempts || 0))}`)
+              )
+            )
+          )
+        );
+      }
+
+      function renderVerified(){
+        return (
+          React.createElement(motion.div, { initial:{opacity:0,scale:0.98}, animate:{opacity:1,scale:1}, exit:{opacity:0,scale:0.98} },
+            React.createElement('div',{className:'verify-head'},
+              React.createElement('div', null,
+                React.createElement('div',{className:'verify-title success'}, '\u2714 Email Verified'),
+                React.createElement('div',{className:'verify-desc small'}, 'Thank you — your email is verified.')
+              ),
+              React.createElement('div',null,
+                React.createElement('button',{className:'btn ghost', onClick:()=>{}}, 'Done')
+              )
+            )
+          )
+        );
+      }
+
+      return React.createElement('div', null,
+        React.createElement(AnimatePresence, null,
+          React.createElement('div', null,
+            error && React.createElement('div',{style:{color:'#ff9aa3',marginTop:12,fontWeight:600}}, error),
+            React.createElement('div',{style:{marginTop:8}}),
+            step === 'pending' && renderPending(),
+            step === 'sendOtp' && renderSendOtp(),
+            step === 'enterOtp' && renderEnterOtp(),
+            step === 'verified' && renderVerified()
+          )
+        )
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('verify-root')).render(React.createElement(VerifyCard));
+  </script>
+</body>
+</html>

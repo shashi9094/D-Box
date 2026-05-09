@@ -151,6 +151,12 @@ async function ensureUsersOAuthSchema() {
     await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS verification_token TEXT NULL');
     await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN NOT NULL DEFAULT FALSE');
     await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS token_expires TIMESTAMPTZ NULL');
+    // OTP support for inline email verification
+    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS otp_hash TEXT NULL');
+    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS otp_expiry TIMESTAMPTZ NULL');
+    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS otp_attempts INT NOT NULL DEFAULT 0');
+    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS otp_sent_at TIMESTAMPTZ NULL');
+    await pool.query("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS status TEXT NULL DEFAULT 'active'");
     await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN password DROP NOT NULL');
     await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN capacity DROP NOT NULL');
     await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN purpose DROP NOT NULL');

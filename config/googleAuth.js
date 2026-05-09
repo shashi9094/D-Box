@@ -56,7 +56,7 @@ if (googleConfig.enabled) {
           if (existingRows.length > 0) {
             const existing = existingRows[0];
             if (!existing.googleid) {
-              await sql.query('UPDATE users SET googleid = ? WHERE id = ?', [googleId, existing.id]);
+              await sql.query('UPDATE users SET googleid = ?, is_verified = TRUE WHERE id = ?', [googleId, existing.id]);
               existing.googleid = googleId;
             }
 
@@ -65,12 +65,13 @@ if (googleConfig.enabled) {
 
           const [insertResult] = await sql.query(
             `INSERT INTO users
-             (fullname, email, googleid)
-             VALUES (?, ?, ?)
+             (fullname, email, googleid, is_verified)
+             VALUES (?, ?, ?, TRUE)
              ON CONFLICT (email)
              DO UPDATE SET
                googleid = COALESCE(users.googleid, EXCLUDED.googleid),
-               fullname = COALESCE(NULLIF(users.fullname, ''), EXCLUDED.fullname)
+               fullname = COALESCE(NULLIF(users.fullname, ''), EXCLUDED.fullname),
+               is_verified = COALESCE(users.is_verified, TRUE)
              RETURNING id, fullname AS "fullName", email, googleid, dob, country, capacity, purpose, role, isprofilecomplete`,
             [name, email, googleId]
           );

@@ -11,9 +11,15 @@
     <h1 class="title">Complete your <span class="gradient-text">D-Box</span> profile</h1>
 
     <div class="login-card">
-      <p class="muted">Finish the missing profile fields to continue.</p>
+      <div id="loadingState" class="muted" style="display:flex;align-items:center;gap:12px;min-height:56px;">
+        <span style="width:18px;height:18px;border:2px solid rgba(255,255,255,.25);border-top-color:#00ffd5;border-radius:50%;animation:spin 0.8s linear infinite;"></span>
+        <span id="loadingMessage">Checking your session...</span>
+      </div>
 
-      <form id="completeProfileForm">
+      <p id="profileError" class="muted" hidden style="color:#ff8ca1;"></p>
+      <p class="muted" id="formHelp" hidden>Finish the missing profile fields to continue.</p>
+
+      <form id="completeProfileForm" hidden>
         <label for="dob">Date of birth</label>
         <input type="date" id="dob" name="dob" required>
 
@@ -51,7 +57,36 @@
     </div>
   </div>
 
+  <style>
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  </style>
+
   <script>
+    const loadingState = document.getElementById('loadingState');
+    const loadingMessage = document.getElementById('loadingMessage');
+    const profileError = document.getElementById('profileError');
+    const profileForm = document.getElementById('completeProfileForm');
+    const formHelp = document.getElementById('formHelp');
+    const submitButton = profileForm.querySelector('button[type="submit"]');
+
+    let authReady = false;
+
+    function setLoading(isLoading, message) {
+      loadingState.hidden = !isLoading;
+      if (message) {
+        loadingMessage.textContent = message;
+      }
+      profileForm.hidden = isLoading;
+      formHelp.hidden = isLoading;
+      submitButton.disabled = isLoading;
+      profileForm.setAttribute('aria-busy', String(isLoading));
+    }
+
+    function showError(message) {
+      profileError.textContent = message;
+      profileError.hidden = false;
+    }
+
     async function ensureStillAuthenticated() {
       try {
         const response = await fetch('/api/auth/session', {
@@ -60,23 +95,58 @@
         });
 
         if (!response.ok) {
-          window.location.replace('/login.html');
-          return;
+          console.warn('complete-profile session check failed:', response.status);
+          return null;
         }
 
         const data = await response.json();
+        console.log('complete-profile session state:', data);
         if (!data.authenticated) {
-          window.location.replace('/login.html');
+          return null;
         }
+
+        return data;
       } catch (error) {
-        window.location.replace('/login.html');
+        console.error('complete-profile auth init failed:', error);
+        return null;
       }
     }
 
-    ensureStillAuthenticated();
+    async function initializePage() {
+      setLoading(true, 'Checking your session...');
+
+      const session = await ensureStillAuthenticated();
+      if (!session) {
+        window.location.replace('/login.html?reason=session-expired');
+        return;
+      }
+
+      authReady = true;
+      profileError.hidden = true;
+      formHelp.hidden = false;
+      setLoading(false);
+      profileForm.hidden = false;
+    }
+
+    // Keep submit disabled until form is valid
+    function updateSubmitState() {
+      const isValid = profileForm.checkValidity();
+      submitButton.disabled = !isValid || !authReady;
+    }
+
+    ['change', 'input'].forEach((ev) => {
+      profileForm.addEventListener(ev, updateSubmitState);
+    });
 
     document.getElementById('completeProfileForm').addEventListener('submit', async (event) => {
       event.preventDefault();
+
+      if (!authReady) {
+        showError('Session is still initializing. Please wait a moment and try again.');
+        return;
+      }
+
+      setLoading(true, 'Saving your profile...');
 
       const dob = document.getElementById('dob').value;
       const country = document.getElementById('country').value;
@@ -95,15 +165,35 @@
 
         const result = await response.json().catch(() => ({}));
 
+        console.log('complete-profile response:', {
+          status: response.status,
+          ok: response.ok,
+          result,
+        });
+
         if (!response.ok) {
-          throw new Error(result.message || 'Unable to complete profile');
+          if (response.status === 401) {
+            window.location.replace('/login.html?reason=session-expired');
+            return;
+          }
+
+          // Show friendly inline error messages instead of alerts or forced refreshes.
+          const msg = result && result.message ? result.message : 'Unable to complete profile';
+          showError(msg);
+          return;
         }
 
+        // Wait for server confirmation then redirect to the dashboard
         window.location.replace(result.redirectUrl || '/dashboard');
       } catch (error) {
-        alert(error.message || 'Unable to save profile');
+        console.error('complete-profile save failed:', error);
+        showError(error.message || 'Unable to save profile');
+      } finally {
+        setLoading(false);
       }
     });
+
+    initializePage();
   </script>
 </body>
 </html>
