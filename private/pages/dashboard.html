@@ -39,6 +39,19 @@
         </div>
 </div>
 
+    <div class="dashboard-modal" id="profileVerificationModal" aria-hidden="true">
+        <div class="dashboard-modal-card home-modal-card" role="dialog" aria-modal="true" aria-labelledby="profileVerificationTitle">
+            <div class="dashboard-modal-header">
+                <h3 id="profileVerificationTitle">Verify your profile to continue</h3>
+            </div>
+            <div class="home-modal-grid">
+                <p id="profileVerificationMessage">Verify your profile to continue accessing uploads, boxes, and invite actions.</p>
+                <p><strong>Email:</strong> <span id="profileVerificationEmail">-</span></p>
+            </div>
+            <button type="button" class="modal-submit-btn" id="verifyProfileBtn">Verify Profile</button>
+        </div>
+    </div>
+
 <div class="button-group" aria-label="Quick actions">
     <button type="button" class="add-box-btn" id="newBoxCornerBtn" aria-label="Create New Box" title="Create New Box">
         <i class="fa-solid fa-plus"></i>
@@ -82,8 +95,31 @@ let boxes = [];
 let selectedBoxId = null;
 let selectedBoxRole = null;
 let reqUserId = null;
+let currentSessionUser = null;
 const CAPACITY_MIN = 1;
 const CAPACITY_MAX = 200;
+
+function showProfileVerificationOverlay(sessionUser) {
+    const modal = document.getElementById('profileVerificationModal');
+    const email = document.getElementById('profileVerificationEmail');
+    currentSessionUser = sessionUser || null;
+
+    if (!modal || !email) {
+        return;
+    }
+
+    email.textContent = sessionUser?.email || '-';
+    modal.setAttribute('aria-hidden', 'false');
+}
+
+function hideProfileVerificationOverlay() {
+    const modal = document.getElementById('profileVerificationModal');
+    if (!modal) {
+        return;
+    }
+
+    modal.setAttribute('aria-hidden', 'true');
+}
 
 async function apiRequest(url, options = {}) {
     const res = await fetch(url, {
@@ -518,6 +554,14 @@ document.getElementById('removeMemberForm').addEventListener('submit', async (ev
 async function loadSessionUser() {
     const session = await apiRequest('/api/auth/session');
     reqUserId = session.user?.id || null;
+    currentSessionUser = session.user || null;
+    if (session.profilePending || session.user?.profilePending) {
+        showProfileVerificationOverlay(session.user);
+    } else {
+        hideProfileVerificationOverlay();
+    }
+
+    return session;
 }
 
 function activateMenu(menuId) {
@@ -533,11 +577,17 @@ function activateMenu(menuId) {
 window.addEventListener('load', async () => {
     activateMenu('menudashboard');
     try {
-        await loadSessionUser();
-        await loadBoxes();
+        const session = await loadSessionUser();
+        if (!session.profilePending && !session.user?.profilePending) {
+            await loadBoxes();
+        }
     } catch (error) {
         alert(error.message || 'Unable to load dashboard data');
     }
+});
+
+document.getElementById('verifyProfileBtn').addEventListener('click', () => {
+    window.location.href = '/profile';
 });
 </script>
 

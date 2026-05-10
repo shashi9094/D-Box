@@ -4,7 +4,7 @@ const db = require("../db/connection");
 const { loadGoogleOAuthConfig } = require("../utils/googleOAuthConfig");
 const { GOOGLE_AUTH_PASSWORD } = require("../utils/passwordAuth");
 
-const googleConfig = loadGoogleOAuthConfig();
+const googleConfig = loadGoogleOAuthConfig(); 
 const { clientID, clientSecret, callbackURL } = googleConfig;
 
 function normalizeUserRow(row, fallbackName, fallbackEmail, fallbackGoogleId) {
@@ -18,7 +18,7 @@ function normalizeUserRow(row, fallbackName, fallbackEmail, fallbackGoogleId) {
     capacity: row?.capacity ?? null,
     purpose: row?.purpose ?? null,
     role: String(row?.role || 'User'),
-    isProfileComplete: Boolean(row?.isprofilecomplete ?? row?.isProfileComplete),
+    isProfileComplete: Boolean(row?.isprofilecomplete ?? row?.isProfileComplete), 
   };
 }
 
@@ -56,7 +56,7 @@ if (googleConfig.enabled) {
 
           if (existingRows.length > 0) {
             const existing = existingRows[0];
-            if (!existing.googleid || existing.password !== GOOGLE_AUTH_PASSWORD) {
+            if (!existing.googleid || existing.password !== GOOGLE_AUTH_PASSWORD) { 
               await sql.query('UPDATE users SET googleid = ?, password = ?, is_verified = TRUE WHERE id = ?', [googleId, GOOGLE_AUTH_PASSWORD, existing.id]);
               existing.googleid = googleId;
               existing.password = GOOGLE_AUTH_PASSWORD;

@@ -6,8 +6,25 @@ const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
 const sharp = require("sharp");
+const s3Client = require('../config/s3');
+const { PutObjectCommand } = require('@aws-sdk/client-s3');
 const authController = require("../controllers/authController");
+const {
+  signup,
+  login,
+  sendOtp,
+  resendOtp,
+  verifyOtp,
+  forgotPassword,
+  resetPassword,
+  checkAccountExists,
+} = require("../controllers/authController");
+const { requireSixDigitOtp } = require('../middlewares/otpValidation');
 const db = require("../db/connection");
+const {
+  buildSessionUser,
+  getUserAuthStateById,
+} = require('../utils/profileVerification');
 const { GOOGLE_AUTH_PASSWORD } = require("../utils/passwordAuth");
 const { logLoginHistory, isNewDeviceLogin } = require("../utils/loginHistory");
 const { loadGoogleOAuthConfig } = require("../utils/googleOAuthConfig");
@@ -29,20 +46,10 @@ const profileUploadsDir = profileUploadsRoot;
 
 ensureUploadDirectories();
 
-const profilePhotoStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, profileUploadsDir);
-  },
-  filename: (req, file, cb) => {
-    const userId = Number(req?.session?.user?.id || 0) || Date.now();
-    const extension = path.extname(String(file.originalname || '')).toLowerCase() || '.jpg';
-    const safeExt = ['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(extension) ? extension : '.jpg';
-    cb(null, `profile-${userId}-${Date.now()}${safeExt}`);
-  },
-});
-
+// Use memory storage and upload optimized profile photos to S3
+const profileMemoryStorage = multer.memoryStorage();
 const profilePhotoUpload = multer({
-  storage: profilePhotoStorage,
+  storage: profileMemoryStorage,
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const mime = String(file?.mimetype || '').toLowerCase();
@@ -59,6 +66,32 @@ function requireSessionUser(req, res, next) {
     return res.status(401).json({ message: "Not authenticated" });
   }
   return next();
+}
+
+async function requireVerifiedSessionUser(req, res, next) {
+  if (!req.session?.user?.id) {
+    return res.status(401).json({ message: 'Not authenticated' });
+  }
+
+  try {
+    const authState = await getUserAuthStateById(req.session.user.id);
+    if (!authState) {
+      return res.status(401).json({ message: 'Not authenticated' });
+    }
+
+    if (!authState.isVerified) {
+      return res.status(403).json({ message: 'Please verify your profile first' });
+    }
+
+    req.user = buildSessionUser(authState, {
+      loginAt: req.session.user.loginAt || Date.now(),
+    });
+    req.session.user = req.user;
+
+    return next();
+  } catch (error) {
+    return res.status(500).json({ message: 'Unable to verify profile state', error: error.message });
+  }
 }
 
 function parseNotificationDetails(value) {
@@ -107,12 +140,15 @@ const googleCallbackUrl = googleConfig.callbackURL;
 const googleAuthEnabled = googleConfig.enabled;
 
 // Normal signup
-router.post("/signup", authController.signup);
+router.post("/signup", signup);
 
 // Normal login
-router.post("/login", authController.login);
+router.post("/login", login);
 
-router.get("/session", (req, res) => {
+router.post('/forgot-password', forgotPassword);
+router.post('/reset-password', requireSixDigitOtp('otp'), resetPassword);
+
+router.get("/session", async (req, res) => {
   const sessionUser = req.session?.user;
   if (sessionUser) {
     const loginAt = Number(sessionUser.loginAt || 0);
@@ -128,11 +164,31 @@ router.get("/session", (req, res) => {
         });
       });
     }
+
+    try {
+      const authState = await getUserAuthStateById(sessionUser.id);
+      if (authState) {
+        const hydratedUser = buildSessionUser(authState, {
+          loginAt: sessionUser.loginAt || Date.now(),
+        });
+
+        req.session.user = hydratedUser;
+
+        return res.json({
+          authenticated: true,
+          user: hydratedUser,
+          profilePending: hydratedUser.profilePending,
+        });
+      }
+    } catch (error) {
+      console.warn('Session hydration failed:', error.message);
+    }
   }
 
   res.json({
     authenticated: !!sessionUser,
     user: sessionUser || null,
+    profilePending: Boolean(sessionUser?.profilePending),
   });
 });
 
@@ -179,13 +235,14 @@ router.get("/status", async (req, res) => {
   });
 });
 
-// Inline OTP endpoints for email verification
-router.post('/send-otp', requireSessionUser, authController.sendOtp);
-router.post('/verify-otp', requireSessionUser, authController.verifyOtp);
+// Inline OTP endpoints for profile verification
+router.post('/send-otp', requireSessionUser, sendOtp);
+router.post('/resend-otp', requireSessionUser, resendOtp);
+router.post('/verify-otp', requireSessionUser, requireSixDigitOtp('code'), verifyOtp);
 
-router.get('/account-exists', authController.checkAccountExists);
+router.get('/account-exists', checkAccountExists);
 
-router.get('/notifications', requireSessionUser, async (req, res) => {
+router.get('/notifications', requireVerifiedSessionUser, async (req, res) => {
   const currentUserId = Number(req.session.user.id);
   const limitValue = Number(req.query?.limit);
   const limit = Number.isFinite(limitValue)
@@ -211,7 +268,7 @@ router.get('/notifications', requireSessionUser, async (req, res) => {
   }
 });
 
-router.post('/notifications/read', requireSessionUser, async (req, res) => {
+router.post('/notifications/read', requireVerifiedSessionUser, async (req, res) => {
   const currentUserId = Number(req.session.user.id);
   const ids = Array.isArray(req.body?.ids) ? req.body.ids : null;
 
@@ -232,7 +289,7 @@ router.post('/notifications/read', requireSessionUser, async (req, res) => {
   }
 });
 
-router.delete('/notifications/:id', requireSessionUser, async (req, res) => {
+router.delete('/notifications/:id', requireVerifiedSessionUser, async (req, res) => {
   const currentUserId = Number(req.session.user.id);
   const notificationId = Number(req.params?.id);
 
@@ -257,7 +314,7 @@ router.delete('/notifications/:id', requireSessionUser, async (req, res) => {
   }
 });
 
-router.post('/notifications/:id/reply', requireSessionUser, async (req, res) => {
+router.post('/notifications/:id/reply', requireVerifiedSessionUser, async (req, res) => {
   const currentUserId = Number(req.session.user.id);
   const notificationId = Number(req.params?.id);
   const replyText = String(req.body?.message || '').trim();
@@ -371,7 +428,7 @@ router.post('/notifications/:id/reply', requireSessionUser, async (req, res) => 
   }
 });
 
-router.post('/notifications/ask', requireSessionUser, async (req, res) => {
+router.post('/notifications/ask', requireVerifiedSessionUser, async (req, res) => {
   const currentUserId = Number(req.session.user.id);
   const questionText = String(req.body?.message || '').trim();
   const boxId = Number(req.body?.boxId);
@@ -540,7 +597,7 @@ router.post("/logout-all", requireSessionUser, (req, res) => {
   });
 });
 
-router.get("/profile", requireSessionUser, (req, res) => {
+router.get("/profile", requireVerifiedSessionUser, (req, res) => {
   const currentUserId = Number(req.session.user.id);
 
   db.query(
@@ -589,49 +646,46 @@ router.get("/profile", requireSessionUser, (req, res) => {
   );
 });
 
-router.post('/profile-photo', requireSessionUser, (req, res) => {
+router.post('/profile-photo', requireVerifiedSessionUser, (req, res) => {
   profilePhotoUpload.single('profilePhotoFile')(req, res, async (uploadErr) => {
     if (uploadErr) {
-      return res.status(400).json({
-        message: uploadErr.message || 'Unable to upload photo',
-      });
+      return res.status(400).json({ message: uploadErr.message || 'Unable to upload photo' });
     }
-
-    const currentUserId = Number(req.session.user.id);
-    const fileName = String(req.file?.filename || '').trim();
-    const uploadedAbsolutePath = String(req.file?.path || '').trim();
-
-    if (!fileName || !uploadedAbsolutePath) {
-      return res.status(400).json({ message: 'No file uploaded' });
-    }
-
-    const optimizedFileName = `profile-${currentUserId}.webp`;
-    const optimizedAbsolutePath = path.join(profileUploadsDir, optimizedFileName);
-    const profilePhotoUrl = `/uploads/profiles/${optimizedFileName}`;
 
     try {
-      await sharp(uploadedAbsolutePath)
+      if (!req.file || !req.file.buffer) {
+        return res.status(400).json({ message: 'No file uploaded' });
+      }
+
+      const currentUserId = Number(req.session.user.id);
+
+      // Process image buffer with sharp
+      const processedBuffer = await sharp(req.file.buffer)
         .rotate()
         .resize(320, 320, { fit: 'cover', position: 'attention' })
         .webp({ quality: 82 })
-        .toFile(optimizedAbsolutePath);
-    } catch (processErr) {
-      await fs.promises.unlink(uploadedAbsolutePath).catch(() => {});
-      return res.status(500).json({ message: 'Unable to process profile photo' });
-    }
+        .toBuffer();
 
-    await fs.promises.unlink(uploadedAbsolutePath).catch(() => {});
+      const optimizedFileName = `profile-${currentUserId}.webp`;
+      const key = `uploads/profiles/${optimizedFileName}`;
 
-    db.query(
-      'UPDATE users SET profilephoto = ? WHERE id = ?',
-      [profilePhotoUrl, currentUserId],
-      (err) => {
+      const params = {
+        Bucket: process.env.AWS_BUCKET_NAME,
+        Key: key,
+        Body: processedBuffer,
+        ContentType: 'image/webp'
+      };
+
+      const cmd = new PutObjectCommand(params);
+      await s3Client.send(cmd);
+
+      const region = process.env.AWS_REGION || 'eu-north-1';
+      const bucket = process.env.AWS_BUCKET_NAME;
+      const profilePhotoUrl = `https://${bucket}.s3.${region}.amazonaws.com/${encodeURI(key)}`;
+
+      db.query('UPDATE users SET profilephoto = ? WHERE id = ?', [profilePhotoUrl, currentUserId], (err) => {
         if (err) {
-          console.error('Update profile photo failed:', {
-            code: err.code || null,
-            message: err.message || null,
-            detail: err.detail || null,
-          });
+          console.error('Update profile photo failed:', err.message || err);
           return res.status(500).json({ message: 'Unable to save profile photo' });
         }
 
@@ -642,12 +696,15 @@ router.post('/profile-photo', requireSessionUser, (req, res) => {
           photoUrl: profilePhotoUrl,
           photoUrlVersioned: `${profilePhotoUrl}?v=${Date.now()}`,
         });
-      }
-    );
+      });
+    } catch (err) {
+      console.error('Profile photo upload error:', err);
+      return res.status(500).json({ message: 'Profile photo upload failed' });
+    }
   });
 });
 
-router.put("/profile", requireSessionUser, (req, res) => {
+router.put("/profile", requireVerifiedSessionUser, (req, res) => {
   const currentUserId = Number(req.session.user.id);
   const fullName = String(req.body?.fullName || "").trim();
   const profilePhoto = String(req.body?.profilePhoto || "").trim();
@@ -684,7 +741,7 @@ router.put("/profile", requireSessionUser, (req, res) => {
   );
 });
 
-router.post("/change-password", requireSessionUser, async (req, res) => {
+router.post("/change-password", requireVerifiedSessionUser, async (req, res) => {
   const currentUserId = Number(req.session.user.id);
   const currentPassword = String(req.body?.currentPassword || "");
   const newPassword = String(req.body?.newPassword || "");

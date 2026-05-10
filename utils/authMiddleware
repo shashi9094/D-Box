@@ -1,6 +1,7 @@
 const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const { getUserAuthStateById, buildSessionUser } = require('./profileVerification');
 
-module.exports = (req, res, next) => {
+module.exports = async (req, res, next) => {
 	if (!req.session || !req.session.user || !req.session.user.id) {
 		return res.status(401).json({ message: 'Not authenticated' });
 	}
@@ -15,10 +16,23 @@ module.exports = (req, res, next) => {
 		});
 	}
 
-	req.user = {
-		id: req.session.user.id,
-		email: req.session.user.email
-	};
+	try {
+		const authState = await getUserAuthStateById(req.session.user.id);
+		if (!authState) {
+			return res.status(401).json({ message: 'Not authenticated' });
+		}
 
-	next();
+		if (!authState.isVerified) {
+			return res.status(403).json({ message: 'Please verify your profile first' });
+		}
+
+		req.user = buildSessionUser(authState, {
+			loginAt: req.session.user.loginAt || Date.now(),
+		});
+		req.session.user = req.user;
+
+		return next();
+	} catch (error) {
+		return res.status(500).json({ message: 'Unable to verify profile state', error: error.message });
+	}
 };

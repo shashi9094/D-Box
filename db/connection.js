@@ -2,13 +2,36 @@ require('dotenv').config();
 const { Pool } = require('pg');
 
 const connectionString = String(process.env.DATABASE_URL || '').trim();
-const isProduction = process.env.NODE_ENV === 'production';
+const connectionTimeoutMillis = Number(process.env.PG_CONNECT_TIMEOUT_MS || 10000);
+
+if (!connectionString) {
+    console.error('❌ DATABASE_URL is not set. PostgreSQL connection will fail until this is configured.');
+}
+
+const getConnectionTarget = () => {
+    if (connectionString && connectionString.includes('@')) {
+        return connectionString.split('@')[1];
+    }
+
+    const host = process.env.PGHOST || 'localhost';
+    const port = process.env.PGPORT || '5432';
+    const db = process.env.PGDATABASE || process.env.DB_NAME || 'dbox';
+    return `${host}:${port}/${db}`;
+};
 
 const pool = new Pool({
-    connectionString: connectionString || undefined,
-    ssl: connectionString ? {
+    connectionString: process.env.DATABASE_URL,
+    connectionTimeoutMillis,
+    ssl: {
         rejectUnauthorized: false
-    } : undefined
+    }
+});
+
+pool.on('error', (error) => {
+    console.error('❌ PostgreSQL pool error:', {
+        code: error && error.code,
+        message: (error && error.message) || 'Unknown pool error'
+    });
 });
 
 const translatePlaceholders = (sqlText) => {
@@ -88,10 +111,10 @@ async function ensureCoreTables() {
             purpose TEXT NULL,
             role TEXT NULL DEFAULT 'User',
             password TEXT NOT NULL,
-            verification_token TEXT NULL,
             is_verified BOOLEAN NOT NULL DEFAULT FALSE,
-            token_expires TIMESTAMPTZ NULL,
             isprofilecomplete BOOLEAN NOT NULL DEFAULT FALSE,
+            verification_otp VARCHAR(6) NULL,
+            otp_expires TIMESTAMP NULL,
             profilephoto TEXT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT users_role_check CHECK (role IN ('User', 'Admin'))
@@ -148,15 +171,18 @@ async function ensureUsersOAuthSchema() {
     await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS googleid TEXT NULL');
     await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS profilephoto TEXT NULL');
     await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS isprofilecomplete BOOLEAN NOT NULL DEFAULT FALSE');
-    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS verification_token TEXT NULL');
     await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN NOT NULL DEFAULT FALSE');
-    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS token_expires TIMESTAMPTZ NULL');
-    // OTP support for inline email verification
-    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS otp_hash TEXT NULL');
-    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS otp_expiry TIMESTAMPTZ NULL');
-    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS otp_attempts INT NOT NULL DEFAULT 0');
-    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS otp_sent_at TIMESTAMPTZ NULL');
+    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS verification_otp VARCHAR(6) NULL');
+    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS otp_expires TIMESTAMP NULL');
+    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS verification_otp_attempts INT NOT NULL DEFAULT 0');
+    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS verification_otp_sent_at TIMESTAMP NULL');
+    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS reset_otp VARCHAR(6) NULL');
+    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS reset_otp_expires TIMESTAMP NULL');
+    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS reset_otp_attempts INT NOT NULL DEFAULT 0');
+    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS reset_otp_sent_at TIMESTAMP NULL');
     await pool.query("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS status TEXT NULL DEFAULT 'active'");
+    await pool.query('ALTER TABLE IF EXISTS users DROP COLUMN IF EXISTS verification_token');
+    await pool.query('ALTER TABLE IF EXISTS users DROP COLUMN IF EXISTS token_expires');
     await pool.query(`
         UPDATE users
         SET password = 'google_auth'
@@ -169,14 +195,11 @@ async function ensureUsersOAuthSchema() {
     await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN role DROP NOT NULL');
     await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN is_verified SET DEFAULT FALSE');
     await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN isprofilecomplete SET DEFAULT FALSE');
+    await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN verification_otp_attempts SET DEFAULT 0');
+    await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN reset_otp_attempts SET DEFAULT 0');
+    await pool.query('UPDATE users SET verification_otp_attempts = COALESCE(verification_otp_attempts, 0)');
+    await pool.query('UPDATE users SET reset_otp_attempts = COALESCE(reset_otp_attempts, 0)');
     await pool.query('UPDATE users SET isprofilecomplete = COALESCE(isprofilecomplete, FALSE)');
-        await pool.query(`
-                UPDATE users
-                SET is_verified = TRUE
-                WHERE is_verified = FALSE
-                    AND verification_token IS NULL
-                    AND token_expires IS NULL
-        `);
 
     const duplicateGoogleIdsResult = await pool.query(`
         SELECT googleid
@@ -205,25 +228,22 @@ const promise = () => ({
 const end = () => pool.end();
 
 pool.query('SELECT 1')
-    .then(() => ensureCoreTables())
+    .then(() => {
+        console.log('✅ PostgreSQL connected');
+        return ensureCoreTables();
+    })
     .then(() => ensureUsersOAuthSchema())
     .then(() => {
-        console.log('✅ Database connected successfully.');
         console.log('✅ Core tables are ready.');
     })
     .catch((error) => {
-        const suggestion = !connectionString && isProduction
-            ? 'CRITICAL: DATABASE_URL is not set. Attach PostgreSQL service in Railway and the URL will be auto-injected.'
-            : connectionString
-                ? `Error connecting to: ${connectionString.split('@')[1]}`
-                : `Error connecting to host=${process.env.PGHOST || 'localhost'} db=${process.env.PGDATABASE || 'dbox'}`;
-
-        console.error('❌ Database connection failed:', {
-            code: error.code,
-            message: error.message || 'Connection refused',
-            usingConnectionString: Boolean(connectionString),
-            productionConnection: isProduction,
-            suggestion,
+        const target = getConnectionTarget();
+        console.error('❌ Database connection failed:', error.message || 'Connection refused');
+        console.error('DB connection details:', {
+            code: error && error.code,
+            target,
+            hasDatabaseUrl: Boolean(connectionString),
+            sslEnabled: true,
         });
     });
 
@@ -242,3 +262,6 @@ module.exports = {
             .catch((error) => callback(error));
     }
 };
+
+// Export the raw pg Pool so it can be reused (eg. by session store)
+module.exports.pool = pool;

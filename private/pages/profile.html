@@ -2,196 +2,473 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Profile - D-Box</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Verify Profile - D-Box</title>
   <link rel="stylesheet" href="/style.css" />
   <style>
-    /* Minimal self-contained styles for verification card (dark theme) */
-    .verify-card { max-width:760px; margin:24px auto; padding:20px; border-radius:12px; background:linear-gradient(180deg,#0f1724, #071022); color:#e6eef8; box-shadow:0 8px 30px rgba(2,6,23,.6); }
-    .verify-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-    .verify-title { font-size:18px; font-weight:600; color:#dffcf0; }
-    .verify-desc { font-size:13px; color:#9fb2c9; margin-top:8px; }
-    .verify-body { margin-top:18px; }
-    .muted { color:#9fb2c9; }
-    .btn { border:0; padding:10px 14px; border-radius:8px; cursor:pointer; font-weight:600; }
-    .btn.primary { background:linear-gradient(90deg,#00ffd5,#00b3ff); color:#04121b; }
-    .btn.ghost { background:transparent; border:1px solid rgba(255,255,255,.06); color:#cfeaf8; }
-    .input { width:100%; padding:10px 12px; border-radius:8px; border:1px solid rgba(255,255,255,.06); background:rgba(255,255,255,0.02); color:#e6eef8; }
-    .row { display:flex; gap:12px; align-items:center; }
-    .center { display:flex; align-items:center; justify-content:center; }
-    .success { color:#1fd77a; font-weight:700; }
-    .small { font-size:12px; }
-    @media(max-width:600px){ .verify-card{margin:12px;padding:14px} }
-  </style>
-</head>
-<body class="allow-scroll">
-  <div class="verify-card" id="verify-root">
-    <!-- React mounts here -->
-  </div>
-
-  <!-- React + Framer Motion UMD -->
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/framer-motion/dist/framer-motion.umd.js"></script>
-
-  <script>
-    const { useState, useEffect, useRef } = React;
-    const { motion, AnimatePresence } = window['framer-motion'];
-
-    function VerifyCard(){
-      const [user, setUser] = useState(null);
-      const [step, setStep] = useState('pending');
-      const [loading, setLoading] = useState(false);
-      const [error, setError] = useState('');
-      const [cooldown, setCooldown] = useState(0);
-      const [otp, setOtp] = useState('');
-      const cooldownRef = useRef(null);
-
-      useEffect(()=>{
-        // load session
-        fetch('/api/auth/session', { credentials:'include', cache:'no-store' })
-          .then(r=>r.json()).then(data=>{
-            if(!data || !data.authenticated) return;
-            setUser(data.user || null);
-            if(data.user && data.user.isVerified) setStep('verified');
-          }).catch(()=>{});
-
-        return ()=>{ if(cooldownRef.current) clearInterval(cooldownRef.current); };
-      },[]);
-
-      useEffect(()=>{
-        if(cooldown <= 0 && cooldownRef.current){ clearInterval(cooldownRef.current); cooldownRef.current = null; }
-      },[cooldown]);
-
-      function startCooldown(seconds){
-        setCooldown(seconds);
-        if(cooldownRef.current) clearInterval(cooldownRef.current);
-        cooldownRef.current = setInterval(()=>{
-          setCooldown(c=>{
-            if(c<=1){ clearInterval(cooldownRef.current); cooldownRef.current=null; return 0; }
-            return c-1;
-          });
-        },1000);
-      }
-
-      async function handleSendOtp(){
-        setError('');
-        setLoading(true);
-        try{
-          const res = await fetch('/api/auth/send-otp', { method:'POST', credentials:'include' });
-          const data = await res.json().catch(()=>({}));
-          if(!res.ok){ setError(data.message || 'Unable to send OTP'); setLoading(false); return; }
-          setStep('enterOtp');
-          startCooldown(data.cooldownSeconds || 60);
-        }catch(e){ setError('Unable to send OTP'); }
-        setLoading(false);
-      }
-
-      async function handleVerifyOtp(e){
-        e && e.preventDefault && e.preventDefault();
-        setError('');
-        if(!/^[0-9]{6}$/.test(otp)){ setError('Enter 6-digit code'); return; }
-        setLoading(true);
-        try{
-          const res = await fetch('/api/auth/verify-otp', { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ code: otp }) });
-          const data = await res.json().catch(()=>({}));
-          if(!res.ok){ setError(data.message || 'Invalid code'); setLoading(false); return; }
-          setStep('verified');
-          // update session view
-          setUser(u=>u?{...u,isVerified:true}:u);
-        }catch(e){ setError('Unable to verify code'); }
-        setLoading(false);
-      }
-
-      function renderPending(){
-        return (
-          React.createElement(motion.div, { initial:{opacity:0,y:-6}, animate:{opacity:1,y:0}, exit:{opacity:0,y:6} },
-            React.createElement('div',{className:'verify-head'},
-              React.createElement('div', null,
-                React.createElement('div',{className:'verify-title'}, 'Email verification'),
-                React.createElement('div',{className:'verify-desc small'}, 'Status: Pending — verify your email inline without leaving the page')
-              ),
-              React.createElement('div',null,
-                React.createElement('button',{className:'btn primary', onClick:()=>setStep('sendOtp')}, 'Verify Email')
-              )
-            )
-          )
-        );
-      }
-
-      function renderSendOtp(){
-        return (
-          React.createElement(motion.div, { initial:{opacity:0,y:-6}, animate:{opacity:1,y:0}, exit:{opacity:0,y:6} },
-            React.createElement('div',{className:'verify-head'},
-              React.createElement('div', null,
-                React.createElement('div',{className:'verify-title'}, 'Verify your email'),
-                React.createElement('div',{className:'verify-desc small'}, user?.email || 'Your registered email will receive a 6-digit code')
-              ),
-              React.createElement('div',null,
-                React.createElement('button',{className:'btn primary', onClick:handleSendOtp, disabled:loading}, loading? 'Sending...' : 'Send OTP')
-              )
-            )
-          )
-        );
-      }
-
-      function renderEnterOtp(){
-        return (
-          React.createElement(motion.div, { initial:{opacity:0,y:-6}, animate:{opacity:1,y:0}, exit:{opacity:0,y:6} },
-            React.createElement('div',{className:'verify-head'},
-              React.createElement('div', null,
-                React.createElement('div',{className:'verify-title'}, 'Enter verification code'),
-                React.createElement('div',{className:'verify-desc small'}, 'We sent a 6-digit code to ' + (user?.email || 'your email') )
-              ),
-              React.createElement('div',null,
-                React.createElement('form',{onSubmit:handleVerifyOtp, style:{display:'flex',gap:12,alignItems:'center'}},
-                  React.createElement('input',{className:'input', placeholder:'123456', value:otp, onChange:(e)=>setOtp(e.target.value), maxLength:6, inputMode:'numeric', style:{width:120}}),
-                  React.createElement('button',{className:'btn primary', type:'submit', disabled:loading}, loading? 'Verifying...' : 'Submit')
-                )
-              )
-            ),
-            React.createElement('div',{className:'verify-body'},
-              React.createElement('div',{className:'muted small'}, 'Didn\'t get the code?'),
-              React.createElement('div',{style:{marginTop:8,display:'flex',gap:8,alignItems:'center'}},
-                React.createElement('button',{className:'btn ghost', onClick:handleSendOtp, disabled:loading || cooldown>0}, cooldown>0? `Resend (${cooldown}s)` : 'Resend OTP'),
-                React.createElement('div',{className:'muted small'}, `Attempts left: ${Math.max(0, 5 - (user?.otp_attempts || 0))}`)
-              )
-            )
-          )
-        );
-      }
-
-      function renderVerified(){
-        return (
-          React.createElement(motion.div, { initial:{opacity:0,scale:0.98}, animate:{opacity:1,scale:1}, exit:{opacity:0,scale:0.98} },
-            React.createElement('div',{className:'verify-head'},
-              React.createElement('div', null,
-                React.createElement('div',{className:'verify-title success'}, '\u2714 Email Verified'),
-                React.createElement('div',{className:'verify-desc small'}, 'Thank you — your email is verified.')
-              ),
-              React.createElement('div',null,
-                React.createElement('button',{className:'btn ghost', onClick:()=>{}}, 'Done')
-              )
-            )
-          )
-        );
-      }
-
-      return React.createElement('div', null,
-        React.createElement(AnimatePresence, null,
-          React.createElement('div', null,
-            error && React.createElement('div',{style:{color:'#ff9aa3',marginTop:12,fontWeight:600}}, error),
-            React.createElement('div',{style:{marginTop:8}}),
-            step === 'pending' && renderPending(),
-            step === 'sendOtp' && renderSendOtp(),
-            step === 'enterOtp' && renderEnterOtp(),
-            step === 'verified' && renderVerified()
-          )
-        )
-      );
+    body.verify-profile-page {
+      min-height: 100vh;
+      height: auto;
+      overflow-y: auto;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at top left, rgba(93, 240, 255, 0.18), transparent 28%),
+        radial-gradient(circle at bottom right, rgba(123, 47, 247, 0.18), transparent 30%),
+        linear-gradient(180deg, #07111f 0%, #060812 45%, #04050a 100%);
+      color: #ecf7ff;
+      padding: 24px;
     }
 
-    ReactDOM.createRoot(document.getElementById('verify-root')).render(React.createElement(VerifyCard));
+    .verify-shell {
+      width: min(100%, 760px);
+      display: grid;
+      place-items: center;
+    }
+
+    .verify-card {
+      width: min(100%, 560px);
+      border-radius: 28px;
+      padding: 28px;
+      background: linear-gradient(160deg, rgba(16, 24, 48, 0.95), rgba(12, 11, 30, 0.97));
+      border: 1px solid rgba(137, 219, 255, 0.18);
+      box-shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
+      backdrop-filter: blur(18px);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .verify-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at top right, rgba(93, 240, 255, 0.18), transparent 32%);
+      pointer-events: none;
+    }
+
+    .verify-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(138, 223, 255, 0.24);
+      background: rgba(138, 223, 255, 0.06);
+      color: #98eaff;
+      font-size: 0.86rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      position: relative;
+      z-index: 1;
+    }
+
+    .verify-title {
+      margin: 18px 0 10px;
+      font-size: clamp(2rem, 4vw, 3rem);
+      line-height: 1.05;
+      letter-spacing: -0.04em;
+      position: relative;
+      z-index: 1;
+    }
+
+    .verify-copy {
+      margin: 0;
+      font-size: 1rem;
+      line-height: 1.7;
+      color: rgba(232, 244, 255, 0.82);
+      position: relative;
+      z-index: 1;
+    }
+
+    .profile-email-chip {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      background: rgba(255, 255, 255, 0.03);
+      color: #dff4ff;
+      font-weight: 600;
+      position: relative;
+      z-index: 1;
+      word-break: break-word;
+    }
+
+    .verify-step {
+      margin-top: 20px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .verify-form {
+      display: grid;
+      gap: 12px;
+    }
+
+    .verify-input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 1px solid rgba(138, 223, 255, 0.26);
+      background: rgba(255, 255, 255, 0.04);
+      color: #f4fbff;
+      font-size: 1rem;
+      letter-spacing: 0.22em;
+      text-align: center;
+      outline: none;
+    }
+
+    .verify-input:focus {
+      border-color: rgba(138, 223, 255, 0.62);
+      box-shadow: 0 0 0 3px rgba(92, 229, 255, 0.16);
+    }
+
+    .verify-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .verify-primary-btn,
+    .verify-secondary-btn {
+      border: 0;
+      border-radius: 999px;
+      padding: 13px 18px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.18s ease, opacity 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    .verify-primary-btn {
+      background: linear-gradient(90deg, #5df0ff, #7b5cff);
+      color: #03131d;
+      box-shadow: 0 14px 28px rgba(93, 240, 255, 0.16);
+    }
+
+    .verify-secondary-btn {
+      background: rgba(255, 255, 255, 0.05);
+      color: #e8f4ff;
+      border: 1px solid rgba(255, 255, 255, 0.11);
+    }
+
+    .verify-primary-btn:hover,
+    .verify-secondary-btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .verify-primary-btn:disabled,
+    .verify-secondary-btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .verify-hint {
+      margin-top: 10px;
+      color: rgba(232, 244, 255, 0.72);
+      font-size: 0.92rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .verify-status {
+      margin-top: 14px;
+      min-height: 1.4em;
+      color: #ffbfd0;
+      font-weight: 600;
+      position: relative;
+      z-index: 1;
+    }
+
+    .verify-status.success {
+      color: #9df7be;
+    }
+
+    .verify-success {
+      display: grid;
+      gap: 12px;
+      text-align: center;
+      padding: 26px 12px 4px;
+      color: #dffbea;
+    }
+
+    .verify-success h2 {
+      margin: 0;
+      font-size: 1.9rem;
+    }
+
+    @media (max-width: 640px) {
+      body.verify-profile-page {
+        padding: 14px;
+      }
+
+      .verify-card {
+        padding: 22px;
+        border-radius: 22px;
+      }
+
+      .verify-actions {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .verify-primary-btn,
+      .verify-secondary-btn {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body class="verify-profile-page allow-scroll">
+  <main class="verify-shell">
+    <section class="verify-card" aria-labelledby="verifyTitle">
+      <div class="verify-kicker">D-Box</div>
+      <h1 class="verify-title" id="verifyTitle">Verify your profile to continue</h1>
+      <p class="verify-copy">We only need a one-time OTP to unlock uploads, boxes, and invite actions.</p>
+      <div class="profile-email-chip" id="registeredEmail">Loading your registered email...</div>
+
+      <div id="sendStep" class="verify-step">
+        <button type="button" class="verify-primary-btn" id="sendOtpBtn">Send OTP</button>
+      </div>
+
+      <form id="otpStep" class="verify-step verify-form" hidden>
+        <input
+          id="otpInput"
+          class="verify-input"
+          type="text"
+          inputmode="numeric"
+          maxlength="6"
+          autocomplete="one-time-code"
+          placeholder="Enter 6-digit OTP"
+        />
+        <div class="verify-actions">
+          <button type="submit" class="verify-primary-btn" id="submitOtpBtn">Submit OTP</button>
+          <button type="button" class="verify-secondary-btn" id="resendOtpBtn" hidden>Resend OTP</button>
+        </div>
+        <div class="verify-hint" id="resendTimer"></div>
+      </form>
+
+      <div id="verifiedStep" class="verify-step verify-success" hidden>
+        <h2>Profile verified</h2>
+        <p class="verify-copy">Your account is unlocked now. Redirecting to the dashboard.</p>
+      </div>
+
+      <div class="verify-status" id="verifyStatus" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <script>
+    const sessionState = {
+      email: '',
+      profilePending: true,
+    };
+    const uiState = {
+      otpSent: false,
+      cooldown: 0,
+      cooldownTimer: null,
+      redirectTimer: null,
+    };
+
+    const sendStep = document.getElementById('sendStep');
+    const otpStep = document.getElementById('otpStep');
+    const verifiedStep = document.getElementById('verifiedStep');
+    const registeredEmail = document.getElementById('registeredEmail');
+    const verifyStatus = document.getElementById('verifyStatus');
+    const resendTimer = document.getElementById('resendTimer');
+    const sendOtpBtn = document.getElementById('sendOtpBtn');
+    const submitOtpBtn = document.getElementById('submitOtpBtn');
+    const resendOtpBtn = document.getElementById('resendOtpBtn');
+    const otpInput = document.getElementById('otpInput');
+
+    function setStatus(message, isSuccess = false) {
+      verifyStatus.textContent = message || '';
+      verifyStatus.classList.toggle('success', Boolean(isSuccess));
+    }
+
+    function showStep(step) {
+      sendStep.hidden = step !== 'send';
+      otpStep.hidden = step !== 'otp';
+      verifiedStep.hidden = step !== 'verified';
+    }
+
+    function stopCooldownTimer() {
+      if (uiState.cooldownTimer) {
+        clearInterval(uiState.cooldownTimer);
+        uiState.cooldownTimer = null;
+      }
+    }
+
+    function setResendCooldown(seconds) {
+      stopCooldownTimer();
+      uiState.cooldown = Math.max(0, Number(seconds) || 0);
+
+      const tick = () => {
+        if (uiState.cooldown > 0) {
+          resendTimer.textContent = `Resend OTP in ${uiState.cooldown}s`;
+          resendOtpBtn.hidden = true;
+          resendOtpBtn.disabled = true;
+        } else {
+          resendTimer.textContent = 'You can request a new OTP now.';
+          resendOtpBtn.hidden = false;
+          resendOtpBtn.disabled = false;
+          stopCooldownTimer();
+        }
+      };
+
+      tick();
+      if (uiState.cooldown > 0) {
+        uiState.cooldownTimer = setInterval(() => {
+          uiState.cooldown -= 1;
+          tick();
+        }, 1000);
+      }
+    }
+
+    async function apiRequest(url, options = {}) {
+      const response = await fetch(url, {
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(options.headers || {}),
+        },
+        ...options,
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || payload.error || 'Request failed');
+      }
+
+      return payload;
+    }
+
+    function showToast(message) {
+      const existing = document.querySelector('.app-toast');
+      if (existing) {
+        existing.remove();
+      }
+
+      const toast = document.createElement('div');
+      toast.className = 'app-toast';
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      requestAnimationFrame(() => toast.classList.add('visible'));
+      setTimeout(() => {
+        toast.classList.remove('visible');
+        setTimeout(() => toast.remove(), 220);
+      }, 2200);
+    }
+
+    async function loadSession() {
+      const response = await fetch('/api/auth/session', {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!payload.authenticated) {
+        window.location.replace('/login.html');
+        return null;
+      }
+
+      sessionState.email = String(payload?.user?.email || '').trim().toLowerCase();
+      sessionState.profilePending = Boolean(payload.profilePending ?? payload?.user?.profilePending ?? true);
+      registeredEmail.textContent = sessionState.email || 'Registered email unavailable';
+      return payload;
+    }
+
+    async function refreshSessionAfterVerification() {
+      const response = await fetch('/api/auth/session', {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      sessionState.profilePending = Boolean(payload.profilePending ?? payload?.user?.profilePending ?? false);
+      return payload;
+    }
+
+    async function sendOtp(endpoint) {
+      setStatus('');
+      sendOtpBtn.disabled = true;
+      resendOtpBtn.disabled = true;
+      submitOtpBtn.disabled = true;
+
+      try {
+        const payload = await apiRequest(endpoint, { method: 'POST' });
+        uiState.otpSent = true;
+        showStep('otp');
+        otpInput.value = '';
+        otpInput.focus();
+        setStatus('OTP sent to your registered email.', true);
+        setResendCooldown(payload.cooldownSeconds || 60);
+      } catch (error) {
+        setStatus(error.message || 'Unable to send OTP');
+      } finally {
+        sendOtpBtn.disabled = false;
+        submitOtpBtn.disabled = false;
+      }
+    }
+
+    async function verifyOtp(event) {
+      event.preventDefault();
+
+      const code = String(otpInput.value || '').trim();
+      if (!/^[0-9]{6}$/.test(code)) {
+        setStatus('Enter a valid 6-digit OTP');
+        return;
+      }
+
+      submitOtpBtn.disabled = true;
+      resendOtpBtn.disabled = true;
+
+      try {
+        await apiRequest('/api/auth/verify-otp', {
+          method: 'POST',
+          body: JSON.stringify({ code }),
+        });
+
+        await refreshSessionAfterVerification();
+        setStatus('Profile verified successfully.', true);
+        showStep('verified');
+        showToast('Profile verified');
+
+        if (uiState.redirectTimer) {
+          clearTimeout(uiState.redirectTimer);
+        }
+
+        uiState.redirectTimer = setTimeout(() => {
+          window.location.replace('/dashboard');
+        }, 900);
+      } catch (error) {
+        setStatus(error.message || 'Unable to verify OTP');
+      } finally {
+        submitOtpBtn.disabled = false;
+        resendOtpBtn.disabled = false;
+      }
+    }
+
+    resendOtpBtn.addEventListener('click', () => sendOtp('/api/auth/resend-otp'));
+    sendOtpBtn.addEventListener('click', () => sendOtp('/api/auth/send-otp'));
+    otpStep.addEventListener('submit', verifyOtp);
+
+    (async function bootstrap() {
+      const session = await loadSession();
+      if (!session) {
+        return;
+      }
+
+      if (!sessionState.profilePending) {
+        window.location.replace('/dashboard');
+        return;
+      }
+
+      showStep('send');
+      setStatus('');
+      registeredEmail.textContent = sessionState.email || 'Registered email unavailable';
+    })();
   </script>
 </body>
 </html>

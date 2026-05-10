@@ -3,10 +3,13 @@ const path = require('path');
 
 const projectRoot = path.resolve(__dirname, '..');
 const defaultUploadsRoot = path.join(projectRoot, 'uploads');
+const isProduction = process.env.NODE_ENV === 'production';
 
 const resolveUploadsRoot = () => {
     const configuredRoot = String(process.env.UPLOADS_ROOT || '').trim();
+    // In production, default to a safe tmp folder to avoid writing into project dir
     if (!configuredRoot) {
+        if (isProduction) return '/tmp';
         return defaultUploadsRoot;
     }
 
@@ -26,6 +29,15 @@ const ensureDirExists = (dirPath) => {
 };
 
 const ensureUploadDirectories = () => {
+    // Only create project-local uploads in non-production or when uploadsRoot is explicitly set
+    if (isProduction && String(process.env.UPLOADS_ROOT || '').trim() === '') {
+        // production fallback is /tmp — ensure that's usable but avoid creating project uploads folder
+        ensureDirExists(uploadsRoot);
+        ensureDirExists(boxUploadsRoot);
+        ensureDirExists(profileUploadsRoot);
+        return;
+    }
+
     ensureDirExists(uploadsRoot);
     ensureDirExists(boxUploadsRoot);
     ensureDirExists(profileUploadsRoot);
@@ -56,15 +68,15 @@ const resolveUploadAbsolutePath = (filePathValue) => {
 const isUsingDefaultUploadsRoot = () => path.resolve(uploadsRoot) === path.resolve(defaultUploadsRoot);
 
 const logUploadsStorageWarning = () => {
-    if (process.env.NODE_ENV !== 'production' || !isUsingDefaultUploadsRoot()) {
+    if (process.env.NODE_ENV !== 'production') return;
+
+    if (isUsingDefaultUploadsRoot()) {
+        console.warn(
+            `[uploads] UPLOADS_ROOT is not set. In production the app will use ${uploadsRoot} as a fallback. ` +
+            'This is ephemeral on many hosts. Prefer S3 for durable storage and set UPLOADS_ROOT to a persistent disk if needed.'
+        );
         return;
     }
-
-    console.warn(
-        `[uploads] UPLOADS_ROOT is not set. Files are being stored in ${uploadsRoot}. ` +
-        'On managed hosts like Railway or Render, this directory can be wiped on redeploy or restart. ' +
-        'Set UPLOADS_ROOT to a persistent disk mount path to prevent uploaded files from disappearing.'
-    );
 };
 
 module.exports = {

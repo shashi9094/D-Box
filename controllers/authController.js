@@ -1,11 +1,13 @@
 const db = require(`../db/connection`);
 const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");    
 const crypto = require('crypto');
 const boxController = require('./boxController');
 const { logLoginHistory, isNewDeviceLogin } = require('../utils/loginHistory');
 const { createNotification } = require('../utils/notifications');
-const { sendEmail } = require('../emailService');
+const { sendOTP } = require('../utils/mailer');
+const {
+    buildSessionUser,
+} = require('../utils/profileVerification');
 const {
     comparePassword,
     getPasswordMode,
@@ -13,16 +15,12 @@ const {
 } = require('../utils/passwordAuth');
 
 const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const OTP_EXPIRY_MS = 5 * 60 * 1000;
+const OTP_MAX_ATTEMPTS = Number(process.env.OTP_MAX_ATTEMPTS || 5);
+const OTP_RESEND_COOLDOWN_MS = Number(process.env.OTP_RESEND_COOLDOWN_MS || 30 * 1000);
 
-function getAppBaseUrl(req) {
-    const configured = String(process.env.APP_BASE_URL || process.env.PUBLIC_URL || '').trim().replace(/\/+$/, '');
-    if (configured) {
-        return configured;
-    }
-
-    const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
-    const host = String(req.get('host') || '').trim();
-    return `${proto}://${host}`.replace(/\/+$/, '');
+function generateSixDigitOtp() {
+    return String(crypto.randomInt(100000, 1000000));
 }
 
 function saveSession(req) {
@@ -41,21 +39,18 @@ function saveSession(req) {
     });
 }
 
-function buildVerificationEmail(fullName, verificationUrl) {
-    const safeName = String(fullName || '').trim() || 'there';
-    return {
-        subject: 'Verify Your D-Box Account',
-        text: [
-            `Hi ${safeName},`,
-            '',
-            'Please verify your D-Box account by clicking the link below:',
-            verificationUrl,
-            '',
-            'This verification link expires in 1 hour.',
-            '',
-            'If you did not create this account, you can safely ignore this email.'
-        ].join('\n')
-    };
+function getRemainingCooldown(sentAtValue, cooldownMs = OTP_RESEND_COOLDOWN_MS) {
+    if (!sentAtValue) {
+        return 0;
+    }
+
+    const sentAt = new Date(sentAtValue).getTime();
+    if (!Number.isFinite(sentAt)) {
+        return 0;
+    }
+
+    const remainingMs = (sentAt + cooldownMs) - Date.now();
+    return remainingMs > 0 ? Math.ceil(remainingMs / 1000) : 0;
 }
 
 // SIGNUP
@@ -77,15 +72,11 @@ exports.signup = async (req, res) => {
         } = req.body;
 
         const safeInviteBoxId = Number(inviteBoxId);
-        const redirectUrl = Number.isFinite(safeInviteBoxId) && safeInviteBoxId > 0
-            ? '/dashboard'
-            : '/complete-profile';
+        const redirectUrl = '/dashboard';
 
         const normalizedEmail = String(email || '').trim().toLowerCase();
         const normalizedFullName = String(fullname || '').trim();
         const normalizedPassword = String(password || '');
-        const verificationToken = crypto.randomBytes(32).toString('hex');
-        const tokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
         if (!normalizedFullName || !normalizedEmail) {
             return res.status(400).json({ message: 'Full name and email are required' });
@@ -111,12 +102,15 @@ exports.signup = async (req, res) => {
         }
 
         const hashedPassword = await preparePasswordForStorage(normalizedPassword);
+        const verificationOtp = generateSixDigitOtp();
+        const otpExpiresAt = new Date(Date.now() + OTP_EXPIRY_MS);
+        const otpSentAt = new Date();
         const [insertResult] = await sql.query(
             `INSERT INTO users
-             (fullname, dob, email, country, capacity, purpose, role, password, verification_token, is_verified, token_expires)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-             RETURNING id, fullname AS "fullName", email, dob, country, capacity, purpose, role, is_verified, isprofilecomplete`,
-            [normalizedFullName, dob || null, normalizedEmail, country || null, capacity || null, purpose || null, 'User', hashedPassword, verificationToken, false, tokenExpiresAt]
+             (fullname, dob, email, country, capacity, purpose, role, password, is_verified, isprofilecomplete, verification_otp, otp_expires, verification_otp_attempts, verification_otp_sent_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             RETURNING id, fullname AS "fullName", email, dob, country, capacity, purpose, role, is_verified, isprofilecomplete, verification_otp, otp_expires`,
+            [normalizedFullName, dob || null, normalizedEmail, country || null, capacity || null, purpose || null, 'User', hashedPassword, false, false, verificationOtp, otpExpiresAt, 0, otpSentAt]
         );
 
         const createdUser = Array.isArray(insertResult?.rows) ? insertResult.rows[0] : insertResult;
@@ -138,37 +132,43 @@ exports.signup = async (req, res) => {
             console.error('Pending invite sync failed after signup:', inviteErr.message);
         }
 
-        const verificationUrl = `${getAppBaseUrl(req)}/verify-email?token=${verificationToken}`;
-        const emailBody = buildVerificationEmail(normalizedFullName, verificationUrl);
-        const emailResult = await sendEmail(normalizedEmail, emailBody.subject, emailBody.text);
-
-        if (!emailResult.success) {
-            console.error('Verification email send failed after signup:', emailResult.error);
-
+        const sent = await sendOTP(normalizedEmail, verificationOtp);
+        if (!sent.success) {
             await sql.query('DELETE FROM users WHERE id = ?', [createdUser.id]);
-
             return res.status(500).json({
-                message: 'Signup failed while sending verification email',
-                error: emailResult.error
+                message: 'Unable to send OTP email',
+                error: sent.error,
             });
         }
 
-        req.session.user = {
-            id: Number(createdUser.id),
+        const authState = buildSessionUser({
+            ...createdUser,
             email: normalizedEmail,
-            loginAt: Date.now(),
+            fullName: normalizedFullName,
+            isVerified: Boolean(createdUser.is_verified),
             isProfileComplete: Boolean(createdUser.isprofilecomplete),
-        };
+            profilePending: !Boolean(createdUser.is_verified),
+        }, {
+            loginAt: Date.now(),
+        });
+
+        req.session.user = authState;
         req.session.cookie.maxAge = SESSION_MAX_AGE_MS;
 
         await saveSession(req);
 
+        // delete createdUser.verification_otp;
+        // delete createdUser.otp_expires;
+
         return res.status(201).json({
-            message: 'Signup successful. Verification email sent.',
+            message: 'Signup successful',
             success: true,
             user: createdUser,
             redirectUrl,
-            authReady: true
+            authReady: true,
+            profilePending: true,
+            otpSent: true,
+            otpExpiresInSeconds: Math.floor(OTP_EXPIRY_MS / 1000),
         });
     } catch (err) {
         console.error('Signup failed:', {
@@ -189,9 +189,7 @@ exports.login = async (req, res) => {
     const password = String(req.body.password || "");
     const inviteBoxId = Number(req.body.inviteBoxId);
     const inviteToken = String(req.body.inviteToken || '').trim();
-    const redirectUrl = Number.isFinite(inviteBoxId) && inviteBoxId > 0
-        ? '/dashboard'
-        : '/home';
+    const redirectUrl = '/dashboard';
 
     if (!email || !password) {
         return res.status(400).json({ message: "Email and password are required" });
@@ -220,12 +218,6 @@ exports.login = async (req, res) => {
 
         const user = results[0];
 
-        if (!user.is_verified) {
-            return res.status(403).json({
-                message: 'Please verify your email before logging in.'
-            });
-        }
-
         const passwordMode = getPasswordMode(user.password);
 
         if (passwordMode === 'google') {
@@ -248,6 +240,15 @@ exports.login = async (req, res) => {
             console.error('Pending invite sync failed after login:', inviteErr.message);
         }
 
+        const authState = buildSessionUser({
+            ...user,
+            isVerified: Boolean(user.is_verified),
+            isProfileComplete: Boolean(user.isprofilecomplete),
+            profilePending: !Boolean(user.is_verified),
+        }, {
+            loginAt: Date.now(),
+        });
+
         let shouldNotifyNewDevice = false;
         try {
             shouldNotifyNewDevice = await isNewDeviceLogin({ userId: user.id, req });
@@ -256,11 +257,7 @@ exports.login = async (req, res) => {
         }
 
         // SESSION SET KARO (MOST IMPORTANT)
-        req.session.user = {
-            id: user.id,
-            email: user.email,
-            loginAt: Date.now()
-        };
+        req.session.user = authState;
 
         req.session.cookie.maxAge = SESSION_MAX_AGE_MS;
 
@@ -301,96 +298,21 @@ exports.login = async (req, res) => {
 
             return res.json({
                 message: "Login successful",
-                redirectUrl
+                redirectUrl,
+                profilePending: authState.profilePending,
+                isVerified: authState.isVerified,
             });
         });
     });
 };
 
-exports.verifyEmail = async (req, res) => {
-    const token = String(req.query?.token || '').trim();
-
-    if (!token) {
-        return res.status(400).json({
-            success: false,
-            error: 'Verification token is required'
-        });
-    }
-
-    try {
-        const [rows] = await db.promise().query(
-            'SELECT id, email, verification_token, token_expires, is_verified FROM users WHERE verification_token = ? LIMIT 1',
-            [token]
-        );
-
-        if (!rows.length) {
-            return res.status(400).json({
-                success: false,
-                error: 'Invalid verification token'
-            });
-        }
-
-        const user = rows[0];
-        const expiresAt = user.token_expires ? new Date(user.token_expires).getTime() : NaN;
-
-        if (Number.isFinite(expiresAt) && expiresAt < Date.now()) {
-            return res.status(400).json({
-                success: false,
-                error: 'Verification token has expired'
-            });
-        }
-
-        await db.promise().query(
-            `UPDATE users
-             SET is_verified = TRUE,
-                 verification_token = NULL,
-                 token_expires = NULL
-             WHERE id = ?`,
-            [user.id]
-        );
-
-        return res.json({
-            success: true,
-            message: 'Email verified successfully. You can now log in.'
-        });
-    } catch (error) {
-        console.error('verifyEmail failed:', error.message);
-        return res.status(500).json({
-            success: false,
-            error: 'Unable to verify email'
-        });
-    }
+exports.verifyEmail = async (_req, res) => {
+    return res.status(410).json({
+        message: 'Email link verification is no longer supported. Use OTP verification instead.'
+    });
 };
 
-// PASSWORD RESET
-exports.resetPassword = async (req, res) => {
-    const { email, newPassword } = req.body;
-
-    if (!email || !newPassword) {
-        return res.status(400).json({ message: "Email and new password are required" });
-    }
-
-    try {
-        // Hash new password
-        const hashedNewPassword = await bcrypt.hash(newPassword, 10);
-
-        const sql = `UPDATE users SET password = ? WHERE email = ?`;
-        db.query(sql, [hashedNewPassword, email], (err, result) => {
-            if (err) {
-                return res.status(500).json({ message: "Something went wrong", error: err });
-            }
-            if (result.affectedRows === 0) {
-                return res.status(404).json({ message: "User not found" });
-            }
-            res.json({ message: "Password reset successful" });
-        });
-    } catch (err) {
-        return res.status(500).json({ message: "Error hashing password", error: err });
-    }
-};
-
-// Send OTP to currently authenticated user's email for inline verification
-exports.sendOtp = async (req, res) => {
+async function issueVerificationOtp(req, res) {
     try {
         const userId = Number(req.user?.id || req.session?.user?.id || 0);
         if (!Number.isFinite(userId) || userId <= 0) {
@@ -398,43 +320,59 @@ exports.sendOtp = async (req, res) => {
         }
 
         const sql = db.promise();
-        const [rows] = await sql.query('SELECT id, email, is_verified, otp_sent_at, otp_attempts FROM users WHERE id = ? LIMIT 1', [userId]);
+        const [rows] = await sql.query(
+            'SELECT id, email, is_verified, verification_otp_sent_at FROM users WHERE id = ? LIMIT 1',
+            [userId]
+        );
         const user = rows[0] || null;
         if (!user) return res.status(404).json({ message: 'User not found' });
         if (user.is_verified) return res.status(400).json({ message: 'Already verified' });
 
-        const now = Date.now();
-        const lastSent = user.otp_sent_at ? new Date(user.otp_sent_at).getTime() : 0;
-        const cooldownMs = Number(process.env.OTP_RESEND_COOLDOWN_MS || 60 * 1000);
-        if (lastSent && (now - lastSent) < cooldownMs) {
-            const wait = Math.ceil((cooldownMs - (now - lastSent)) / 1000);
+        const cooldownSeconds = getRemainingCooldown(user.verification_otp_sent_at);
+        if (cooldownSeconds > 0) {
+            const wait = cooldownSeconds;
             return res.status(429).json({ message: 'Too many requests', retryAfterSeconds: wait });
         }
 
         // Generate 6-digit OTP
-        const otp = String(crypto.randomInt(100000, 1000000));
-        const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-        const hashedOtp = await bcrypt.hash(otp, 10);
+        const otp = generateSixDigitOtp();
+        const otpExpiry = new Date(Date.now() + OTP_EXPIRY_MS);
 
-        // Save hashed OTP and expiry
-        await sql.query('UPDATE users SET otp_hash = ?, otp_expiry = ?, otp_sent_at = ?, otp_attempts = 0 WHERE id = ?', [hashedOtp, otpExpiry, new Date(), userId]);
+        // Save OTP and expiry
+        await sql.query(
+            `UPDATE users
+             SET verification_otp = ?,
+                 otp_expires = ?,
+                 verification_otp_attempts = 0,
+                 verification_otp_sent_at = ?
+             WHERE id = ?`,
+            [otp, otpExpiry, new Date(), userId]
+        );
 
         // Send email
-        const subject = 'Your D-Box verification code';
-        const body = `Your verification code is:\n\n${otp}\n\nThis code expires in 10 minutes.`;
-        const emailResult = await sendEmail(user.email, subject, body);
+        const emailResult = await sendOTP(user.email, otp);
 
         if (!emailResult.success) {
             console.error('sendOtp: email send failed', emailResult.error);
             return res.status(500).json({ message: 'Unable to send OTP' });
         }
 
-        return res.json({ success: true, message: 'OTP sent', cooldownSeconds: Math.ceil(cooldownMs / 1000) });
+        return res.json({
+            success: true,
+            message: 'OTP sent',
+            cooldownSeconds: Math.ceil(OTP_RESEND_COOLDOWN_MS / 1000),
+            expiresInSeconds: Math.floor(OTP_EXPIRY_MS / 1000),
+        });
     } catch (error) {
         console.error('sendOtp failed:', error);
         return res.status(500).json({ message: 'Unable to send OTP', error: error.message });
     }
-};
+}
+
+// Send OTP to currently authenticated user's email for inline verification
+exports.sendOtp = async (req, res) => issueVerificationOtp(req, res);
+
+exports.resendOtp = async (req, res) => issueVerificationOtp(req, res);
 
 // Verify OTP submitted by authenticated user
 exports.verifyOtp = async (req, res) => {
@@ -450,41 +388,194 @@ exports.verifyOtp = async (req, res) => {
         }
 
         const sql = db.promise();
-        const [rows] = await sql.query('SELECT id, email, otp_hash, otp_expiry, otp_attempts FROM users WHERE id = ? LIMIT 1', [userId]);
+        const [rows] = await sql.query(
+            'SELECT id, email, verification_otp, otp_expires, verification_otp_attempts FROM users WHERE id = ? LIMIT 1',
+            [userId]
+        );
         const user = rows[0] || null;
         if (!user) return res.status(404).json({ message: 'User not found' });
-        if (!user.otp_hash || !user.otp_expiry) return res.status(400).json({ message: 'No OTP requested' });
+        if (!user.verification_otp || !user.otp_expires) return res.status(400).json({ message: 'No OTP requested' });
+
+        if (Number(user.verification_otp_attempts || 0) >= OTP_MAX_ATTEMPTS) {
+            return res.status(429).json({ message: 'Maximum OTP attempts exceeded. Request a new OTP.' });
+        }
 
         const now = Date.now();
-        const expiry = user.otp_expiry ? new Date(user.otp_expiry).getTime() : 0;
+        const expiry = user.otp_expires ? new Date(user.otp_expires).getTime() : 0;
         if (!expiry || now > expiry) {
+            await sql.query(
+                'UPDATE users SET verification_otp = NULL, otp_expires = NULL, verification_otp_attempts = 0, verification_otp_sent_at = NULL WHERE id = ?',
+                [userId]
+            );
             return res.status(400).json({ message: 'OTP expired' });
         }
 
-        const maxAttempts = Number(process.env.OTP_MAX_ATTEMPTS || 5);
-        if (Number(user.otp_attempts || 0) >= maxAttempts) {
-            return res.status(429).json({ message: 'Too many attempts' });
-        }
-
-        const match = await bcrypt.compare(code, String(user.otp_hash || ''));
-        if (!match) {
-            // increment attempts
-            await sql.query('UPDATE users SET otp_attempts = COALESCE(otp_attempts,0) + 1 WHERE id = ?', [userId]);
+        if (String(user.verification_otp || '').trim() !== code) {
+            await sql.query(
+                'UPDATE users SET verification_otp_attempts = COALESCE(verification_otp_attempts, 0) + 1 WHERE id = ?',
+                [userId]
+            );
             return res.status(400).json({ message: 'Invalid code' });
         }
 
         // Success: clear OTP and mark verified
-        await sql.query('UPDATE users SET is_verified = TRUE, otp_hash = NULL, otp_expiry = NULL, otp_sent_at = NULL, otp_attempts = 0, status = ? WHERE id = ?', ['active', userId]);
+        await sql.query(
+            `UPDATE users
+             SET is_verified = TRUE,
+                 isprofilecomplete = TRUE,
+                 verification_otp = NULL,
+                 otp_expires = NULL,
+                 verification_otp_attempts = 0,
+                 verification_otp_sent_at = NULL,
+                 status = ?
+             WHERE id = ?`,
+            ['active', userId]
+        );
 
         // Update session if present
         if (req.session?.user) {
-            req.session.user.isVerified = true;
+            req.session.user = {
+                ...req.session.user,
+                isVerified: true,
+                isProfileComplete: true,
+                profilePending: false,
+            };
+            if (typeof req.session.save === 'function') {
+                await saveSession(req);
+            }
         }
 
-        return res.json({ success: true, message: 'Email verified' });
+        return res.json({ success: true, message: 'Profile verified successfully', profilePending: false });
     } catch (error) {
         console.error('verifyOtp failed:', error);
         return res.status(500).json({ message: 'Unable to verify OTP', error: error.message });
+    }
+};
+
+// Forgot password: issue OTP to registered email
+exports.forgotPassword = async (req, res) => {
+    try {
+        const email = String(req.body?.email || '').trim().toLowerCase();
+        if (!email) {
+            return res.status(400).json({ message: 'Email is required' });
+        }
+
+        const sql = db.promise();
+        const [rows] = await sql.query(
+            'SELECT id, email, reset_otp_sent_at FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1',
+            [email]
+        );
+
+        if (!rows.length) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        const user = rows[0];
+        const cooldownSeconds = getRemainingCooldown(user.reset_otp_sent_at);
+        if (cooldownSeconds > 0) {
+            return res.status(429).json({ message: 'Too many requests', retryAfterSeconds: cooldownSeconds });
+        }
+
+        const otp = generateSixDigitOtp();
+        const expiry = new Date(Date.now() + OTP_EXPIRY_MS);
+        const sentAt = new Date();
+
+        await sql.query(
+            `UPDATE users
+             SET reset_otp = ?,
+                 reset_otp_expires = ?,
+                 reset_otp_attempts = 0,
+                 reset_otp_sent_at = ?
+             WHERE id = ?`,
+            [otp, expiry, sentAt, user.id]
+        );
+
+        const sent = await sendOTP(user.email, otp);
+        if (!sent.success) {
+            return res.status(500).json({ message: 'Unable to send OTP email', error: sent.error });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'OTP sent to registered email',
+            cooldownSeconds: Math.ceil(OTP_RESEND_COOLDOWN_MS / 1000),
+            expiresInSeconds: Math.floor(OTP_EXPIRY_MS / 1000),
+        });
+    } catch (error) {
+        return res.status(500).json({ message: 'Unable to process forgot password', error: error.message });
+    }
+};
+
+// Reset password with OTP
+exports.resetPassword = async (req, res) => {
+    try {
+        const email = String(req.body?.email || '').trim().toLowerCase();
+        const otp = String(req.body?.otp || '').trim();
+        const newPassword = String(req.body?.newPassword || '');
+
+        if (!email || !otp || !newPassword) {
+            return res.status(400).json({ message: 'Email, OTP and new password are required' });
+        }
+
+        if (!/^[0-9]{6}$/.test(otp)) {
+            return res.status(400).json({ message: 'Invalid OTP format' });
+        }
+
+        if (newPassword.length < 8) {
+            return res.status(400).json({ message: 'Password must be at least 8 characters' });
+        }
+
+        const sql = db.promise();
+        const [rows] = await sql.query(
+            `SELECT id, reset_otp, reset_otp_expires, reset_otp_attempts
+             FROM users
+             WHERE LOWER(email) = LOWER(?)
+             LIMIT 1`,
+            [email]
+        );
+
+        if (!rows.length) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        const user = rows[0];
+        if (!user.reset_otp || !user.reset_otp_expires) {
+            return res.status(400).json({ message: 'No OTP requested' });
+        }
+
+        if (Number(user.reset_otp_attempts || 0) >= OTP_MAX_ATTEMPTS) {
+            return res.status(429).json({ message: 'Maximum OTP attempts exceeded. Request a new OTP.' });
+        }
+
+        const expiryTs = new Date(user.reset_otp_expires).getTime();
+        if (!Number.isFinite(expiryTs) || Date.now() > expiryTs) {
+            await sql.query(
+                'UPDATE users SET reset_otp = NULL, reset_otp_expires = NULL, reset_otp_attempts = 0, reset_otp_sent_at = NULL WHERE id = ?',
+                [user.id]
+            );
+            return res.status(400).json({ message: 'OTP expired' });
+        }
+
+        if (String(user.reset_otp || '').trim() !== otp) {
+            await sql.query('UPDATE users SET reset_otp_attempts = COALESCE(reset_otp_attempts, 0) + 1 WHERE id = ?', [user.id]);
+            return res.status(400).json({ message: 'Invalid OTP' });
+        }
+
+        const hashedNewPassword = await preparePasswordForStorage(newPassword);
+        await sql.query(
+            `UPDATE users
+             SET password = ?,
+                 reset_otp = NULL,
+                 reset_otp_expires = NULL,
+                 reset_otp_attempts = 0,
+                 reset_otp_sent_at = NULL
+             WHERE id = ?`,
+            [hashedNewPassword, user.id]
+        );
+
+        return res.status(200).json({ success: true, message: 'Password reset successful' });
+    } catch (error) {
+        return res.status(500).json({ message: 'Unable to reset password', error: error.message });
     }
 };
 
@@ -551,7 +642,7 @@ exports.acceptInviteForSession = async (req, res) => {
 
         return res.json({
             success: true,
-            redirectUrl: `/uploads?boxId=${inviteBoxId}`,
+            redirectUrl: '/dashboard',
             message: 'Invite processed for current user'
         });
     } catch (error) {

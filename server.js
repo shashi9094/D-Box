@@ -4,7 +4,7 @@ const cors = require('cors');
 const app = express();
 const path = require('path');
 
-const db = require('./db/connection');
+// db connection will be required after session store setup
 const {
     uploadsRoot,
     defaultUploadsRoot,
@@ -15,9 +15,12 @@ const {
 require('./config/googleAuth'); // Google Strategy load
 const passport = require('passport');
 const session = require('express-session');
-const authController = require('./controllers/authController');
 const isProduction = process.env.NODE_ENV === 'production';
 const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Use Postgres-backed session store in production to avoid MemoryStore warning
+const PgSession = require('connect-pg-simple')(session);
+const db = require('./db/connection');
 
 ensureUploadDirectories();
 logUploadsStorageWarning();
@@ -42,16 +45,39 @@ app.use(express.urlencoded({ extended: true }));
 app.set('trust proxy', 1);
 
 // Session
-app.use(session({
-    secret: process.env.SESSION_SECRET || 'secretKey',
+if (isProduction && !process.env.SESSION_SECRET) {
+    console.error('SESSION_SECRET must be set in production. Aborting startup.');
+    process.exit(1);
+}
+
+const sessionOptions = {
+    secret: process.env.SESSION_SECRET || 'dev-secret',
     resave: false,
     saveUninitialized: false,
     cookie: {
         maxAge: SESSION_MAX_AGE_MS,
-        secure: false,
-        sameSite: 'lax'
+        secure: isProduction,        // require HTTPS in production
+        httpOnly: true,
+        sameSite: isProduction ? 'lax' : 'lax'
     }
-}));
+};
+
+if (isProduction) {
+    const store = new PgSession({
+        pool: db.pool,
+        tableName: 'session'
+    });
+
+    store.on('error', (error) => {
+        console.error('Session store error:', error.message || error);
+    });
+
+    sessionOptions.store = store;
+} else {
+    console.warn('Using in-memory session store in development. Set NODE_ENV=production to use PostgreSQL session storage.');
+}
+
+app.use(session(sessionOptions));
 
 // ⭐ VERY IMPORTANT (Google Login ke liye)
 app.use(passport.initialize());
@@ -214,8 +240,6 @@ app.get('/test-email', async (req, res) => {
         });
     }
 });
-
-app.get('/verify-email', authController.verifyEmail);
 
 // Auth middleware
 function isAuth(req, res, next) {
