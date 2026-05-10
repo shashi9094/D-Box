@@ -34,6 +34,13 @@ router.post('/upload', upload.single('file'), (req, res) => {
     }
 });
 
+// More specific routes MUST come before general routes
+// Get signed URL for file (to open/download from S3)
+router.get('/:id/signed-url', fileController.getSignedUrl);
+
+// Get all files in a box with signed URLs
+router.get('/box/:boxId', fileController.getBoxFiles);
+
 // Dynamic route param must be named :id to access req.params.id
 router.get('/:id', fileController.getFileById);
 

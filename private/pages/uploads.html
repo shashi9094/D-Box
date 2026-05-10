@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
   <script src="/scripts/auth-guard.js" defer></script>
   <script src="/scripts/back-nav.js" defer></script>
+  <script src="/scripts/fileUrlService.js" defer></script>
 </head>
 <body class="dashboard-page">
   <div class="main-layout uploads-page-layout">
@@ -758,8 +759,25 @@
           openRole = 'button';
           openLabel = `Open folder ${name}`;
         } else if (isOpenable) {
-          openItem = () => {
-            window.open(safePath, '_blank', 'noopener');
+          openItem = async () => {
+            console.log(`[Uploads] Opening file ${item.id}...`);
+            // Use fileUrlService to fetch signed URL and open
+            if (typeof fileUrlService !== 'undefined') {
+              fileUrlService.openFile(item.id, {
+                target: '_blank',
+                errorCallback: (error) => {
+                  console.error('✗ Error opening file:', error);
+                  alert(`Could not open file: ${error}`);
+                },
+                successCallback: () => {
+                  console.log(`✓ File opened successfully`);
+                },
+              });
+            } else {
+              // Fallback if fileUrlService is not available (shouldn't happen)
+              console.warn('fileUrlService not available, using direct path');
+              window.open(safePath, '_blank', 'noopener');
+            }
           };
           openRole = 'link';
           openLabel = `Open ${name}`;
