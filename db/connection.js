@@ -1,8 +1,39 @@
 require('dotenv').config();
 const { Pool } = require('pg');
 
-const connectionString = String(process.env.DATABASE_URL || '').trim();
-const connectionTimeoutMillis = Number(process.env.PG_CONNECT_TIMEOUT_MS || 10000);
+const rawConnectionString = String(process.env.DATABASE_URL || '').trim();
+const connectionTimeoutMillis = Number(process.env.PG_CONNECT_TIMEOUT_MS || 30000);
+
+const normalizeRailwayConnectionString = (value) => {
+    const input = String(value || '').trim();
+    if (!input) return input;
+
+    const isRailwayRuntime = Boolean(
+        process.env.RAILWAY_ENVIRONMENT ||
+        process.env.RAILWAY_SERVICE_ID ||
+        process.env.RAILWAY_PROJECT_ID
+    );
+
+    if (!isRailwayRuntime) {
+        return input;
+    }
+
+    try {
+        const parsed = new URL(input);
+        if (/\.up\.railway\.app$/i.test(parsed.hostname)) {
+            const previousHost = parsed.hostname;
+            parsed.hostname = 'postgres.railway.internal';
+            console.log(`ℹ️ Normalized Railway DB host from ${previousHost} to ${parsed.hostname}`);
+            return parsed.toString();
+        }
+    } catch (error) {
+        console.warn('Could not parse DATABASE_URL for Railway host normalization. Using raw value.');
+    }
+
+    return input;
+};
+
+const connectionString = normalizeRailwayConnectionString(rawConnectionString);
 
 if (!connectionString) {
     console.error('❌ DATABASE_URL is not set. PostgreSQL connection will fail until this is configured.');
@@ -20,7 +51,7 @@ const getConnectionTarget = () => {
 };
 
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString,
     connectionTimeoutMillis
 });
 
