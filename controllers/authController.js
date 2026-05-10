@@ -6,6 +6,11 @@ const boxController = require('./boxController');
 const { logLoginHistory, isNewDeviceLogin } = require('../utils/loginHistory');
 const { createNotification } = require('../utils/notifications');
 const { sendEmail } = require('../emailService');
+const {
+    comparePassword,
+    getPasswordMode,
+    preparePasswordForStorage,
+} = require('../utils/passwordAuth');
 
 const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -90,6 +95,10 @@ exports.signup = async (req, res) => {
             return res.status(400).json({ message: 'Password is required' });
         }
 
+        if (normalizedPassword.length < 8) {
+            return res.status(400).json({ message: 'Password must be at least 8 characters' });
+        }
+
         const sql = db.promise();
 
         const [existingRows] = await sql.query(
@@ -101,7 +110,7 @@ exports.signup = async (req, res) => {
             return res.status(400).json({ message: 'Email already exists' });
         }
 
-        const hashedPassword = await bcrypt.hash(normalizedPassword, 10);
+        const hashedPassword = await preparePasswordForStorage(normalizedPassword);
         const [insertResult] = await sql.query(
             `INSERT INTO users
              (fullname, dob, email, country, capacity, purpose, role, password, verification_token, is_verified, token_expires)
@@ -217,20 +226,17 @@ exports.login = async (req, res) => {
             });
         }
 
-        let isMatch = false;
+        const passwordMode = getPasswordMode(user.password);
 
-        // Support both bcrypt-hashed and legacy plain-text passwords.
-        if (typeof user.password === "string" && user.password.startsWith("$2")) {
-            isMatch = await bcrypt.compare(password, user.password);
-        } else {
-            isMatch = password === user.password;
-            if (isMatch) {
-                const upgradedHash = await bcrypt.hash(password, 10);
-                db.query("UPDATE users SET password = ? WHERE email = ?", [upgradedHash, email], () => {
-                    // Best effort migration; login should continue even if update fails.
-                });
-            }
+        if (passwordMode === 'google') {
+            return res.status(403).json({ message: 'Please continue with Google login' });
         }
+
+        if (passwordMode !== 'bcrypt') {
+            return res.status(401).json({ message: 'Invalid password' });
+        }
+
+        const isMatch = await comparePassword(password, user.password);
 
         if (!isMatch) {
             return res.status(400).json({ message: "Invalid password" });

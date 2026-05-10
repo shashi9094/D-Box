@@ -8,6 +8,7 @@ const multer = require("multer");
 const sharp = require("sharp");
 const authController = require("../controllers/authController");
 const db = require("../db/connection");
+const { GOOGLE_AUTH_PASSWORD } = require("../utils/passwordAuth");
 const { logLoginHistory, isNewDeviceLogin } = require("../utils/loginHistory");
 const { loadGoogleOAuthConfig } = require("../utils/googleOAuthConfig");
 const {
@@ -706,12 +707,14 @@ router.post("/change-password", requireSessionUser, async (req, res) => {
     }
 
     const savedPassword = String(rows[0].password || "");
+    if (savedPassword === GOOGLE_AUTH_PASSWORD) {
+      return res.status(403).json({ message: "Please continue with Google login" });
+    }
+
     let isMatch = false;
 
     if (savedPassword.startsWith("$2")) {
       isMatch = await bcrypt.compare(currentPassword, savedPassword);
-    } else {
-      isMatch = currentPassword === savedPassword;
     }
 
     if (!isMatch) {

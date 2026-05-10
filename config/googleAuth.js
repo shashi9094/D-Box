@@ -2,6 +2,7 @@ const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const db = require("../db/connection");
 const { loadGoogleOAuthConfig } = require("../utils/googleOAuthConfig");
+const { GOOGLE_AUTH_PASSWORD } = require("../utils/passwordAuth");
 
 const googleConfig = loadGoogleOAuthConfig();
 const { clientID, clientSecret, callbackURL } = googleConfig;
@@ -41,7 +42,7 @@ if (googleConfig.enabled) {
         try {
           const sql = db.promise();
           const [existingRows] = await sql.query(
-            `SELECT id, fullname AS "fullName", email, googleid, dob, country, capacity, purpose, role, isprofilecomplete
+            `SELECT id, fullname AS "fullName", email, password, googleid, dob, country, capacity, purpose, role, isprofilecomplete
              FROM users
              WHERE LOWER(email) = LOWER(?) OR googleid = ?
              ORDER BY CASE
@@ -55,9 +56,11 @@ if (googleConfig.enabled) {
 
           if (existingRows.length > 0) {
             const existing = existingRows[0];
-            if (!existing.googleid) {
-              await sql.query('UPDATE users SET googleid = ?, is_verified = TRUE WHERE id = ?', [googleId, existing.id]);
+            if (!existing.googleid || existing.password !== GOOGLE_AUTH_PASSWORD) {
+              await sql.query('UPDATE users SET googleid = ?, password = ?, is_verified = TRUE WHERE id = ?', [googleId, GOOGLE_AUTH_PASSWORD, existing.id]);
               existing.googleid = googleId;
+              existing.password = GOOGLE_AUTH_PASSWORD;
+              existing.is_verified = true;
             }
 
             return done(null, normalizeUserRow(existing, name, email, googleId));
@@ -65,15 +68,16 @@ if (googleConfig.enabled) {
 
           const [insertResult] = await sql.query(
             `INSERT INTO users
-             (fullname, email, googleid, is_verified)
-             VALUES (?, ?, ?, TRUE)
+             (fullname, email, googleid, password, is_verified)
+             VALUES (?, ?, ?, ?, TRUE)
              ON CONFLICT (email)
              DO UPDATE SET
                googleid = COALESCE(users.googleid, EXCLUDED.googleid),
                fullname = COALESCE(NULLIF(users.fullname, ''), EXCLUDED.fullname),
+               password = EXCLUDED.password,
                is_verified = COALESCE(users.is_verified, TRUE)
              RETURNING id, fullname AS "fullName", email, googleid, dob, country, capacity, purpose, role, isprofilecomplete`,
-            [name, email, googleId]
+            [name, email, googleId, GOOGLE_AUTH_PASSWORD]
           );
 
           const created = insertResult.rows?.[0] || insertResult;

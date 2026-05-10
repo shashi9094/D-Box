@@ -87,7 +87,7 @@ async function ensureCoreTables() {
             capacity TEXT NULL,
             purpose TEXT NULL,
             role TEXT NULL DEFAULT 'User',
-            password TEXT NULL,
+            password TEXT NOT NULL,
             verification_token TEXT NULL,
             is_verified BOOLEAN NOT NULL DEFAULT FALSE,
             token_expires TIMESTAMPTZ NULL,
@@ -157,7 +157,13 @@ async function ensureUsersOAuthSchema() {
     await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS otp_attempts INT NOT NULL DEFAULT 0');
     await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS otp_sent_at TIMESTAMPTZ NULL');
     await pool.query("ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS status TEXT NULL DEFAULT 'active'");
-    await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN password DROP NOT NULL');
+    await pool.query(`
+        UPDATE users
+        SET password = 'google_auth'
+        WHERE password IS NULL
+    `);
+    await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN password SET DEFAULT \'google_auth\'');
+    await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN password SET NOT NULL');
     await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN capacity DROP NOT NULL');
     await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN purpose DROP NOT NULL');
     await pool.query('ALTER TABLE IF EXISTS users ALTER COLUMN role DROP NOT NULL');
