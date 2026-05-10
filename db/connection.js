@@ -21,10 +21,7 @@ const getConnectionTarget = () => {
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    connectionTimeoutMillis,
-    ssl: {
-        rejectUnauthorized: false
-    }
+    connectionTimeoutMillis
 });
 
 pool.on('error', (error) => {
@@ -227,8 +224,9 @@ const promise = () => ({
 
 const end = () => pool.end();
 
-pool.query('SELECT 1')
-    .then(() => {
+pool.connect()
+    .then((client) => {
+        client.release();
         console.log('✅ PostgreSQL connected');
         return ensureCoreTables();
     })
@@ -242,8 +240,7 @@ pool.query('SELECT 1')
         console.error('DB connection details:', {
             code: error && error.code,
             target,
-            hasDatabaseUrl: Boolean(connectionString),
-            sslEnabled: true,
+            hasDatabaseUrl: Boolean(connectionString)
         });
     });
 
