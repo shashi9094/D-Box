@@ -263,6 +263,7 @@
       e.preventDefault();
 
       const submitButton = this.querySelector('button[type="submit"]');
+      const originalButtonText = submitButton.textContent;
       const password = document.getElementById("password").value;
       const confirmPassword = document.getElementById("confirmPassword").value;
 
@@ -284,7 +285,10 @@
       };
 
       try {
+        // Set loading state
         submitButton.disabled = true;
+        submitButton.textContent = 'Creating account...';
+        console.log('Starting signup with data:', { email: data.email });
 
         const response = await fetch("/api/auth/signup", {
           method: "POST",
@@ -295,32 +299,72 @@
           body: JSON.stringify(data)
         });
 
-        const result = await response.json().catch(() => ({}));
-        console.log('signup response:', { status: response.status, ok: response.ok, result });
+        console.log('Signup response received:', { 
+          status: response.status, 
+          ok: response.ok,
+          statusText: response.statusText
+        });
 
-        if (!response.ok) {
-          alert(result.message || "Signup failed");
+        // Parse JSON response
+        let result = {};
+        try {
+          result = await response.json();
+          console.log('Signup response data:', result);
+        } catch (jsonErr) {
+          console.error('Failed to parse signup response JSON:', jsonErr);
+          alert('Server response invalid. Please try again.');
+          submitButton.disabled = false;
+          submitButton.textContent = originalButtonText;
           return;
         }
 
+        // Check for success
+        if (!response.ok || !result.success) {
+          const errorMsg = result.message || 'Signup failed. Please try again.';
+          console.error('Signup failed:', errorMsg);
+          alert(errorMsg);
+          submitButton.disabled = false;
+          submitButton.textContent = originalButtonText;
+          return;
+        }
+
+        console.log('Signup successful! User:', {
+          id: result.user?.id,
+          email: result.user?.email,
+          redirectUrl: result.redirectUrl
+        });
+
+        // Show success feedback
+        submitButton.textContent = 'Account created successfully!';
+        
+        // Optional: verify session
         try {
           const sessionRes = await fetch('/api/auth/session', {
             credentials: 'include',
             cache: 'no-store'
           });
           const sessionData = await sessionRes.json().catch(() => ({}));
-          console.log('signup session check:', { status: sessionRes.status, sessionData });
+          console.log('Session verified after signup:', { 
+            authenticated: sessionData.authenticated,
+            userId: sessionData.user?.id 
+          });
         } catch (sessionErr) {
-          console.warn('Session confirmation after signup failed:', sessionErr);
+          console.warn('Session verification failed (non-critical):', sessionErr.message);
         }
 
-        window.location.href = result.redirectUrl || "/complete-profile";
+        // Redirect to dashboard or complete-profile
+        const redirectUrl = result.redirectUrl || '/complete-profile';
+        console.log('Redirecting to:', redirectUrl);
+        window.location.href = redirectUrl;
 
       } catch (err) {
-        console.error('Signup submit failed:', err);
-        alert("Server error!");
-      } finally {
+        console.error('Signup exception:', {
+          message: err.message,
+          stack: err.stack
+        });
+        alert('An unexpected error occurred. Please try again.');
         submitButton.disabled = false;
+        submitButton.textContent = originalButtonText;
       }
     });
 
