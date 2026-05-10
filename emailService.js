@@ -6,6 +6,14 @@ const awsSecretAccessKey = String(process.env.AWS_SECRET_ACCESS_KEY || '').trim(
 const awsRegion = String(process.env.AWS_REGION || '').trim();
 const smtpFrom = String(process.env.SMTP_FROM || '').trim();
 
+const summarizeSesError = (error) => ({
+  message: error?.message || 'SES send failed',
+  code: error?.name || error?.code || null,
+  requestId: error?.$metadata?.requestId || null,
+  httpStatusCode: error?.$metadata?.httpStatusCode || null,
+  stack: error?.stack || null,
+});
+
 // SES Client
 const sesClient = new SESClient({
   region: awsRegion,
@@ -17,7 +25,10 @@ const sesClient = new SESClient({
 
 console.log('AWS SES email service initialized', {
   region: awsRegion || '(missing)',
-  from: smtpFrom || '(missing)'
+  from: smtpFrom || '(missing)',
+  hasAccessKey: Boolean(awsAccessKeyId),
+  hasSecretKey: Boolean(awsSecretAccessKey),
+  senderIdentityLooksValid: Boolean(smtpFrom && smtpFrom.includes('@')),
 });
 
 function extractFirstUrl(text) {
@@ -138,11 +149,11 @@ async function sendEmail(to, subject, text) {
     };
 
   } catch (error) {
-    console.error("SES Error:", error);
+    console.error("SES Error:", summarizeSesError(error));
 
     return {
       success: false,
-      error: error.message
+      ...summarizeSesError(error)
     };
   }
 }

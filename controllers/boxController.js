@@ -320,7 +320,7 @@ const getMembership = async (boxId, userId) => {
     }
 
     const [rows] = await sql.query(
-        'SELECT role FROM box_members WHERE box_id = ? AND user_id = ? LIMIT 1',
+        'SELECT box_members.role AS role FROM box_members WHERE box_id = ? AND user_id = ? LIMIT 1',
         [boxId, userId]
     );
 
@@ -351,7 +351,7 @@ const getAdminRecipientsForBox = async (boxId) => {
          FROM (
             SELECT user_id FROM boxes WHERE id = ?
             UNION ALL
-            SELECT user_id FROM box_members WHERE box_id = ? AND role = 'admin'
+            SELECT user_id FROM box_members WHERE box_id = ? AND box_members.role = 'admin'
          ) admin_users`,
         [boxId, boxId]
     );
@@ -470,7 +470,7 @@ exports.acceptPendingInvitesForUser = async (userId, email, inviteToken = null) 
 
     const inviteParams = [normalizedEmail];
     const inviteSqlParts = [
-        `SELECT id, box_id, role, invited_by, invite_token
+        `SELECT id, box_id, box_invites.role AS role, invited_by, invite_token
          FROM box_invites
          WHERE email = ? AND status = 'pending'`
     ];
@@ -500,10 +500,10 @@ exports.acceptPendingInvitesForUser = async (userId, email, inviteToken = null) 
         }
 
         await sql.query(
-            `INSERT INTO box_members (box_id, user_id, role, added_by)
+            `INSERT INTO box_members AS bm (box_id, user_id, role, added_by)
              VALUES (?, ?, ?, ?)
              ON CONFLICT (box_id, user_id) DO UPDATE SET
-                role = CASE WHEN role = 'admin' THEN 'admin' ELSE EXCLUDED.role END,
+                role = CASE WHEN bm.role = 'admin' THEN 'admin' ELSE EXCLUDED.role END,
                 added_by = EXCLUDED.added_by`,
             [invite.box_id, userId, invite.role, invite.invited_by]
         );

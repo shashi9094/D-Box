@@ -6,6 +6,16 @@ const user = String(process.env.BREVO_SMTP_USER || '').trim();
 const pass = String(process.env.BREVO_SMTP_PASS || '').trim();
 const senderEmail = String(process.env.SMTP_FROM || user || 'no-reply@mydbox.local').trim();
 
+const isEmail = (value) => /.+@.+\..+/.test(String(value || '').trim());
+
+const summarizeMailerError = (error) => ({
+    message: error?.message || 'Failed to send OTP email',
+    code: error?.code || error?.name || null,
+    response: error?.response || error?.responseCode || null,
+    command: error?.command || null,
+    stack: error?.stack || null,
+});
+
 const transporter = nodemailer.createTransport({
     host,
     port,
@@ -15,6 +25,22 @@ const transporter = nodemailer.createTransport({
         pass,
     },
 });
+
+console.log('OTP mailer initialized', {
+    host,
+    port,
+    hasCredentials: Boolean(user && pass),
+    senderEmail,
+    senderEmailValid: isEmail(senderEmail),
+});
+
+transporter.verify()
+    .then(() => {
+        console.log('OTP mailer transporter verified successfully');
+    })
+    .catch((error) => {
+        console.error('OTP mailer transporter verify failed:', summarizeMailerError(error));
+    });
 
 async function sendOTP(email, otp) {
     const recipient = String(email || '').trim().toLowerCase();
@@ -51,7 +77,12 @@ async function sendOTP(email, otp) {
 
         return { success: true, messageId: info.messageId };
     } catch (error) {
-        return { success: false, error: error.message || 'Failed to send OTP email' };
+        console.error('OTP EMAIL ERROR:', summarizeMailerError(error));
+
+        return {
+            success: false,
+            ...summarizeMailerError(error),
+        };
     }
 }
 

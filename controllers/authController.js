@@ -138,6 +138,9 @@ exports.signup = async (req, res) => {
             return res.status(500).json({
                 message: 'Unable to send OTP email',
                 error: sent.error,
+                code: sent.code || null,
+                response: sent.response || null,
+                stack: sent.stack || null,
             });
         }
 
@@ -353,8 +356,14 @@ async function issueVerificationOtp(req, res) {
         const emailResult = await sendOTP(user.email, otp);
 
         if (!emailResult.success) {
-            console.error('sendOtp: email send failed', emailResult.error);
-            return res.status(500).json({ message: 'Unable to send OTP' });
+            console.error('sendOtp: email send failed', emailResult);
+            return res.status(500).json({
+                message: 'Unable to send OTP email',
+                error: emailResult.error,
+                code: emailResult.code || null,
+                response: emailResult.response || null,
+                stack: emailResult.stack || null,
+            });
         }
 
         return res.json({
@@ -365,7 +374,12 @@ async function issueVerificationOtp(req, res) {
         });
     } catch (error) {
         console.error('sendOtp failed:', error);
-        return res.status(500).json({ message: 'Unable to send OTP', error: error.message });
+        return res.status(500).json({
+            message: 'Unable to send OTP email',
+            error: error.message,
+            code: error.code || null,
+            stack: error.stack || null,
+        });
     }
 }
 
@@ -492,7 +506,14 @@ exports.forgotPassword = async (req, res) => {
 
         const sent = await sendOTP(user.email, otp);
         if (!sent.success) {
-            return res.status(500).json({ message: 'Unable to send OTP email', error: sent.error });
+            console.error('forgotPassword: email send failed', sent);
+            return res.status(500).json({
+                message: 'Unable to send OTP email',
+                error: sent.error,
+                code: sent.code || null,
+                response: sent.response || null,
+                stack: sent.stack || null,
+            });
         }
 
         return res.status(200).json({
@@ -502,7 +523,13 @@ exports.forgotPassword = async (req, res) => {
             expiresInSeconds: Math.floor(OTP_EXPIRY_MS / 1000),
         });
     } catch (error) {
-        return res.status(500).json({ message: 'Unable to process forgot password', error: error.message });
+        console.error('forgotPassword failed:', error);
+        return res.status(500).json({
+            message: 'Unable to process forgot password',
+            error: error.message,
+            code: error.code || null,
+            stack: error.stack || null,
+        });
     }
 };
 
