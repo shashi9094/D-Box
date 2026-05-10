@@ -582,6 +582,66 @@
       return value;
     }
 
+    function isPreviewableUpload(item, extension) {
+      if (!item || item.is_virtual_folder) return false;
+      const contentType = String(item.content_type || '').toLowerCase();
+      if (contentType.startsWith('image/')) return true;
+      if (contentType === 'application/pdf') return true;
+      if (contentType.startsWith('video/')) return true;
+      return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif', 'pdf', 'mp4', 'webm', 'ogg'].includes(String(extension || '').toLowerCase());
+    }
+
+    async function hydrateUploadPreview(card, item, extension) {
+      if (!card || !item || item.is_virtual_folder || !isPreviewableUpload(item, extension)) return;
+
+      const previewHost = card.querySelector('.upload-preview');
+      if (!previewHost) return;
+
+      if (typeof fileUrlService === 'undefined' || typeof fileUrlService.fetchSignedUrl !== 'function') {
+        previewHost.innerHTML = `<div class="upload-preview-fallback"><i class="${getFallbackIcon(item, extension)}"></i></div>`;
+        return;
+      }
+
+      try {
+        const signedUrl = await fileUrlService.fetchSignedUrl(item.id);
+        const contentType = String(item.content_type || '').toLowerCase();
+        const lowerExtension = String(extension || '').toLowerCase();
+
+        if (contentType.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif'].includes(lowerExtension)) {
+          const image = document.createElement('img');
+          image.src = signedUrl;
+          image.alt = item.displayName || item.original_name || item.file_name || 'Uploaded file';
+          image.loading = 'lazy';
+          previewHost.innerHTML = '';
+          previewHost.appendChild(image);
+          return;
+        }
+
+        if (contentType === 'application/pdf' || lowerExtension === 'pdf') {
+          const iframe = document.createElement('iframe');
+          iframe.className = 'upload-preview-pdf';
+          iframe.title = item.displayName || item.original_name || item.file_name || 'Uploaded file';
+          iframe.src = `${signedUrl}#toolbar=0&navpanes=0&view=FitH`;
+          previewHost.innerHTML = '';
+          previewHost.appendChild(iframe);
+          return;
+        }
+
+        if (contentType.startsWith('video/') || ['mp4', 'webm', 'ogg'].includes(lowerExtension)) {
+          const video = document.createElement('video');
+          video.controls = true;
+          video.playsInline = true;
+          video.preload = 'metadata';
+          video.src = signedUrl;
+          previewHost.innerHTML = '';
+          previewHost.appendChild(video);
+        }
+      } catch (error) {
+        console.warn('Failed to hydrate preview with signed URL:', error.message);
+        previewHost.innerHTML = `<div class="upload-preview-fallback"><i class="${getFallbackIcon(item, extension)}"></i></div>`;
+      }
+    }
+
     function isImageExtension(ext) {
       return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif'].includes(ext);
     }
@@ -821,11 +881,9 @@
           });
         }
 
-        const previewMarkup = safePath && isImageExtension(extension) && !item.is_virtual_folder
-          ? `<img src="${safePathHtml}" alt="${safeName}" loading="lazy" />`
-          : (safePath && isPdfFile && !item.is_virtual_folder)
-            ? `<iframe class="upload-preview-pdf" src="${safePathHtml}#toolbar=0&navpanes=0&view=FitH" title="${safeName}"></iframe>`
-            : `<div class="upload-preview-fallback"><i class="${getFallbackIcon(item, extension)}"></i></div>`;
+        const previewMarkup = isPreviewableUpload(item, extension)
+          ? `<div class="upload-preview-fallback" data-preview-placeholder="${item.id}"><i class="fa-solid fa-spinner fa-spin"></i></div>`
+          : `<div class="upload-preview-fallback"><i class="${getFallbackIcon(item, extension)}"></i></div>`;
 
         card.innerHTML = `
           ${selectMarkup}
@@ -847,6 +905,10 @@
         `;
 
         grid.appendChild(card);
+
+        if (isPreviewableUpload(item, extension)) {
+          hydrateUploadPreview(card, item, extension);
+        }
       });
 
       syncDeleteModeDom();

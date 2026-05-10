@@ -160,8 +160,8 @@ exports.signup = async (req, res) => {
 
         await saveSession(req);
 
-        // delete createdUser.verification_otp;
-        // delete createdUser.otp_expires;
+        delete createdUser.verification_otp;
+        delete createdUser.otp_expires;
 
         return res.status(201).json({
             message: 'Signup successful',

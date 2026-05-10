@@ -91,10 +91,43 @@ class FileUrlService {
         } = options;
 
         try {
+            const fileInfo = await this.getFileInfo(fileId);
             const signedUrl = await this.fetchSignedUrl(fileId);
+            const contentType = String(fileInfo?.content_type || '').toLowerCase();
+            const fileName = String(fileInfo?.original_name || fileInfo?.file_name || '').toLowerCase();
+            const isPreviewable =
+                contentType.startsWith('image/') ||
+                contentType === 'application/pdf' ||
+                contentType.startsWith('video/') ||
+                /\.(png|jpe?g|gif|webp|bmp|svg|pdf|mp4|webm|ogg)$/i.test(fileName);
 
-            console.log(`[FileUrl] Opening file ${fileId} with signed URL...`);
-            window.open(signedUrl, target);
+            console.log(`[FileUrl] Opening file ${fileId}...`, { contentType, isPreviewable });
+
+            if (isPreviewable) {
+                const previewWindow = window.open('about:blank', target, 'noopener');
+                if (!previewWindow) {
+                    throw new Error('Popup blocked. Please allow popups for this site.');
+                }
+
+                const response = await fetch(signedUrl);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch file: HTTP ${response.status}`);
+                }
+
+                const blob = await response.blob();
+                const objectUrl = URL.createObjectURL(blob);
+                previewWindow.location.href = objectUrl;
+
+                setTimeout(() => {
+                    try {
+                        URL.revokeObjectURL(objectUrl);
+                    } catch (revokeError) {
+                        console.warn('Failed to revoke object URL:', revokeError.message);
+                    }
+                }, 60 * 1000);
+            } else {
+                window.open(signedUrl, target, 'noopener');
+            }
 
             if (successCallback) {
                 successCallback();
