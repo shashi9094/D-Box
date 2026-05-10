@@ -821,23 +821,22 @@
         } else if (isOpenable) {
           openItem = async () => {
             console.log(`[Uploads] Opening file ${item.id}...`);
-            // Use fileUrlService to fetch signed URL and open
-            if (typeof fileUrlService !== 'undefined') {
-              fileUrlService.openFile(item.id, {
-                target: '_blank',
-                errorCallback: (error) => {
-                  console.error('✗ Error opening file:', error);
-                  alert(`Could not open file: ${error}`);
-                },
-                successCallback: () => {
-                  console.log(`✓ File opened successfully`);
-                },
-              });
-            } else {
-              // Fallback if fileUrlService is not available (shouldn't happen)
-              console.warn('fileUrlService not available, using direct path');
-              window.open(safePath, '_blank', 'noopener');
+            if (typeof fileUrlService === 'undefined' || typeof fileUrlService.openFile !== 'function') {
+              console.error('✗ fileUrlService is not available');
+              alert('File open service is unavailable. Please reload the page.');
+              return;
             }
+
+            await fileUrlService.openFile(item.id, {
+              target: '_blank',
+              errorCallback: (error) => {
+                console.error('✗ Error opening file:', error);
+                alert(`Could not open file: ${error}`);
+              },
+              successCallback: () => {
+                console.log(`✓ File opened successfully`);
+              },
+            });
           };
           openRole = 'link';
           openLabel = `Open ${name}`;

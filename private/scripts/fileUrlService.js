@@ -69,6 +69,7 @@ class FileUrlService {
             }
 
             console.log(`✓ Got signed URL for: ${data.fileName}`);
+            console.log(`[FileUrl] Generated signed URL for file ${fileId}:`, data.fileUrl);
 
             // Cache the URL
             this.setCachedUrl(fileId, data.fileUrl);
@@ -102,6 +103,7 @@ class FileUrlService {
                 /\.(png|jpe?g|gif|webp|bmp|svg|pdf|mp4|webm|ogg)$/i.test(fileName);
 
             console.log(`[FileUrl] Opening file ${fileId}...`, { contentType, isPreviewable });
+            console.log(`[FileUrl] Open flow started for file ${fileId}`);
 
             if (isPreviewable) {
                 const previewWindow = window.open('about:blank', target, 'noopener');

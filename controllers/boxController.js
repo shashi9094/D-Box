@@ -136,9 +136,12 @@ const generateUniqueFilenameForBox = (originalName, forceWebp = false) => {
     const ts = Date.now();
     const rand = crypto.randomBytes(6).toString('hex');
     const base = sanitizeFileName(originalName || 'upload');
-    if (forceWebp) return `${ts}-${rand}-${base.replace(/\.[^/.]+$/, '')}.webp`;
     const ext = path.extname(base) || '';
-    return `${ts}-${rand}-${base}${ext}`;
+    const stem = ext ? base.slice(0, -ext.length) : base;
+    const normalizedStem = stem.replace(/(\.[^/.]+)$/i, '');
+
+    if (forceWebp) return `${ts}-${rand}-${normalizedStem}.webp`;
+    return `${ts}-${rand}-${normalizedStem}${ext}`;
 };
 
 // Helper: upload buffer to S3 and return object key (not full URL for security)
