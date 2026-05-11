@@ -674,6 +674,10 @@
       observer.observe(card);
     }
 
+    function getUploadCardFromTarget(target) {
+      return target?.closest?.('.upload-item-card[data-content-id]') || null;
+    }
+
     function openFileInNewTab(fileId) {
       const safeId = String(fileId || '').trim();
       if (!safeId || fileOpenLock.has(safeId)) {
@@ -944,36 +948,12 @@
           card.tabIndex = 0;
           card.setAttribute('role', openRole);
           card.setAttribute('aria-label', openLabel);
-        }
-
-        if (hasActions || openItem) {
-          card.addEventListener('click', (event) => {
-            if (event.target.closest('.upload-card-actions') || event.target.closest('.upload-select-toggle')) return;
-            if (openItem) {
-              openItem();
-            }
-          });
-        }
-
-        if (openItem) {
-          card.addEventListener('keydown', (event) => {
-            if (event.key !== 'Enter' && event.key !== ' ') {
-              return;
-            }
-
-            if (isDeleteSelectMode && canDelete) {
-              event.preventDefault();
-              if (event.key === 'Enter') {
-                openItem();
-              } else {
-                toggleUploadSelectionState(item.id);
-              }
-              return;
-            }
-
-            event.preventDefault();
-            openItem();
-          });
+          card.dataset.openable = 'true';
+          card.dataset.openType = isFolder ? 'folder' : 'file';
+          card.dataset.openName = name;
+        } else {
+          card.dataset.openable = 'false';
+          card.dataset.openType = 'none';
         }
 
         const previewMarkup = isPreviewableUpload(item, extension)
@@ -1398,6 +1378,7 @@
     });
 
     document.getElementById('uploadsGrid').addEventListener('click', async (event) => {
+      const card = getUploadCardFromTarget(event.target);
       if (event.target.closest('.upload-select-toggle')) {
         event.stopPropagation();
         return;
@@ -1412,7 +1393,27 @@
       }
 
       const actionButton = event.target.closest('button[data-action]');
-      if (!actionButton) return;
+      if (!actionButton) {
+        if (!card || card.dataset.openable !== 'true') {
+          return;
+        }
+
+        if (event.target.closest('.upload-card-actions') || event.target.closest('.upload-select-toggle')) {
+          return;
+        }
+
+        const openType = String(card.dataset.openType || 'none');
+        if (openType === 'folder') {
+          currentFolderPath = buildChildFolderPath(card.dataset.openName || '');
+          renderContents();
+          return;
+        }
+
+        if (openType !== 'file') return;
+
+        openFileInNewTab(card.dataset.contentId);
+        return;
+      }
 
       event.preventDefault();
       event.stopPropagation();
@@ -1455,7 +1456,62 @@
         } catch (error) {
           alert(error.message || 'Delete failed');
         }
+        return;
       }
+    });
+
+    document.getElementById('uploadsGrid').addEventListener('pointerup', (event) => {
+      const card = getUploadCardFromTarget(event.target);
+      if (!card || card.dataset.openable !== 'true') {
+        return;
+      }
+
+      if (event.target.closest('.upload-card-actions') || event.target.closest('.upload-select-toggle')) {
+        return;
+      }
+
+      const contentId = String(card.dataset.contentId || '').trim();
+      if (!contentId) return;
+
+      event.preventDefault();
+      const openType = String(card.dataset.openType || 'none');
+      if (openType === 'folder') {
+        currentFolderPath = buildChildFolderPath(card.dataset.openName || '');
+        renderContents();
+        return;
+      }
+
+      if (openType !== 'file') return;
+
+      openFileInNewTab(contentId);
+    }, { passive: false });
+
+    document.getElementById('uploadsGrid').addEventListener('keydown', (event) => {
+      const card = getUploadCardFromTarget(event.target);
+      if (!card || card.dataset.openable !== 'true') {
+        return;
+      }
+
+      if (event.key !== 'Enter' && event.key !== ' ') {
+        return;
+      }
+
+      if (event.target.closest('.upload-card-actions') || event.target.closest('.upload-select-toggle')) {
+        return;
+      }
+
+      const openType = String(card.dataset.openType || 'none');
+      event.preventDefault();
+
+      if (openType === 'folder') {
+        currentFolderPath = buildChildFolderPath(card.dataset.openName || '');
+        renderContents();
+        return;
+      }
+
+      if (openType !== 'file') return;
+
+      openFileInNewTab(card.dataset.contentId);
     });
 
     document.getElementById('uploadsGrid').addEventListener('change', (event) => {
