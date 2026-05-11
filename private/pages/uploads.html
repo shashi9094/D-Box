@@ -827,39 +827,7 @@
         } else if (isOpenable) {
           openItem = async () => {
             console.log(`[Uploads] Opening file ${item.id}...`);
-            if (!window.fileUrlService || typeof window.fileUrlService.openFile !== 'function') {
-              console.error('✗ fileUrlService is not available');
-              alert('File open service is unavailable. Please reload the page.');
-              return;
-            }
-            
-            // const link = document.createElement('a');
-            // link.href = safePath;
-            // link.target = '_blank';
-            // link.rel = 'noopener noreferrer';
-            // document.body.appendChild(link);
-            // link.click();
-            // return;
-
-            const actualUrl = String(item.file_path || '');
-
-            console.log('ACTUAL URL:', actualUrl);
-
-            if (actualUrl.startsWith('http')) {
-              window.open(actualUrl, '_blank');
-              return;
-            }
-
-            await window.fileUrlService.openFile(item.id, {
-              
-              errorCallback: (error) => {
-                console.error('✗ Error opening file:', error);
-                alert(`Could not open file: ${error}`);
-              },
-              successCallback: () => {
-                console.log(`✓ File opened successfully`);
-              },
-            });
+            window.open(`/api/files/${item.id}/view`, '_blank');
           };
           openRole = 'link';
           openLabel = `Open ${name}`;

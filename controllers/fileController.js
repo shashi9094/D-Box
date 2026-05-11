@@ -115,6 +115,101 @@ exports.getSignedUrl = async (req, res) => {
     }
 };
 
+/**
+ * Open a file through the backend and redirect to the underlying URL.
+ * GET /api/files/:id/view
+ */
+exports.getFileView = async (req, res) => {
+    const { id } = req.params;
+    const numericId = Number(id);
+
+    try {
+        if (!Number.isFinite(numericId) || numericId <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid file id',
+            });
+        }
+
+        const [rows] = await sql.query(
+            `SELECT id, box_id, uploaded_by, content_type, file_name, file_path, original_name
+             FROM box_contents
+             WHERE id = ?
+             LIMIT 1`,
+            [numericId]
+        );
+
+        if (!rows.length) {
+            return res.status(404).json({
+                success: false,
+                message: 'File not found',
+            });
+        }
+
+        const fileData = rows[0];
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                message: 'Not authenticated',
+            });
+        }
+
+        const [accessCheck] = await sql.query(
+            `SELECT 1 FROM box_members
+             WHERE box_id = ? AND user_id = ?
+             LIMIT 1`,
+            [fileData.box_id, userId]
+        );
+
+        if (!accessCheck.length && fileData.box_id !== 0) {
+            const [ownerCheck] = await sql.query(
+                `SELECT 1 FROM boxes WHERE id = ? AND user_id = ? LIMIT 1`,
+                [fileData.box_id, userId]
+            );
+
+            if (!ownerCheck.length) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'You do not have access to this file',
+                });
+            }
+        }
+
+        const filePath = String(fileData.file_path || '').trim();
+        if (/^https?:\/\//i.test(filePath)) {
+            return res.redirect(filePath);
+        }
+
+        const result = await getFileWithSignedUrls(fileData, {
+            expirationSeconds: 3600,
+        });
+
+        if (!result.success || !result.fileUrl) {
+            console.error('Failed to generate file view URL:', result.error);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to generate file URL',
+                error: result.error,
+            });
+        }
+
+        return res.redirect(result.fileUrl);
+    } catch (error) {
+        console.error('Error opening file view:', {
+            fileId: numericId,
+            message: error.message,
+            code: error.code || null,
+        });
+
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to open file',
+            error: error.message,
+        });
+    }
+};
+
 exports.getFileById = async (req, res) => {
     const { id } = req.params;
 

@@ -35,6 +35,9 @@ router.post('/upload', upload.single('file'), (req, res) => {
 });
 
 // More specific routes MUST come before general routes
+// Open file through backend proxy route
+router.get('/:id/view', fileController.getFileView);
+
 // Get signed URL for file (to open/download from S3)
 router.get('/:id/signed-url', fileController.getSignedUrl);
 
