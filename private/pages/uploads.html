@@ -768,7 +768,7 @@
 
         const name = item.displayName || item.original_name || item.file_name || 'Unknown file';
         const extension = getFileExtension(name);
-        const safePath = sanitizeFilePath(item.file_path);
+        const safePath = item.file_path;
         const isPdfFile = extension === 'pdf';
 
         const uploadedBy = item.uploaded_by_name || `User ${item.uploaded_by || '-'}`;
