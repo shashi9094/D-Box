@@ -590,6 +590,7 @@ exports.createBox = async (req, res) => {
             [userId, title, description, capacity]
         );
         
+        
 
         await sql.query(
             `INSERT INTO box_members (box_id, user_id, role, added_by)
@@ -1331,6 +1332,7 @@ exports.uploadBoxContent = [
                 [boxId, userId, contentType, fileName, filePath, originalName, req.file ? targetMime : null, req.file?.size || null, req.file?.s3Key || null, note || null, safeAdminNote, safeFolderPath || null]
             );
             console.log('BOX CONTENT INSERTED', result);
+            console.log('INSERT ID:', result.insertId || result.rows);
 
             if (req.file) {
                 await mirrorFileToLegacyTable({
