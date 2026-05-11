@@ -1350,7 +1350,7 @@ exports.uploadBoxContent = [
                 boxId: Number(boxId),
                 uploadedBy: Number(userId),
                 originalName,
-                mimeType: req.file ? targetMime : null,
+                mimeType: req.file ? req.file.mimetype : null,
                 size: req.file?.size || null,
                 s3Key: req.file?.s3Key || null
             });
