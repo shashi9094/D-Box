@@ -851,7 +851,7 @@
             }
 
             await window.fileUrlService.openFile(item.id, {
-              popupWindow,
+              
               errorCallback: (error) => {
                 console.error('✗ Error opening file:', error);
                 alert(`Could not open file: ${error}`);
