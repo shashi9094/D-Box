@@ -768,7 +768,8 @@
 
         const name = item.displayName || item.original_name || item.file_name || 'Unknown file';
         const extension = getFileExtension(name);
-        const safePath = item.file_path;
+        const safePath = item.file_path || item.url || item.s3_url || '';
+        console.log('SAFE PATH:', safePath, item);
         const isPdfFile = extension === 'pdf';
 
         const uploadedBy = item.uploaded_by_name || `User ${item.uploaded_by || '-'}`;
