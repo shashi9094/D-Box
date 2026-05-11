@@ -766,7 +766,7 @@
         card.className = 'upload-item-card';
         card.dataset.contentId = item.id;
 
-        const name = item.displayName;
+        const name = item.displayName || item.original_name || item.file_name || 'Unknown file';
         const extension = getFileExtension(name);
         const safePath = sanitizeFilePath(item.file_path);
         const isPdfFile = extension === 'pdf';
