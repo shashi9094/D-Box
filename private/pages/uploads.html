@@ -833,13 +833,22 @@
               return;
             }
             
-            const link = document.createElement('a');
-            link.href = safePath;
-            link.target = '_blank';
-            link.rel = 'noopener noreferrer';
-            document.body.appendChild(link);
-            link.click();
-            return;
+            // const link = document.createElement('a');
+            // link.href = safePath;
+            // link.target = '_blank';
+            // link.rel = 'noopener noreferrer';
+            // document.body.appendChild(link);
+            // link.click();
+            // return;
+
+            const actualUrl = String(item.file_path || '');
+
+            console.log('ACTUAL URL:', actualUrl);
+
+            if (actualUrl.startsWith('http')) {
+              window.open(actualUrl, '_blank');
+              return;
+            }
 
             await window.fileUrlService.openFile(item.id, {
               popupWindow,
