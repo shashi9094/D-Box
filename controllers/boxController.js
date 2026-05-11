@@ -1714,7 +1714,10 @@ exports.viewFile = async (req, res) => {
         const file = rows[0];
 
         if (!file.s3_key) {
-            return res.status(400).send('Missing S3 key');
+            if (file.file_path && file.file_path.startsWith('http')) {
+                return res.redirect(file.file_path);
+            }
+            return res.status(404).send('Missing S3 key');
         }
 
         const signedUrl = await getSignedFileUrl(file.s3_key);
