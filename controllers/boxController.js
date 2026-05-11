@@ -11,6 +11,7 @@ const { createNotificationsForUsers } = require('../utils/notifications');
 const compressImage = require('../utils/compressImage');
 const { error } = require('console');
 const fetch = require('node-fetch');
+const { getSignedFileUrl } = require('../utils/fileUrlService');
 
 
 
@@ -1698,11 +1699,11 @@ exports.updateContentAdminNote = async (req, res) => {
 
 exports.viewFile = async (req, res) => {
     try {
-        const { id } = req.params;
+        const fileId = req.params.id;
 
         const [rows] = await sql.query(
-            `SELECT file_path, s3_key FROM box_contents WHERE id = ? LIMIT 1`,
-            [id]
+            `SELECT * FROM box_contents WHERE id = ? LIMIT 1`,
+            [fileId]
         );
 
         if (!rows.length) {
@@ -1711,26 +1712,13 @@ exports.viewFile = async (req, res) => {
 
         const file = rows[0];
 
-        let signedUrl = file.file_path;
-
-        // If stored path is not full URL, generate signed URL
-        if (!signedUrl || !signedUrl.startsWith('http')) {
-            signedUrl = await generateSignedUrl(file.s3_key);
+        if (!file.s3_key) {
+            return res.status(400).send('Missing S3 key');
         }
 
-        const response = await fetch(signedUrl);
+        const signedUrl = await getSignedFileUrl(file.s3_key);
 
-        res.setHeader(
-            'Content-Type',
-            response.headers.get('content-type') || 'application/octet-stream'
-        );
-
-        res.setHeader(
-            'Content-Disposition',
-            'inline'
-        );
-
-        response.body.pipe(res);
+        return res.redirect(signedUrl);
 
     } catch (err) {
         console.error('viewFile error:', err);
