@@ -8,6 +8,7 @@ class FileUrlService {
         this.cache = new Map(); // Cache signed URLs to avoid repeated requests
         this.cacheDuration = 55 * 60 * 1000; // 55 minutes (URLs valid for 1 hour)
         this.urlApiBase = '/api/files';
+        console.log('[FileUrl] Service initialized', { urlApiBase: this.urlApiBase });
     }
 
     /**
@@ -64,19 +65,25 @@ class FileUrlService {
 
             const data = await response.json();
 
-            if (!data.success || !data.fileUrl) {
+            const resolvedUrl = data.url || data.fileUrl;
+
+            if (!data.success || !resolvedUrl) {
                 throw new Error(data.error || 'No URL returned from server');
             }
 
-            console.log(`✓ Got signed URL for: ${data.fileName}`);
-            console.log(`[FileUrl] Generated signed URL for file ${fileId}:`, data.fileUrl);
+            console.log(`✓ Got signed URL for: ${data.fileName || data.originalName || fileId}`);
+            console.log(`[FileUrl] API response for file ${fileId}:`, data);
+            console.log(`[FileUrl] Generated signed URL for file ${fileId}:`, resolvedUrl);
 
             // Cache the URL
-            this.setCachedUrl(fileId, data.fileUrl);
+            this.setCachedUrl(fileId, resolvedUrl);
 
-            return data.fileUrl;
+            return resolvedUrl;
         } catch (error) {
-            console.error(`✗ Failed to fetch signed URL for file ${fileId}:`, error.message);
+            console.error(`✗ Failed to fetch signed URL for file ${fileId}:`, {
+                message: error.message,
+                stack: error.stack,
+            });
             throw error;
         }
     }
@@ -214,6 +221,9 @@ class FileUrlService {
 
 // Create singleton instance
 const fileUrlService = new FileUrlService();
+if (typeof window !== 'undefined') {
+    window.fileUrlService = fileUrlService;
+}
 
 // Export for use in modules and as global
 if (typeof module !== 'undefined' && module.exports) {

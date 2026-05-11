@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
   <script src="/scripts/auth-guard.js" defer></script>
   <script src="/scripts/back-nav.js" defer></script>
-  <script src="/scripts/fileUrlService.js" defer></script>
+  <script src="/scripts/fileUrlService.js?v=20260511" defer></script>
 </head>
 <body class="dashboard-page">
   <div class="main-layout uploads-page-layout">
@@ -597,13 +597,13 @@
       const previewHost = card.querySelector('.upload-preview');
       if (!previewHost) return;
 
-      if (typeof fileUrlService === 'undefined' || typeof fileUrlService.fetchSignedUrl !== 'function') {
+      if (!window.fileUrlService || typeof window.fileUrlService.fetchSignedUrl !== 'function') {
         previewHost.innerHTML = `<div class="upload-preview-fallback"><i class="${getFallbackIcon(item, extension)}"></i></div>`;
         return;
       }
 
       try {
-        const signedUrl = await fileUrlService.fetchSignedUrl(item.id);
+        const signedUrl = await window.fileUrlService.fetchSignedUrl(item.id);
         const contentType = String(item.content_type || '').toLowerCase();
         const lowerExtension = String(extension || '').toLowerCase();
 
@@ -821,13 +821,13 @@
         } else if (isOpenable) {
           openItem = async () => {
             console.log(`[Uploads] Opening file ${item.id}...`);
-            if (typeof fileUrlService === 'undefined' || typeof fileUrlService.openFile !== 'function') {
+            if (!window.fileUrlService || typeof window.fileUrlService.openFile !== 'function') {
               console.error('✗ fileUrlService is not available');
               alert('File open service is unavailable. Please reload the page.');
               return;
             }
 
-            await fileUrlService.openFile(item.id, {
+            await window.fileUrlService.openFile(item.id, {
               target: '_blank',
               errorCallback: (error) => {
                 console.error('✗ Error opening file:', error);

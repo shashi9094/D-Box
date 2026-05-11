@@ -89,7 +89,17 @@ exports.getSignedUrl = async (req, res) => {
             expiresAt: result.expiresAt,
         });
 
-        return res.json(result);
+        return res.json({
+            success: true,
+            url: result.fileUrl,
+            fileUrl: result.fileUrl,
+            fileName: result.fileName,
+            originalName: fileData.original_name || fileData.file_name,
+            contentType: result.contentType,
+            objectKey: result.objectKey,
+            expiresAt: result.expiresAt,
+            thumbnailUrl: result.thumbnailUrl || null,
+        });
     } catch (error) {
         console.error('Error generating signed URL:', {
             fileId: numericId,
