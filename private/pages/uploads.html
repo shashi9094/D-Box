@@ -722,7 +722,7 @@
 
       const visibleItems = contents
         .map((rawItem) => mapDisplayItem(rawItem))
-        .filter((item) => item.folder_path === currentFolderPath);
+        .filter((item) => (item.folder_path || '') === (currentFolderPath || ''));
 
       const visibleItemIds = new Set(visibleItems.map((item) => String(item.id)));
       selectedUploadIds.forEach((id) => {
@@ -732,7 +732,7 @@
       });
       syncDeleteModeAvailability(visibleItems.length);
 
-      const visibleUploads = uploadingItems.filter((item) => item.folderPath === currentFolderPath);
+      const visibleUploads = uploadingItems.filter((item) => (item.folderPath || '') === (currentFolderPath || ''));
 
       visibleUploads.forEach((upload) => {
         const uploadCard = document.createElement('article');
