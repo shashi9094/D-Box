@@ -680,14 +680,19 @@
 
     function openFileInNewTab(fileId) {
       const safeId = String(fileId || '').trim();
-      if (!safeId || fileOpenLock.has(safeId)) {
+      if (!safeId) {
+        return;
+      }
+
+      // Quick debounce - only 200ms to allow fast taps
+      if (fileOpenLock.has(safeId)) {
         return;
       }
 
       fileOpenLock.add(safeId);
       window.setTimeout(() => {
         fileOpenLock.delete(safeId);
-      }, 800);
+      }, 200);
 
       window.open(`/api/files/${safeId}/view`, '_blank');
     }
@@ -1378,12 +1383,13 @@
     });
 
     document.getElementById('uploadsGrid').addEventListener('click', async (event) => {
-      const card = getUploadCardFromTarget(event.target);
+      // Handle select toggle first
       if (event.target.closest('.upload-select-toggle')) {
         event.stopPropagation();
         return;
       }
 
+      // Handle menu toggle
       const menuToggle = event.target.closest('button[data-menu-toggle]');
       if (menuToggle) {
         event.preventDefault();
@@ -1392,70 +1398,72 @@
         return;
       }
 
+      // Handle action buttons (rename, delete, note)
       const actionButton = event.target.closest('button[data-action]');
-      if (!actionButton) {
-        if (!card || card.dataset.openable !== 'true') {
+      if (actionButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        closeActiveMenu();
+
+        const contentId = actionButton.dataset.contentId;
+        const action = actionButton.dataset.action;
+        const item = contents.find((entry) => String(entry.id) === String(contentId));
+        if (!item) return;
+
+        if (action === 'rename') {
+          if (!canRenameContent()) return;
+          openRenameModal(mapDisplayItem(item));
           return;
         }
 
-        if (event.target.closest('.upload-card-actions') || event.target.closest('.upload-select-toggle')) {
+        if (action === 'important-note') {
+          if (!canEditUploadImportantNotes()) return;
+          const currentValue = String(item.admin_note || '').trim();
+          const nextValue = window.prompt('Important note for this upload (leave empty for default):', currentValue);
+          if (nextValue === null) return;
+
+          try {
+            await updateImportantNote(contentId, nextValue);
+            await loadGroupData();
+          } catch (error) {
+            alert(error.message || 'Unable to update important note');
+          }
           return;
         }
 
-        const openType = String(card.dataset.openType || 'none');
-        if (openType === 'folder') {
-          currentFolderPath = buildChildFolderPath(card.dataset.openName || '');
-          renderContents();
+        if (action === 'delete') {
+          if (!canDeleteContent()) return;
+          const confirmed = window.confirm(`Delete ${item.original_name || item.note_text || 'this upload'}?`);
+          if (!confirmed) return;
+
+          try {
+            await deleteUpload(contentId);
+            await loadGroupData();
+          } catch (error) {
+            alert(error.message || 'Delete failed');
+          }
           return;
-        }
-
-        if (openType !== 'file') return;
-
-        openFileInNewTab(card.dataset.contentId);
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      closeActiveMenu();
-
-      const contentId = actionButton.dataset.contentId;
-      const action = actionButton.dataset.action;
-      const item = contents.find((entry) => String(entry.id) === String(contentId));
-      if (!item) return;
-
-      if (action === 'rename') {
-        if (!canRenameContent()) return;
-        openRenameModal(mapDisplayItem(item));
-        return;
-      }
-
-      if (action === 'important-note') {
-        if (!canEditUploadImportantNotes()) return;
-        const currentValue = String(item.admin_note || '').trim();
-        const nextValue = window.prompt('Important note for this upload (leave empty for default):', currentValue);
-        if (nextValue === null) return;
-
-        try {
-          await updateImportantNote(contentId, nextValue);
-          await loadGroupData();
-        } catch (error) {
-          alert(error.message || 'Unable to update important note');
         }
         return;
       }
 
-      if (action === 'delete') {
-        if (!canDeleteContent()) return;
-        const confirmed = window.confirm(`Delete ${item.original_name || item.note_text || 'this upload'}?`);
-        if (!confirmed) return;
+      // Open file or folder - fallback for card click
+      const card = getUploadCardFromTarget(event.target);
+      if (!card || card.dataset.openable !== 'true' || event.target.closest('.upload-card-actions')) {
+        return;
+      }
 
-        try {
-          await deleteUpload(contentId);
-          await loadGroupData();
-        } catch (error) {
-          alert(error.message || 'Delete failed');
-        }
+      const contentId = card.dataset.contentId;
+      const openType = String(card.dataset.openType || 'none');
+
+      if (openType === 'folder') {
+        currentFolderPath = buildChildFolderPath(card.dataset.openName || '');
+        renderContents();
+        return;
+      }
+
+      if (openType === 'file') {
+        openFileInNewTab(contentId);
         return;
       }
     });
