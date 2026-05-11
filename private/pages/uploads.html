@@ -831,12 +831,14 @@
               alert('File open service is unavailable. Please reload the page.');
               return;
             }
-
-            const popupWindow = window.open('', '_blank', 'noopener,noreferrer');
-            if (!popupWindow) {
-              alert('Could not open file: Popup blocked. Please allow popups for this site.');
-              return;
-            }
+            
+            const link = document.createElement('a');
+            link.href = safePath;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            document.body.appendChild(link);
+            link.click();
+            return;
 
             await window.fileUrlService.openFile(item.id, {
               popupWindow,
