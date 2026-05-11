@@ -121,6 +121,12 @@ app.get('/scripts/auth-guard.js', isAuth, (req, res) => {
     return res.sendFile(path.join(__dirname, 'private', 'scripts', 'auth-guard.js'));
 });
 
+app.use('/scripts', express.static(path.join(__dirname, 'private', 'scripts'), {
+    setHeaders(res) {
+        setNoStore(res);
+    }
+}));
+
 app.get('/', (req, res) => {
     if (req.session && req.session.user) {
         return res.redirect('/home');

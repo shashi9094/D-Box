@@ -159,6 +159,7 @@
     let selectedUploadIds = new Set();
     let isDeleteSelectMode = false;
     let visibleDeleteTargetCount = 0;
+    const videoThumbnailCache = new Map();
     const MAX_UPLOAD_FILES_PER_BATCH = 25;
     const DELETE_MODE_DOUBLE_TAP_MS = 320;
     let deleteModeTapState = {
@@ -591,6 +592,123 @@
       return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif', 'pdf', 'mp4', 'webm', 'ogg'].includes(String(extension || '').toLowerCase());
     }
 
+    function getPreviewKind(item, extension) {
+      const contentType = String(item?.content_type || '').toLowerCase();
+      const lowerExtension = String(extension || '').toLowerCase();
+
+      if (contentType.startsWith('image/') || isImageExtension(lowerExtension)) {
+        return 'image';
+      }
+
+      if (contentType === 'application/pdf' || lowerExtension === 'pdf') {
+        return 'pdf';
+      }
+
+      if (contentType.startsWith('video/') || ['mp4', 'webm', 'ogg', 'mov', 'mkv'].includes(lowerExtension)) {
+        return 'video';
+      }
+
+      return 'fallback';
+    }
+
+    function clearPreviewHost(previewHost) {
+      if (previewHost) {
+        previewHost.innerHTML = '';
+      }
+    }
+
+    function renderPreviewFallback(previewHost, item, extension) {
+      if (!previewHost) return;
+      previewHost.innerHTML = `<div class="upload-preview-fallback"><i class="${getFallbackIcon(item, extension)}"></i></div>`;
+    }
+
+    async function createVideoThumbnailUrl(videoUrl, cacheKey) {
+      if (!videoUrl) return null;
+
+      const cached = videoThumbnailCache.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
+      return new Promise((resolve) => {
+        const video = document.createElement('video');
+        let settled = false;
+        let timeoutId = null;
+
+        const finish = (value) => {
+          if (settled) return;
+          settled = true;
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
+          try {
+            video.removeAttribute('src');
+            video.load();
+          } catch (error) {
+            // Ignore cleanup failures.
+          }
+          resolve(value);
+        };
+
+        video.crossOrigin = 'anonymous';
+        video.muted = true;
+        video.playsInline = true;
+        video.preload = 'auto';
+        video.src = videoUrl;
+
+        video.addEventListener('loadeddata', () => {
+          try {
+            const targetTime = Number.isFinite(video.duration) && video.duration > 0
+              ? Math.min(0.25, video.duration / 20)
+              : 0.1;
+            video.currentTime = targetTime;
+          } catch (error) {
+            finish(null);
+          }
+        }, { once: true });
+
+        video.addEventListener('seeked', () => {
+          try {
+            const canvas = document.createElement('canvas');
+            const width = video.videoWidth || 640;
+            const height = video.videoHeight || 360;
+            canvas.width = width;
+            canvas.height = height;
+
+            const context = canvas.getContext('2d');
+            if (!context) {
+              finish(null);
+              return;
+            }
+
+            context.drawImage(video, 0, 0, width, height);
+            canvas.toBlob((blob) => {
+              if (!blob) {
+                finish(null);
+                return;
+              }
+
+              const objectUrl = URL.createObjectURL(blob);
+              videoThumbnailCache.set(cacheKey, objectUrl);
+              finish(objectUrl);
+            }, 'image/jpeg', 0.84);
+          } catch (error) {
+            finish(null);
+          }
+        }, { once: true });
+
+        video.addEventListener('error', () => finish(null), { once: true });
+
+        timeoutId = window.setTimeout(() => finish(null), 8000);
+
+        try {
+          video.load();
+        } catch (error) {
+          finish(null);
+        }
+      });
+    }
+
     async function hydrateUploadPreview(card, item, extension) {
       if (!card || !item || item.is_virtual_folder || !isPreviewableUpload(item, extension)) return;
 
@@ -598,47 +716,63 @@
       if (!previewHost) return;
 
       if (!window.fileUrlService || typeof window.fileUrlService.fetchSignedUrl !== 'function') {
-        previewHost.innerHTML = `<div class="upload-preview-fallback"><i class="${getFallbackIcon(item, extension)}"></i></div>`;
+        renderPreviewFallback(previewHost, item, extension);
         return;
       }
 
       try {
         const signedUrl = await window.fileUrlService.fetchSignedUrl(item.id);
-        const contentType = String(item.content_type || '').toLowerCase();
-        const lowerExtension = String(extension || '').toLowerCase();
+        const previewKind = getPreviewKind(item, extension);
 
-        if (contentType.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif'].includes(lowerExtension)) {
+        if (previewKind === 'image') {
           const image = document.createElement('img');
           image.src = signedUrl;
           image.alt = item.displayName || item.original_name || item.file_name || 'Uploaded file';
           image.loading = 'lazy';
-          previewHost.innerHTML = '';
+          image.decoding = 'async';
+          clearPreviewHost(previewHost);
           previewHost.appendChild(image);
           return;
         }
 
-        if (contentType === 'application/pdf' || lowerExtension === 'pdf') {
+        if (previewKind === 'pdf') {
           const iframe = document.createElement('iframe');
           iframe.className = 'upload-preview-pdf';
           iframe.title = item.displayName || item.original_name || item.file_name || 'Uploaded file';
-          iframe.src = `${signedUrl}#toolbar=0&navpanes=0&view=FitH`;
-          previewHost.innerHTML = '';
+          iframe.src = `${signedUrl}#page=1&toolbar=0&navpanes=0&scrollbar=0&view=FitH`;
+          clearPreviewHost(previewHost);
           previewHost.appendChild(iframe);
           return;
         }
 
-        if (contentType.startsWith('video/') || ['mp4', 'webm', 'ogg'].includes(lowerExtension)) {
+        if (previewKind === 'video') {
+          const thumbnailUrl = await createVideoThumbnailUrl(signedUrl, item.id);
+          if (thumbnailUrl) {
+            const image = document.createElement('img');
+            image.src = thumbnailUrl;
+            image.alt = item.displayName || item.original_name || item.file_name || 'Uploaded file';
+            image.loading = 'lazy';
+            image.decoding = 'async';
+            clearPreviewHost(previewHost);
+            previewHost.appendChild(image);
+            return;
+          }
+
           const video = document.createElement('video');
-          video.controls = true;
+          video.controls = false;
+          video.muted = true;
           video.playsInline = true;
           video.preload = 'metadata';
           video.src = signedUrl;
-          previewHost.innerHTML = '';
+          clearPreviewHost(previewHost);
           previewHost.appendChild(video);
+          return;
         }
+
+        renderPreviewFallback(previewHost, item, extension);
       } catch (error) {
         console.warn('Failed to hydrate preview with signed URL:', error.message);
-        previewHost.innerHTML = `<div class="upload-preview-fallback"><i class="${getFallbackIcon(item, extension)}"></i></div>`;
+        renderPreviewFallback(previewHost, item, extension);
       }
     }
 
