@@ -166,6 +166,7 @@
       timestamp: 0,
       wasSelected: false
     };
+    let previewObserver = null;
 
     function isAdminUser() {
       return myRole === 'admin';
@@ -237,6 +238,23 @@
         month: 'short',
         day: 'numeric'
       });
+    }
+
+    function formatFileSize(bytesValue) {
+      const size = Number(bytesValue);
+      if (!Number.isFinite(size) || size <= 0) return '';
+
+      const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+      let value = size;
+      let unitIndex = 0;
+
+      while (value >= 1024 && unitIndex < units.length - 1) {
+        value /= 1024;
+        unitIndex += 1;
+      }
+
+      const digits = value >= 10 || unitIndex === 0 ? 0 : 1;
+      return `${value.toFixed(digits)} ${units[unitIndex]}`;
     }
 
     function escapeHtml(value) {
@@ -584,14 +602,15 @@
 
     function isPreviewableUpload(item, extension) {
       if (!item || item.is_virtual_folder) return false;
-      const contentType = String(item.content_type || '').toLowerCase();
+      const contentType = String(item.mime_type || item.content_type || '').toLowerCase();
       if (contentType.startsWith('image/')) return true;
       if (contentType.startsWith('video/')) return true;
-      return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif', 'mp4', 'webm', 'ogg', 'mov', 'mkv'].includes(String(extension || '').toLowerCase());
+      if (contentType === 'application/pdf') return true;
+      return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif', 'mp4', 'webm', 'ogg', 'mov', 'mkv', 'pdf'].includes(String(extension || '').toLowerCase());
     }
 
     function getThumbnailKind(item, extension) {
-      const contentType = String(item?.content_type || '').toLowerCase();
+      const contentType = String(item?.mime_type || item?.content_type || '').toLowerCase();
       const lowerExtension = String(extension || '').toLowerCase();
 
       if (contentType.startsWith('image/') || isImageExtension(lowerExtension)) {
@@ -602,7 +621,56 @@
         return 'video';
       }
 
+      if (contentType === 'application/pdf' || lowerExtension === 'pdf') {
+        return 'pdf';
+      }
+
       return 'fallback';
+    }
+
+    function getPreviewObserver() {
+      if (previewObserver || typeof IntersectionObserver === 'undefined') {
+        return previewObserver;
+      }
+
+      previewObserver = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          const card = entry.target;
+          const item = card.__previewItem;
+          const extension = card.__previewExtension;
+          if (item) {
+            hydrateUploadPreview(card, item, extension).catch((error) => {
+              console.warn('Failed to lazy hydrate preview:', error.message);
+            });
+          }
+          if (previewObserver) {
+            previewObserver.unobserve(card);
+          }
+          delete card.__previewItem;
+          delete card.__previewExtension;
+        });
+      }, {
+        root: null,
+        rootMargin: '140px 0px',
+        threshold: 0.01,
+      });
+
+      return previewObserver;
+    }
+
+    function queueUploadPreview(card, item, extension) {
+      const observer = getPreviewObserver();
+      if (!observer) {
+        hydrateUploadPreview(card, item, extension).catch((error) => {
+          console.warn('Failed to hydrate preview:', error.message);
+        });
+        return;
+      }
+
+      card.__previewItem = item;
+      card.__previewExtension = extension;
+      observer.observe(card);
     }
 
     async function hydrateUploadPreview(card, item, extension) {
@@ -642,6 +710,26 @@
           previewHost.appendChild(video);
           return;
         }
+
+        if (thumbnailKind === 'pdf') {
+          const frame = document.createElement('iframe');
+          frame.src = `${signedUrl}#toolbar=0&navpanes=0&scrollbar=0&page=1`;
+          frame.className = 'upload-preview-pdf';
+          frame.loading = 'lazy';
+
+          frame.addEventListener('error', () => {
+            previewHost.innerHTML = '<div class="upload-preview-fallback"><i class="fa-regular fa-file-pdf"></i></div>';
+          }, { once: true });
+
+          previewHost.innerHTML = '';
+          previewHost.appendChild(frame);
+
+          const badge = document.createElement('span');
+          badge.className = 'upload-preview-badge';
+          badge.textContent = 'PDF';
+          previewHost.appendChild(badge);
+          return;
+        }
       } catch (error) {
         console.warn('Failed to hydrate thumbnail with signed URL:', error.message);
       }
@@ -660,9 +748,11 @@
     }
 
     function getFallbackIcon(item, extension) {
+      const mime = String(item?.mime_type || '').toLowerCase();
       if (item.is_virtual_folder) return 'fa-regular fa-folder';
       if (item.content_type === 'note') return 'fa-regular fa-note-sticky';
       if (item.content_type === 'video') return 'fa-regular fa-circle-play';
+      if (mime.startsWith('audio/') || ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'].includes(extension)) return 'fa-regular fa-file-audio';
       if (extension === 'pdf') return 'fa-regular fa-file-pdf';
       if (['doc', 'docx'].includes(extension)) return 'fa-regular fa-file-word';
       if (['xls', 'xlsx', 'csv'].includes(extension)) return 'fa-regular fa-file-excel';
@@ -776,6 +866,7 @@
         const safeName = escapeHtml(name);
         const safeUploadedBy = escapeHtml(uploadedBy);
         const safePathHtml = escapeHtml(safePath);
+        const readableSize = formatFileSize(item.file_size);
         const isOpenable = Boolean(safePath && !item.is_virtual_folder);
         const isFolder = Boolean(item.is_virtual_folder);
         const canRename = canRenameContent();
@@ -888,6 +979,7 @@
             <h3 title="${safeName}">${safeName}</h3>
             <p class="upload-meta">By ${safeUploadedBy}</p>
             <p class="upload-meta">${formatDate(item.created_at)}</p>
+            ${readableSize ? `<p class="upload-meta upload-size">Size: ${escapeHtml(readableSize)}</p>` : ''}
             <div class="upload-important-note" title="${safeImportantNote}">
               <span><strong>Important:</strong> ${safeImportantNote}</span>
             </div>
@@ -897,7 +989,7 @@
         grid.appendChild(card);
 
         if (isPreviewableUpload(item, extension)) {
-          hydrateUploadPreview(card, item, extension);
+          queueUploadPreview(card, item, extension);
         }
 
       });

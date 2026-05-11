@@ -168,7 +168,7 @@ async function uploadBufferToS3(buffer, key, contentType) {
 // Helper: delete object from S3 by key or URL (handles both formats during migration)
 async function deleteS3ObjectByUrl(filePathValue) {
     try {
-        if (!filePathValue) return;
+        if (!filePathValue) return true;
         
         let key = String(filePathValue).trim();
         
@@ -181,15 +181,19 @@ async function deleteS3ObjectByUrl(filePathValue) {
                 key = decodeURIComponent(key.slice(prefix.length));
             } else {
                 console.warn('deleteS3ObjectByUrl: URL does not match expected bucket');
-                return;
+                return false;
             }
         }
+
+        if (!key) return false;
         
         const cmd = new DeleteObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: key });
         await s3Client.send(cmd);
         console.log('✓ Deleted from S3:', key);
+        return true;
     } catch (err) {
         console.error('✗ deleteS3ObjectByUrl error:', { message: err.message || err });
+        return false;
     }
 }
 
@@ -1289,6 +1293,21 @@ exports.uploadBoxContent = [
             if (req.file) {
                 originalName = req.file.originalname;
 
+                const [duplicateRows] = await sql.query(
+                    `SELECT id
+                     FROM box_contents
+                     WHERE box_id = ?
+                       AND content_type IN ('file', 'video')
+                       AND COALESCE(folder_path, '') = ?
+                       AND LOWER(COALESCE(original_name, '')) = LOWER(?)
+                     LIMIT 1`,
+                    [boxId, safeFolderPath || '', originalName]
+                );
+
+                if (duplicateRows.length) {
+                    return res.status(409).json({ message: 'File with same name already exists' });
+                }
+
                 let uploadBuffer = req.file.buffer;
                 targetMime = req.file.mimetype || 'application/octet-stream';
                 const isImage = Boolean(req.file.mimetype && req.file.mimetype.startsWith('image/'));
@@ -1616,7 +1635,7 @@ exports.deleteBoxContent = async (req, res) => {
         }
 
         const [rows] = await sql.query(
-            'SELECT id, uploaded_by, content_type, file_path FROM box_contents WHERE id = ? AND box_id = ? LIMIT 1',
+            'SELECT id, uploaded_by, content_type, file_path, s3_key FROM box_contents WHERE id = ? AND box_id = ? LIMIT 1',
             [contentId, boxId]
         );
 
@@ -1625,12 +1644,16 @@ exports.deleteBoxContent = async (req, res) => {
         }
 
         const content = rows[0];
-        if (content.file_path) {
-            // If the file_path is an S3 URL, attempt to delete the object from S3
-            if (/^https?:\/\//i.test(String(content.file_path || ''))) {
-                await deleteS3ObjectByUrl(content.file_path).catch((e) => {
-                    console.error('S3 delete failed (continuing):', e.message || e);
+        const s3DeleteTarget = String(content.s3_key || content.file_path || '').trim();
+        if (s3DeleteTarget) {
+            const deletedFromS3 = await deleteS3ObjectByUrl(s3DeleteTarget);
+            if (!deletedFromS3) {
+                console.error('S3 delete failed for upload', {
+                    boxId,
+                    contentId,
+                    s3DeleteTarget
                 });
+                return res.status(502).json({ message: 'Unable to delete file from storage. Please retry.' });
             }
         }
 
