@@ -1276,6 +1276,7 @@ exports.uploadBoxContent = [
             let fileName = null;
             let filePath = null;
             let originalName = null;
+            let targetMime = null;
 
             const safeFolderPath = String(folderPath || '').trim().replace(/^\/+|\/+$/g, '');
             const safeAdminNote = isMainAdmin ? sanitizeAdminNote(adminNote) : '';
@@ -1284,7 +1285,7 @@ exports.uploadBoxContent = [
                 originalName = req.file.originalname;
 
                 let uploadBuffer = req.file.buffer;
-                let targetMime = req.file.mimetype || 'application/octet-stream';
+                targetMime = req.file.mimetype || 'application/octet-stream';
                 const isImage = Boolean(req.file.mimetype && req.file.mimetype.startsWith('image/'));
 
                 contentType = isImage ? 'file' : inferContentType(req.file);
