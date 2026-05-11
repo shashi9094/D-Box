@@ -167,6 +167,7 @@
       wasSelected: false
     };
     let previewObserver = null;
+    const fileOpenLock = new Set();
 
     function isAdminUser() {
       return myRole === 'admin';
@@ -673,6 +674,20 @@
       observer.observe(card);
     }
 
+    function openFileInNewTab(fileId) {
+      const safeId = String(fileId || '').trim();
+      if (!safeId || fileOpenLock.has(safeId)) {
+        return;
+      }
+
+      fileOpenLock.add(safeId);
+      window.setTimeout(() => {
+        fileOpenLock.delete(safeId);
+      }, 800);
+
+      window.open(`/api/files/${safeId}/view`, '_blank');
+    }
+
     async function hydrateUploadPreview(card, item, extension) {
       if (!card || !item || item.is_virtual_folder || !isPreviewableUpload(item, extension)) return;
 
@@ -918,7 +933,7 @@
         } else if (isOpenable) {
           openItem = async () => {
             console.log(`[Uploads] Opening file ${item.id}...`);
-            window.open(`/api/files/${item.id}/view`, '_blank');
+            openFileInNewTab(item.id);
           };
           openRole = 'link';
           openLabel = `Open ${name}`;
@@ -934,7 +949,6 @@
         if (hasActions || openItem) {
           card.addEventListener('click', (event) => {
             if (event.target.closest('.upload-card-actions') || event.target.closest('.upload-select-toggle')) return;
-            if (handleDeleteModeCardTap(event, item.id, openItem)) return;
             if (openItem) {
               openItem();
             }
