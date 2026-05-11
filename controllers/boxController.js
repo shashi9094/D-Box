@@ -1410,12 +1410,13 @@ exports.getBoxContents = async (req, res) => {
         );
 
         const existingRows = dbRows.filter((row) => {
-            if (row.content_type === 'note') return true;
+           if (row.content_type === 'note') return true;
+
             const fp = String(row.file_path || '').trim();
-            // Treat HTTP(S) URLs (S3) as existing; local files no longer used
-            if (/^https?:\/\//i.test(fp)) return true;
-            return false;
-        });
+            const s3Key = String(row.s3_key || '').trim();
+
+            return Boolean(fp || s3Key);
+       });
 
         const existingFileKeys = new Set(
             existingRows
