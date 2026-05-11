@@ -93,6 +93,7 @@ class FileUrlService {
      */
     async openFile(fileId, options = {}) {
         const {
+            popupWindow = null,
             errorCallback = null,
             successCallback = null,
         } = options;
@@ -102,9 +103,13 @@ class FileUrlService {
             console.log(`[FileUrl] Opening file ${fileId}...`);
             console.log(`[FileUrl] Open flow started for file ${fileId}`);
 
-            const openedWindow = window.open(signedUrl, '_blank', 'noopener,noreferrer');
-            if (!openedWindow) {
-                throw new Error('Popup blocked. Please allow popups for this site.');
+            if (popupWindow && !popupWindow.closed) {
+                popupWindow.location.href = signedUrl;
+            } else {
+                const openedWindow = window.open(signedUrl, '_blank', 'noopener,noreferrer');
+                if (!openedWindow) {
+                    throw new Error('Popup blocked. Please allow popups for this site.');
+                }
             }
 
             if (successCallback) {

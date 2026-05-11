@@ -29,6 +29,7 @@ logUploadsStorageWarning();
 const authRoutes = require('./routes/authRoutes');
 const boxRoutes = require('./routes/boxRoutes');
 const fileRoutes = require('./routes/fileRoutes');
+const boxController = require('./controllers/boxController');
 const { sendEmail } = require('./emailService');
 
 // CORS
@@ -204,6 +205,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/box', boxRoutes);
 app.use('/api/files', fileRoutes);
 app.use('/api/images', require('./routes/imageRoutes'));
+app.get('/api/uploads', isAuth, boxController.getUploadsByQuery);
 
 app.get('/test-email', async (req, res) => {
     const to = String(req.query?.to || process.env.TEST_EMAIL_TO || process.env.SMTP_USER || '').trim();
@@ -401,6 +403,8 @@ app.post('/api/complete-profile', async (req, res) => {
         });
     }
 });
+
+app.get('/api/uploads', isAuth, boxController.getUploadsByQuery);
 
 // Start
 const PORT = process.env.PORT || 5000;

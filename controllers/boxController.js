@@ -267,6 +267,9 @@ const ensureCollaborationTables = async () => {
             file_name VARCHAR(255) NULL,
             file_path VARCHAR(500) NULL,
             original_name VARCHAR(255) NULL,
+            mime_type VARCHAR(255) NULL,
+            file_size BIGINT NULL,
+            s3_key VARCHAR(500) NULL,
             note_text TEXT NULL,
             admin_note VARCHAR(300) NULL,
             folder_path VARCHAR(500) NULL,
@@ -277,6 +280,9 @@ const ensureCollaborationTables = async () => {
 
     await sql.query('ALTER TABLE box_contents ADD COLUMN IF NOT EXISTS folder_path VARCHAR(500) NULL');
     await sql.query('ALTER TABLE box_contents ADD COLUMN IF NOT EXISTS admin_note VARCHAR(300) NULL');
+    await sql.query('ALTER TABLE box_contents ADD COLUMN IF NOT EXISTS mime_type VARCHAR(255) NULL');
+    await sql.query('ALTER TABLE box_contents ADD COLUMN IF NOT EXISTS file_size BIGINT NULL');
+    await sql.query('ALTER TABLE box_contents ADD COLUMN IF NOT EXISTS s3_key VARCHAR(500) NULL');
 
     await sql.query(`
         CREATE TABLE IF NOT EXISTS box_invites (
@@ -1312,13 +1318,14 @@ exports.uploadBoxContent = [
                 req.file.location = fileUrl;
                 req.file.size = uploadBuffer.length;
                 req.file.contentType = targetMime;
+                req.file.s3Key = key;
             }
 
             const [result] = await sql.query(
                 `INSERT INTO box_contents
-                (box_id, uploaded_by, content_type, file_name, file_path, original_name, note_text, admin_note, folder_path)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
-                [boxId, userId, contentType, fileName, filePath, originalName, note || null, safeAdminNote, safeFolderPath || null]
+                (box_id, uploaded_by, content_type, file_name, file_path, original_name, mime_type, file_size, s3_key, note_text, admin_note, folder_path)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+                [boxId, userId, contentType, fileName, filePath, originalName, req.file ? targetMime : null, req.file?.size || null, req.file?.s3Key || null, note || null, safeAdminNote, safeFolderPath || null]
             );
 
             if (req.file) {
@@ -1338,7 +1345,13 @@ exports.uploadBoxContent = [
             return res.json({
                 success: true,
                 message: 'Content added successfully',
-                id: result.insertId
+                id: result.insertId,
+                boxId: Number(boxId),
+                uploadedBy: Number(userId),
+                originalName,
+                mimeType: req.file ? targetMime : null,
+                size: req.file?.size || null,
+                s3Key: req.file?.s3Key || null
             });
         } catch (err) {
             cleanupUploadedFile();
@@ -1365,7 +1378,7 @@ exports.getBoxContents = async (req, res) => {
         }
 
         const [dbRows] = await sql.query(
-            `SELECT bc.id, bc.content_type, bc.file_name, bc.file_path, bc.original_name, bc.note_text, bc.admin_note, bc.folder_path,
+            `SELECT bc.id, bc.content_type, bc.file_name, bc.file_path, bc.original_name, bc.mime_type, bc.file_size, bc.s3_key, bc.note_text, bc.admin_note, bc.folder_path,
                     bc.created_at, bc.uploaded_by, u.fullname AS uploaded_by_name
              FROM box_contents bc
              LEFT JOIN users u ON u.id = bc.uploaded_by
@@ -1375,7 +1388,7 @@ exports.getBoxContents = async (req, res) => {
         );
 
         const [legacyRows] = await sql.query(
-            `SELECT bf.id, bf.user_id, bf.file_name, bf.file_type, bf.file_path, bf.uploaded_at, u.fullname AS uploaded_by_name
+            `SELECT bf.id, bf.user_id, bf.file_name, bf.file_size, bf.file_type, bf.file_path, bf.uploaded_at, u.fullname AS uploaded_by_name
              FROM box_files bf
              LEFT JOIN users u ON u.id = bf.user_id
              WHERE bf.box_id = ?
@@ -1413,6 +1426,9 @@ exports.getBoxContents = async (req, res) => {
                     file_name: row.file_name,
                     file_path: row.file_path,
                     original_name: row.file_name,
+                    mime_type: row.file_type,
+                    file_size: row.file_size || null,
+                    s3_key: extractObjectKeyFromValue(row.file_path),
                     note_text: null,
                     admin_note: null,
                     folder_path: deriveFolderPathFromFilePath(boxId, row.file_path),
@@ -1450,6 +1466,17 @@ exports.getBoxContents = async (req, res) => {
         });
         return res.status(500).json({ message: 'Unable to fetch contents', error: err.message });
     }
+};
+
+exports.getUploadsByQuery = async (req, res) => {
+    const boxId = Number(req.query?.boxId);
+
+    if (!Number.isFinite(boxId) || boxId <= 0) {
+        return res.status(400).json({ message: 'boxId query parameter is required' });
+    }
+
+    req.params = { ...(req.params || {}), boxId: String(boxId) };
+    return exports.getBoxContents(req, res);
 };
 
 exports.renameBoxContent = async (req, res) => {
