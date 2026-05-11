@@ -1,13 +1,13 @@
 const multer = require('multer');
 
-// Use memory storage so we get file buffer in req.file.buffer
+// OPTIMIZED: Use memory storage for streaming upload to S3
 const storage = multer.memoryStorage();
 
-// Limits: 10 MB by default (tweak as needed)
+// Limits: Increased to 500MB for large file support with multipart upload
 const upload = multer({
   storage,
   limits: {
-    fileSize: 10 * 1024 * 1024
+    fileSize: 500 * 1024 * 1024 // 500MB limit
   }
 });
 

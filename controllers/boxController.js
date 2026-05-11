@@ -10,6 +10,9 @@ const { sendInvitationEmail } = require('../utils/emailService');
 const { createNotificationsForUsers } = require('../utils/notifications');
 const compressImage = require('../utils/compressImage');
 const { getSignedFileUrl } = require('../utils/fileUrlService');
+const { uploadBufferToS3Streaming } = require('../utils/s3StreamUpload');
+const OptimizedUploadHandler = require('../utils/optimizedUploadHandler');
+const thumbnailGenerator = require('../utils/thumbnailGenerator');
 const { error } = require('console');
 const fetch = require('node-fetch');
 
@@ -1314,9 +1317,10 @@ exports.uploadBoxContent = [
 
                 contentType = isImage ? 'file' : inferContentType(req.file);
 
+                // OPTIMIZATION: Compress images before upload
                 if (isImage) {
                     try {
-                        uploadBuffer = await compressImage(req.file.buffer);
+                        uploadBuffer = await thumbnailGenerator.compressImage(req.file.buffer);
                         targetMime = 'image/webp';
                     } catch (err) {
                         console.error('Image processing failed:', err.message || err);
@@ -1328,13 +1332,22 @@ exports.uploadBoxContent = [
                 const uniqueFileName = generateUniqueFilenameForBox(originalName, Boolean(isImage));
                 const key = `boxes/${boxId}/${uniqueFileName}`;
 
-                // Upload to S3
+                // OPTIMIZATION: Use streaming upload with progress tracking
                 let fileUrl;
                 try {
-                    fileUrl = await uploadBufferToS3(uploadBuffer, key, targetMime);
+                    fileUrl = await uploadBufferToS3Streaming(uploadBuffer, key, targetMime, (progress) => {
+                        // Progress tracking available for WebSocket or polling
+                        console.log(`[Upload Progress] ${progress.percent}% (${progress.loaded}/${progress.total} bytes)`);
+                    });
                 } catch (err) {
                     console.error('S3 upload failed:', err.message || err);
                     return res.status(500).json({ message: 'Failed to upload file to storage' });
+                }
+
+                // OPTIMIZATION: Async thumbnail generation (non-blocking)
+                // Trigger in background, don't wait
+                if (isImage) {
+                    thumbnailGenerator.generateAsync(key, uploadBuffer, targetMime);
                 }
 
                 // populate values for DB insert
@@ -1347,17 +1360,22 @@ exports.uploadBoxContent = [
                 req.file.s3Key = key;
             }
 
-            const [result] = await sql.query(
+            // OPTIMIZATION: Parallel DB operations
+            // Insert to box_contents and mirror to legacy in parallel
+            const dbPromises = [];
+
+            const boxContentInsert = sql.query(
                 `INSERT INTO box_contents
                 (box_id, uploaded_by, content_type, file_name, file_path, original_name, mime_type, file_size, s3_key, note_text, admin_note, folder_path)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
                 [boxId, userId, contentType, fileName, filePath, originalName, req.file ? targetMime : null, req.file?.size || null, req.file?.s3Key || null, note || null, safeAdminNote, safeFolderPath || null]
             );
-            console.log('BOX CONTENT INSERTED', result);
-            console.log('INSERT ID:', result.insertId || result.rows);
 
+            dbPromises.push(boxContentInsert);
+
+            // If file upload, also queue legacy mirror (non-blocking)
             if (req.file) {
-                await mirrorFileToLegacyTable({
+                const legacyMirror = mirrorFileToLegacyTable({
                     boxId: Number(boxId),
                     userId: Number(userId),
                     fileName: originalName || fileName,
@@ -1365,9 +1383,21 @@ exports.uploadBoxContent = [
                     fileType: req.file.mimetype || contentType,
                     filePath,
                     uploadedAt: new Date()
+                }).catch((err) => {
+                    console.warn('Legacy mirror failed (non-blocking):', err.message);
+                    // Don't throw - this is async background operation
+                    return null;
                 });
+
+                dbPromises.push(legacyMirror);
             }
 
+            // Wait for DB insert to complete (required for response)
+            const results = await Promise.all(dbPromises);
+            const [result] = results[0];
+
+            console.log('BOX CONTENT INSERTED', result);
+            console.log('INSERT ID:', result.insertId || result.rows);
             console.log(`Box content saved: box=${boxId}, contentId=${result.insertId}, user=${userId}, type=${contentType}`);
 
             return res.json({

@@ -9,16 +9,20 @@ function generateUniqueFilename(originalName) {
     return `${timestamp}-${randomString}-${originalName}`;
 }
 
-
-
+// OPTIMIZED: Memory storage for streaming multipart uploads
 const upload = multer({
     storage: multer.memoryStorage(),
 
     limits: {
-        fileSize: 100 * 1024 * 1024
+        // Increased from 100MB to 500MB for large file support
+        fileSize: 500 * 1024 * 1024
     },
 
     fileFilter: (req, file, cb) => {
+        // Validate file
+        if (!file) {
+            return cb(new Error('No file provided'));
+        }
         cb(null, true);
     }
 });
