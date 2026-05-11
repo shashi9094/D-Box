@@ -9,6 +9,7 @@ const fs = require('fs');
 const { sendInvitationEmail } = require('../utils/emailService');
 const { createNotificationsForUsers } = require('../utils/notifications');
 const compressImage = require('../utils/compressImage');
+const { error } = require('console');
 
 
 
@@ -1361,7 +1362,14 @@ exports.uploadBoxContent = [
                 detail: err.detail || null,
                 table: err.table || null,
             });
-            return res.status(500).json({ message: 'Unable to upload content', error: err.message });
+            //return res.status(500).json({ message: 'Unable to upload content', error: err.message });
+            console.error(`upload error full:`, err);
+            return res.status(500).json({
+                message: 'Unable to upload content',
+                error: err.message,
+                stack: err.stack,
+                fullError: JSON.stringify(err, null, 2)
+            });
         }
     }
 ];
