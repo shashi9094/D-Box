@@ -10,6 +10,7 @@ const { sendInvitationEmail } = require('../utils/emailService');
 const { createNotificationsForUsers } = require('../utils/notifications');
 const compressImage = require('../utils/compressImage');
 const { error } = require('console');
+const fetch = require('node-fetch');
 
 
 
@@ -1692,5 +1693,47 @@ exports.updateContentAdminNote = async (req, res) => {
         });
     } catch (err) {
         return res.status(500).json({ message: 'Unable to update important note', error: err.message });
+    }
+};
+
+exports.viewFile = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const [rows] = await sql.query(
+            `SELECT file_path, s3_key FROM box_contents WHERE id = ? LIMIT 1`,
+            [id]
+        );
+
+        if (!rows.length) {
+            return res.status(404).send('File not found');
+        }
+
+        const file = rows[0];
+
+        let signedUrl = file.file_path;
+
+        // If stored path is not full URL, generate signed URL
+        if (!signedUrl || !signedUrl.startsWith('http')) {
+            signedUrl = await generateSignedUrl(file.s3_key);
+        }
+
+        const response = await fetch(signedUrl);
+
+        res.setHeader(
+            'Content-Type',
+            response.headers.get('content-type') || 'application/octet-stream'
+        );
+
+        res.setHeader(
+            'Content-Disposition',
+            'inline'
+        );
+
+        response.body.pipe(res);
+
+    } catch (err) {
+        console.error('viewFile error:', err);
+        return res.status(500).send('Unable to open file');
     }
 };
