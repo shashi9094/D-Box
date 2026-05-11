@@ -6,7 +6,7 @@ const upload = require('../middleware/upload');
 const boxController = require('../controllers/boxController');
 
 // Get signed URL for file (to open/download from S3)
-router.get('/files/:id/view', authMiddleware, boxController.viewFile);
+router.get('/:id/view', authMiddleware, boxController.viewFile);
 
 // Protect file routes with session auth
 router.use(authMiddleware);
