@@ -156,6 +156,7 @@
     let renameTarget = null;
     let currentBoxOwnerId = null;
     let uploadingItems = [];
+    let optimisticUploads = [];
     let selectedUploadIds = new Set();
     let isDeleteSelectMode = false;
     let visibleDeleteTargetCount = 0;
@@ -226,6 +227,36 @@
       }
 
       return payload;
+    }
+
+    function getUploadContentType(file) {
+      const mimeType = String(file?.type || '').toLowerCase();
+      if (mimeType) return mimeType;
+
+      const extension = getFileExtension(file?.name || '');
+      if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif'].includes(extension)) {
+        return extension === 'jpg' ? 'image/jpeg' : `image/${extension}`;
+      }
+      if (['mp4', 'webm', 'ogg', 'mov', 'mkv'].includes(extension)) return 'video/mp4';
+      if (extension === 'pdf') return 'application/pdf';
+      return 'application/octet-stream';
+    }
+
+    function createOptimisticUploadItem(file, uploadId) {
+      return {
+        id: uploadId,
+        box_id: boxId,
+        uploaded_by: reqUserId,
+        content_type: getUploadContentType(file),
+        file_name: file.name,
+        original_name: file.name,
+        file_path: String(uploadId || file.name || Date.now()),
+        note_text: null,
+        admin_note: null,
+        folder_path: currentFolderPath,
+        created_at: new Date().toISOString(),
+        uploaded_by_name: 'You'
+      };
     }
 
     function formatDate(dateValue) {
@@ -720,7 +751,8 @@
       closeActiveMenu();
       setFolderHeader();
 
-      const visibleItems = contents
+      const visibleItems = [...optimisticUploads, ...contents]
+        .filter((rawItem, index, array) => index === array.findIndex((entry) => String(entry.id) === String(rawItem.id)))
         .map((rawItem) => mapDisplayItem(rawItem))
         .filter((item) => item.folder_path === currentFolderPath);
 
@@ -1053,7 +1085,7 @@
       formData.append('file', file);
       formData.append('adminNote', String(adminNote || ''));
 
-      await apiRequest(`/api/box/${boxId}/content`, {
+      return apiRequest(`/api/box/${boxId}/content`, {
         method: 'POST',
         body: formData
       });
@@ -1111,7 +1143,13 @@
           }
 
           try {
-            await uploadFile(file, adminNote);
+            const uploadResult = await uploadFile(file, adminNote);
+            const optimisticId = uploadResult?.id || tempId;
+            optimisticUploads = [
+              createOptimisticUploadItem(file, optimisticId),
+              ...optimisticUploads.filter((item) => String(item.id) !== String(optimisticId))
+            ];
+            renderContents();
             await loadGroupData();
             successCount += 1;
           } catch (error) {
@@ -1179,6 +1217,8 @@
 
       members = memberResponse.data || [];
       contents = contentResponse.data || [];
+      const contentIds = new Set(contents.map((item) => String(item.id)));
+      optimisticUploads = optimisticUploads.filter((item) => !contentIds.has(String(item.id)));
       renderMembers();
       renderContents();
     }
