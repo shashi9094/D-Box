@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Verify Email Widget</title>
+  <style>
+    .btn{background:#2563eb;color:#fff;border:0;padding:8px 14px;border-radius:8px;cursor:pointer;font-weight:600}
+    .link{background:none;border:0;color:#2563eb;text-decoration:underline;cursor:pointer;padding:6px}
+    .hidden{display:none!important}
+    .otp-box{width:48px;height:56px;font-size:20px;text-align:center;border-radius:8px;border:1px solid #e5e7eb}
+    #otpAlert{padding:10px;border-radius:8px;background:#ecfeff;color:#065f46;border:1px solid #2dd4bf}
+    #otpError{padding:10px;border-radius:8px;background:#fff1f2;color:#991b1b;border:1px solid #fca5a5}
+    @media (max-width:480px){ .otp-box{width:40px;height:48px;font-size:18px} }
+  </style>
+</head>
+<body>
+
+<div id="step1" data-email="shashikumarsingh9094@gmail.com" style="max-width:420px;margin:0 auto;font-family:system-ui,Segoe UI,Roboto,Arial;">
+  <button id="sendOtpBtn" class="btn">Verify Email</button>
+  <div id="otpAlert" class="hidden" role="status" style="margin-top:12px;"></div>
+
+  <!-- OTP area (hidden until OTP sent) -->
+  <div id="otpArea" class="hidden" style="margin-top:14px;">
+    <div id="otpInputs" style="display:flex;gap:10px;justify-content:center;">
+      <input inputmode="numeric" pattern="[0-9]*" maxlength="1" class="otp-box" id="o1" />
+      <input inputmode="numeric" pattern="[0-9]*" maxlength="1" class="otp-box" id="o2" />
+      <input inputmode="numeric" pattern="[0-9]*" maxlength="1" class="otp-box" id="o3" />
+      <input inputmode="numeric" pattern="[0-9]*" maxlength="1" class="otp-box" id="o4" />
+      <input inputmode="numeric" pattern="[0-9]*" maxlength="1" class="otp-box" id="o5" />
+      <input inputmode="numeric" pattern="[0-9]*" maxlength="1" class="otp-box" id="o6" />
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:center;margin-top:12px;">
+      <button id="verifyOtpBtn" class="btn">Verify OTP</button>
+      <button id="resendOtpBtn" class="link">Resend OTP</button>
+    </div>
+
+    <div id="otpError" class="hidden" style="margin-top:10px;"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const container = document.getElementById('step1');
+  const sendBtn = document.getElementById('sendOtpBtn');
+  const otpArea = document.getElementById('otpArea');
+  const otpAlert = document.getElementById('otpAlert');
+  const otpError = document.getElementById('otpError');
+  const resendBtn = document.getElementById('resendOtpBtn');
+  const verifyBtn = document.getElementById('verifyOtpBtn');
+  const inputs = Array.from(document.querySelectorAll('#otpInputs .otp-box'));
+  const email = (container && container.dataset && container.dataset.email) ? container.dataset.email : null;
+
+  function showAlert(msg){ otpAlert.textContent = msg; otpAlert.classList.remove('hidden'); }
+  function hideAlert(){ otpAlert.textContent = ''; otpAlert.classList.add('hidden'); }
+  function showError(msg){ otpError.textContent = msg; otpError.classList.remove('hidden'); }
+  function hideError(){ otpError.textContent = ''; otpError.classList.add('hidden'); }
+
+  function setLoading(btn, loading, label){
+    if(loading){ btn.dataset.prev = btn.innerHTML; btn.innerHTML = '...'; btn.disabled = true; }
+    else { btn.innerHTML = btn.dataset.prev || label; btn.disabled = false; }
+  }
+
+  // Send OTP request
+  async function sendOTP(){
+    hideAlert(); hideError();
+    setLoading(sendBtn, true, 'Verify Email');
+    try {
+      const res = await fetch('/api/auth/send-verification-otp', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const body = await res.json().catch(()=>({}));
+      if(!res.ok || body.success===false){
+        throw new Error(body.message || 'Unable to send OTP');
+      }
+      // show alert then reveal inputs
+      showAlert('OTP sent successfully');
+      // reveal after short delay so user sees alert first
+      setTimeout(()=>{ otpArea.classList.remove('hidden'); inputs[0].focus(); }, 600);
+    } catch(err){
+      showError(err.message || 'Network error sending OTP');
+    } finally {
+      setLoading(sendBtn, false, 'Verify Email');
+    }
+  }
+
+  // Verify OTP request
+  async function verifyOTP(){
+    hideError();
+    const otp = inputs.map(i => i.value.trim()).join('');
+    if(!/^[0-9]{6}$/.test(otp)){ showError('Please enter the 6-digit code.'); return; }
+    setLoading(verifyBtn, true, 'Verify OTP');
+    try {
+      const res = await fetch('/api/auth/verify-otp', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp })
+      });
+      const body = await res.json().catch(()=>({}));
+      if(res.ok && body.success){
+        showAlert('Verification successful — reloading...');
+        setTimeout(()=> window.location.reload(), 700);
+      } else {
+        throw new Error(body.message || 'Verification failed');
+      }
+    } catch(err){
+      showError(err.message || 'Network error verifying OTP');
+      // clear inputs and focus first
+      inputs.forEach(i => i.value='');
+      inputs[0].focus();
+    } finally {
+      setLoading(verifyBtn, false, 'Verify OTP');
+    }
+  }
+
+  // Resend OTP
+  async function resendOTP(){
+    hideError(); hideAlert();
+    setLoading(resendBtn, true, 'Resending...');
+    try { await sendOTP(); } finally { setLoading(resendBtn, false, 'Resend OTP'); }
+  }
+
+  // Input behaviors: numeric-only, auto-next, backspace to previous, paste multi
+  inputs.forEach((el, idx) => {
+    el.addEventListener('input', (e) => {
+      const v = (e.target.value || '').replace(/\D/g,'').slice(0,1);
+      e.target.value = v;
+      if(v && idx < inputs.length-1) inputs[idx+1].focus();
+    });
+    el.addEventListener('keydown', (e) => {
+      if(e.key === 'Backspace' && !e.target.value && idx > 0){
+        inputs[idx-1].focus();
+      } else if(e.key === 'ArrowLeft' && idx > 0){
+        inputs[idx-1].focus();
+      } else if(e.key === 'ArrowRight' && idx < inputs.length-1){
+        inputs[idx+1].focus();
+      } else if(e.key === 'Enter' && idx === inputs.length-1){
+        verifyOTP();
+      }
+    });
+    el.addEventListener('paste', (e) => {
+      e.preventDefault();
+      const paste = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g,'').slice(0,6);
+      if(!paste) return;
+      for(let i=0;i<inputs.length;i++) inputs[i].value = paste[i]||'';
+      const firstEmpty = inputs.find(i=>!i.value);
+      (firstEmpty || inputs[inputs.length-1]).focus();
+    });
+  });
+
+  // Bind events
+  sendBtn.addEventListener('click', sendOTP);
+  verifyBtn.addEventListener('click', verifyOTP);
+  resendBtn.addEventListener('click', resendOTP);
+
+  // hide OTP area initially
+  otpArea.classList.add('hidden');
+  hideAlert(); hideError();
+
+  // expose global for compatibility with existing onclicks
+  window.sendOTP = sendOTP;
+  window.verifyOTP = verifyOTP;
+  window.resendOTP = resendOTP;
+})();
+</script>
+
+</body>
+</html>
