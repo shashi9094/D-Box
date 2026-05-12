@@ -14,22 +14,27 @@ const summarizeSesError = (error) => ({
   stack: error?.stack || null,
 });
 
-// SES Client
-const sesClient = new SESClient({
-  region: awsRegion,
-  credentials: {
-    accessKeyId: awsAccessKeyId,
-    secretAccessKey: awsSecretAccessKey
-  }
-});
+//Disable kr rha temporay AWS
+if(process.env.ENABLE_AWS_SES === 'true'){
 
-console.log('AWS SES email service initialized', {
-  region: awsRegion || '(missing)',
-  from: smtpFrom || '(missing)',
-  hasAccessKey: Boolean(awsAccessKeyId),
-  hasSecretKey: Boolean(awsSecretAccessKey),
-  senderIdentityLooksValid: Boolean(smtpFrom && smtpFrom.includes('@')),
-});
+   // SES Client
+   const sesClient = new SESClient({
+      region: awsRegion,
+      credentials: {
+         accessKeyId: awsAccessKeyId,
+         secretAccessKey: awsSecretAccessKey
+      }
+   });
+
+   console.log('AWS SES email service initialized', {
+      region: awsRegion || '(missing)',
+      from: smtpFrom || '(missing)',
+      hasAccessKey: Boolean(awsAccessKeyId),
+      hasSecretKey: Boolean(awsSecretAccessKey),
+      senderIdentityLooksValid: Boolean(smtpFrom && smtpFrom.includes('@')),
+   });
+
+}
 
 function extractFirstUrl(text) {
   const match = String(text || '').match(/https?:\/\/[^\s<>"')]+/i);
