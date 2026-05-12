@@ -34,13 +34,13 @@ console.log('OTP mailer initialized', {
     senderEmailValid: isEmail(senderEmail),
 });
 
-transporter.verify()
-    .then(() => {
-        console.log('OTP mailer transporter verified successfully');
-    })
-    .catch((error) => {
-        console.error('OTP mailer transporter verify failed:', summarizeMailerError(error));
-    });
+// transporter.verify()
+//     .then(() => {
+//         console.log('OTP mailer transporter verified successfully');
+//     })
+//     .catch((error) => {
+//         console.error('OTP mailer transporter verify failed:', summarizeMailerError(error));
+//     });
 
 async function sendOTP(email, otp) {
     const recipient = String(email || '').trim().toLowerCase();
