@@ -49,6 +49,24 @@
                 <p><strong>Email:</strong> <span id="profileVerificationEmail">-</span></p>
             </div>
             <button type="button" class="modal-submit-btn" id="verifyProfileBtn">Verify Email</button>
+
+            <!-- OTP UI (hidden until OTP sent) -->
+            <div id="profileOtpSection" class="hidden" style="margin-top:12px;">
+                <p class="small">Enter the 6-digit code sent to your email.</p>
+                <div style="display:flex;gap:8px;justify-content:center;margin-top:8px;" id="profileOtpInputs">
+                    <input inputmode="numeric" pattern="[0-9]*" maxlength="1" class="otp-input" id="pv-d1" />
+                    <input inputmode="numeric" pattern="[0-9]*" maxlength="1" class="otp-input" id="pv-d2" />
+                    <input inputmode="numeric" pattern="[0-9]*" maxlength="1" class="otp-input" id="pv-d3" />
+                    <input inputmode="numeric" pattern="[0-9]*" maxlength="1" class="otp-input" id="pv-d4" />
+                    <input inputmode="numeric" pattern="[0-9]*" maxlength="1" class="otp-input" id="pv-d5" />
+                    <input inputmode="numeric" pattern="[0-9]*" maxlength="1" class="otp-input" id="pv-d6" />
+                </div>
+                <div style="display:flex;gap:8px;justify-content:center;margin-top:10px;">
+                    <button type="button" class="modal-submit-btn" id="pv-verifyBtn">Verify OTP</button>
+                    <button type="button" id="pv-resendBtn" class="modal-submit-btn" style="background:#eef2ff;color:#1f2937;">Resend OTP</button>
+                </div>
+                <p class="modal-error hidden" id="pvMessage"></p>
+            </div>
         </div>
     </div>
 
@@ -586,35 +604,99 @@ window.addEventListener('load', async () => {
     }
 });
 
+// Profile verification: send OTP, show inputs, verify, resend
 document.getElementById('verifyProfileBtn').addEventListener('click', async () => {
     const button = document.getElementById('verifyProfileBtn');
+    const msgEl = document.getElementById('pvMessage');
+    const otpSection = document.getElementById('profileOtpSection');
+    const otpInputs = Array.from(document.querySelectorAll('#profileOtpInputs .otp-input'));
     const originalText = button.textContent;
 
-    try {
-        button.disabled = true;
-        button.textContent = 'Sending...';
+    function showMsg(text, isError) {
+        msgEl.textContent = text || '';
+        msgEl.classList.toggle('hidden', !text);
+        msgEl.classList.toggle('error', !!isError);
+    }
 
-        const response = await fetch('/api/auth/send-verification-otp', {
+    function clearOtp() { otpInputs.forEach(i => i.value = ''); }
+
+    // basic send
+    try {
+        button.disabled = true; button.textContent = 'Sending...';
+        showMsg('', false);
+
+        const res = await fetch('/api/auth/send-verification-otp', {
             method: 'POST',
             credentials: 'include',
-            headers: {
-                'Content-Type': 'application/json'
-            }
+            headers: { 'Content-Type': 'application/json' }
         });
+        const body = await res.json().catch(() => ({}));
 
-        const result = await response.json().catch(() => ({}));
-
-        if (!response.ok || !result.success) {
-            throw new Error(result.message || 'Unable to send verification email');
+        if (!res.ok || body.success === false) {
+            throw new Error(body.message || 'Unable to send verification email');
         }
 
-        alert(result.message || 'Verification email sent');
-    } catch (error) {
-        alert(error.message || 'Unable to send verification email');
+        // success -> reveal OTP section
+        otpSection.classList.remove('hidden');
+        clearOtp();
+        otpInputs[0].focus();
+        showMsg(body.message || 'OTP sent. Check your email.', false);
+    } catch (err) {
+        showMsg(err.message || 'Unable to send verification email', true);
     } finally {
-        button.disabled = false;
-        button.textContent = originalText;
+        button.disabled = false; button.textContent = originalText;
     }
+});
+
+// Verify OTP flow
+document.getElementById('pv-verifyBtn').addEventListener('click', async () => {
+    const msgEl = document.getElementById('pvMessage');
+    const otpInputs = Array.from(document.querySelectorAll('#profileOtpInputs .otp-input'));
+    function showMsg(text, isError) {
+        msgEl.textContent = text || '';
+        msgEl.classList.toggle('hidden', !text);
+        msgEl.classList.toggle('error', !!isError);
+    }
+
+    const otp = otpInputs.map(i => i.value.trim()).join('');
+    if (!/^[0-9]{6}$/.test(otp)) { showMsg('Please enter the 6-digit code.', true); return; }
+
+    const btn = document.getElementById('pv-verifyBtn');
+    const prev = btn.textContent; btn.disabled = true; btn.textContent = 'Verifying...';
+    try {
+        const response = await fetch('/api/auth/verify-otp', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ otp })
+        });
+        const body = await response.json().catch(() => ({}));
+        if (response.ok && body.success) {
+            showMsg('Email verified. Reloading...', false);
+            setTimeout(() => window.location.reload(), 800);
+        } else {
+            showMsg(body.message || 'Verification failed', true);
+            otpInputs.forEach(i => i.value = ''); otpInputs[0].focus();
+        }
+    } catch (err) {
+        showMsg('Network error while verifying OTP', true);
+    } finally {
+        btn.disabled = false; btn.textContent = prev;
+    }
+});
+
+// Resend OTP
+document.getElementById('pv-resendBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('pv-resendBtn');
+    const original = btn.textContent; btn.disabled = true; btn.textContent = 'Resending...';
+    try {
+        const res = await fetch('/api/auth/send-verification-otp', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' } });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || body.success === false) throw new Error(body.message || 'Unable to resend OTP');
+        const msgEl = document.getElementById('pvMessage'); msgEl.textContent = body.message || 'OTP resent. Check your email.'; msgEl.classList.remove('hidden');
+    } catch (err) {
+        const msgEl = document.getElementById('pvMessage'); msgEl.textContent = err.message || 'Unable to resend OTP'; msgEl.classList.remove('hidden'); msgEl.classList.add('error');
+    } finally { btn.disabled = false; btn.textContent = original; }
 });
 </script>
 
