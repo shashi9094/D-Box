@@ -178,14 +178,14 @@ async function sendEmail(to, subject, text) {
       to: recipient,
       subject: mailSubject
    });
-    const result = await withTimeout(transporter.sendMail({
+   
+    const result = await transporter.sendMail({
       from: smtpFrom,
       to: recipient,
       subject: mailSubject,
       text: bodyText,
       html: buildHtmlBody(mailSubject, bodyText),
-    }), 15000, 'Brevo SMTP send timed out');
-
+    });
     console.log('STEP 4 email result', result);
 
     return {
