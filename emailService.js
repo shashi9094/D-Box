@@ -143,6 +143,15 @@ async function sendEmail(to, subject, text) {
   }
 
   try {
+
+    console.log("Sending email via Brevo SMTP...");
+    console.log({
+      host: smtpHost,
+      port: smtpPort,
+      from: smtpFrom,
+      to: recipient,
+      subject: mailSubject
+   });
     const result = await transporter.sendMail({
       from: smtpFrom,
       to: recipient,
@@ -159,11 +168,11 @@ async function sendEmail(to, subject, text) {
     };
 
   } catch (error) {
-    console.error("SMTP Error:", summarizeSesError(error));
+    console.error("FULL SMTP ERROR:", error);
 
     return {
       success: false,
-      ...summarizeSesError(error)
+      error: error?.message || 'Failed to send email'
     };
   }
 }
