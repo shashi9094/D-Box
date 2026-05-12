@@ -594,7 +594,7 @@ document.getElementById('verifyProfileBtn').addEventListener('click', async () =
         button.disabled = true;
         button.textContent = 'Sending...';
 
-        const response = await fetch('/send-verification-otp', {
+        const response = await fetch('/api/auth/send-verification-otp', {
             method: 'POST',
             credentials: 'include',
             headers: {
