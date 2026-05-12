@@ -6,10 +6,18 @@ const awsAccessKeyId = String(process.env.AWS_ACCESS_KEY_ID || '').trim();
 const awsSecretAccessKey = String(process.env.AWS_SECRET_ACCESS_KEY || '').trim();
 const awsRegion = String(process.env.AWS_REGION || '').trim();
 const smtpHost = String(process.env.SMTP_HOST || 'smtp-relay.brevo.com').trim();
-const smtpPort = Number(process.env.SMTP_PORT || 465);
+const smtpPort = Number(process.env.SMTP_PORT || 587);
 const smtpUser = String(process.env.SMTP_USER || '').trim();
 const smtpPass = String(process.env.SMTP_PASS || '').trim();
 const smtpFrom = String(process.env.SMTP_FROM || smtpUser || '').trim();
+const smtpSecureSetting = String(process.env.SMTP_SECURE || '').trim().toLowerCase();
+const smtpSecure = smtpSecureSetting ? smtpSecureSetting === 'true' : smtpPort === 465;
+const smtpConnectionTimeout = Number(process.env.SMTP_CONNECTION_TIMEOUT_MS || 30000);
+const smtpGreetingTimeout = Number(process.env.SMTP_GREETING_TIMEOUT_MS || 30000);
+const smtpSocketTimeout = Number(process.env.SMTP_SOCKET_TIMEOUT_MS || 30000);
+const smtpSendTimeoutMs = Number(process.env.SMTP_SEND_TIMEOUT_MS || 30000);
+const smtpMaxAttempts = Math.max(1, Number(process.env.SMTP_SEND_MAX_ATTEMPTS || 3));
+const smtpRetryDelayMs = Math.max(0, Number(process.env.SMTP_SEND_RETRY_DELAY_MS || 1000));
 
 const summarizeSesError = (error) => ({
   message: error?.message || 'SES send failed',
@@ -42,10 +50,18 @@ if (awsSesEnabled) {
 const transporter = nodemailer.createTransport({
   host: smtpHost,
   port: smtpPort,
-  secure: true,
+  secure: smtpSecure,
+  requireTLS: !smtpSecure,
   auth: {
     user: smtpUser,
     pass: smtpPass,
+  },
+  connectionTimeout: smtpConnectionTimeout,
+  greetingTimeout: smtpGreetingTimeout,
+  socketTimeout: smtpSocketTimeout,
+  tls: {
+    rejectUnauthorized: false,
+    minVersion: 'TLSv1.2',
   },
 });
 
@@ -76,6 +92,45 @@ function withTimeout(promise, timeoutMs, timeoutMessage) {
       clearTimeout(timer);
     }
   });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableSmtpError(error) {
+  const code = String(error?.code || error?.name || '').toUpperCase();
+  const responseCode = Number(error?.responseCode || error?.response?.code || 0);
+
+  if (
+    code === 'ETIMEDOUT' ||
+    code === 'ESOCKET' ||
+    code === 'ECONNECTION' ||
+    code === 'ECONNRESET' ||
+    code === 'EPIPE' ||
+    code === 'EAI_AGAIN' ||
+    code === 'ENOTFOUND' ||
+    code === 'ECONNREFUSED'
+  ) {
+    return true;
+  }
+
+  return responseCode >= 400 && responseCode < 500;
+}
+
+function summarizeSendError(error, attempt, totalAttempts, recipient, subject, startedAt) {
+  return {
+    attempt,
+    totalAttempts,
+    recipient,
+    subject,
+    durationMs: Date.now() - startedAt,
+    retryable: isRetryableSmtpError(error),
+    message: error?.message || 'Failed to send email',
+    code: error?.code || error?.name || null,
+    response: error?.response || error?.responseCode || null,
+    stack: error?.stack || null,
+  };
 }
 
 function extractFirstUrl(text) {
@@ -163,48 +218,88 @@ async function sendEmail(to, subject, text) {
     };
   }
 
-  try {
-    console.log('STEP 3 sending email', {
-      host: smtpHost,
-      port: smtpPort,
-      from: smtpFrom,
-      to: recipient,
-      subject: mailSubject,
-    });
-    console.log({
-      host: smtpHost,
-      port: smtpPort,
-      from: smtpFrom,
-      to: recipient,
-      subject: mailSubject
-   });
-   
-    const result = await transporter.sendMail({
-      from: smtpFrom,
-      to: recipient,
-      subject: mailSubject,
-      text: bodyText,
-      html: buildHtmlBody(mailSubject, bodyText),
-    });
-    console.log('STEP 4 email result', result);
+  const totalAttempts = Math.max(1, smtpMaxAttempts);
 
-    return {
-      success: true,
-      messageId: result.messageId || null
-    };
+  for (let attempt = 1; attempt <= totalAttempts; attempt += 1) {
+    const startedAt = Date.now();
 
-  } catch (error) {
-    console.error('FULL SMTP ERROR:', error);
+    try {
+      console.log('SMTP send attempt started', {
+        attempt,
+        totalAttempts,
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpSecure,
+        from: smtpFrom,
+        to: recipient,
+        subject: mailSubject,
+        timeoutMs: smtpSendTimeoutMs,
+      });
 
-    return {
-      success: false,
-      message: error?.message || 'Failed to send email',
-      error: error?.message || 'Failed to send email',
-      code: error?.code || error?.name || null,
-      response: error?.response || error?.responseCode || null,
-      stack: error?.stack || null,
-    };
+      const result = await withTimeout(
+        transporter.sendMail({
+          from: smtpFrom,
+          to: recipient,
+          subject: mailSubject,
+          text: bodyText,
+          html: buildHtmlBody(mailSubject, bodyText),
+        }),
+        smtpSendTimeoutMs,
+        `SMTP send timed out after ${smtpSendTimeoutMs}ms`
+      );
+
+      console.log('SMTP send attempt succeeded', {
+        attempt,
+        totalAttempts,
+        durationMs: Date.now() - startedAt,
+        recipient,
+        subject: mailSubject,
+        messageId: result?.messageId || null,
+      });
+
+      return {
+        success: true,
+        messageId: result.messageId || null,
+      };
+    } catch (error) {
+      const summary = summarizeSendError(error, attempt, totalAttempts, recipient, mailSubject, startedAt);
+      console.error('SMTP send attempt failed', summary);
+
+      const canRetry = attempt < totalAttempts && summary.retryable;
+      if (canRetry) {
+        const delayMs = smtpRetryDelayMs * attempt;
+        if (delayMs > 0) {
+          console.warn('SMTP send retry scheduled', {
+            attempt,
+            nextAttempt: attempt + 1,
+            delayMs,
+            recipient,
+            subject: mailSubject,
+          });
+          await sleep(delayMs);
+        }
+        continue;
+      }
+
+      return {
+        success: false,
+        message: summary.message,
+        error: summary.message,
+        code: summary.code,
+        response: summary.response,
+        stack: summary.stack,
+      };
+    }
   }
+
+  return {
+    success: false,
+    message: 'Failed to send email',
+    error: 'Failed to send email',
+    code: 'SMTP_RETRIES_EXHAUSTED',
+    response: null,
+    stack: null,
+  };
 }
 
 module.exports = {

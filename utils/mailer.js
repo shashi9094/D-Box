@@ -1,11 +1,12 @@
-const nodemailer = require('nodemailer');
 const { sendEmail } = require('../emailService');
 
 const host = String(process.env.SMTP_HOST || 'smtp-relay.brevo.com').trim();
-const port = Number(process.env.SMTP_PORT || 465);
+const port = Number(process.env.SMTP_PORT || 587);
 const user = String(process.env.SMTP_USER || '').trim();
 const pass = String(process.env.SMTP_PASS || '').trim();
 const senderEmail = String(process.env.SMTP_FROM || user || 'no-reply@mydbox.local').trim();
+const secureSetting = String(process.env.SMTP_SECURE || '').trim().toLowerCase();
+const secure = secureSetting ? secureSetting === 'true' : port === 465;
 
 const isEmail = (value) => /.+@.+\..+/.test(String(value || '').trim());
 
@@ -17,50 +18,21 @@ const summarizeMailerError = (error) => ({
     stack: error?.stack || null,
 });
 
-const transporter = nodemailer.createTransport({
-    host: 'smtp-relay.brevo.com',
-    port: 2525,
-    secure: false,
-    requireTLS: true,
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
-    },
-    connectionTimeout: 60000,
-    greetingTimeout: 60000,
-    socketTimeout: 60000,
-    tls: {
-        rejectUnauthorized: false,
-        minVersion: 'TLSv1.2'
-    }
-});
 console.log('OTP mailer initialized', {
     host,
     port,
+    secure,
     hasCredentials: Boolean(user && pass),
     senderEmail,
     senderEmailValid: isEmail(senderEmail),
 });
 
-transporter.verify()
-    .then(() => {
-        console.log('OTP mailer transporter verified successfully');
-    })
-    .catch((error) => {
-        console.error('OTP mailer transporter verify failed:', summarizeMailerError(error));
-    });
-
-function withTimeout(promise, timeoutMs, timeoutMessage) {
-    let timer = null;
-    const timeoutPromise = new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
-    });
-
-    return Promise.race([promise, timeoutPromise]).finally(() => {
-        if (timer) {
-            clearTimeout(timer);
-        }
-    });
+function buildSendOptions() {
+    return {
+        timeoutMs: Number(process.env.SMTP_SEND_TIMEOUT_MS || 30000),
+        maxAttempts: Math.max(1, Number(process.env.SMTP_SEND_MAX_ATTEMPTS || 3)),
+        retryDelayMs: Math.max(0, Number(process.env.SMTP_SEND_RETRY_DELAY_MS || 1000)),
+    };
 }
 
 async function sendOTP(email, otp) {
@@ -80,24 +52,32 @@ async function sendOTP(email, otp) {
     }
 
     try {
-        console.log('STEP 1 sendOTP received request', { recipient, otpLength: safeOtp.length });
+        console.log('OTP send request received', {
+            recipient,
+            otpLength: safeOtp.length,
+            host,
+            port,
+            secure,
+        });
 
         const bodyText = `Your D-Box verification OTP is: ${safeOtp}\n\nThis code is valid for 5 minutes.\n\nIf you did not request this OTP, please ignore this email.`;
 
-        console.log('STEP 2 sendOTP delegating to sendEmail');
-        const result = await withTimeout(
-            sendEmail(
-                recipient,
-                'Your OTP Code',
-                bodyText
-            ),
-            15000,
-            'OTP email send timed out'
-        );
+        const sendOptions = buildSendOptions();
+        console.log('OTP send delegating to sendEmail', sendOptions);
 
-        console.log('STEP 4 email result', result);
+        const result = await sendEmail(recipient, 'Your OTP Code', bodyText);
+
+        console.log('OTP send result', result);
 
         if (!result || !result.success) {
+            console.error('OTP email send failed', {
+                recipient,
+                error: result?.error || 'Failed to send OTP email',
+                code: result?.code || null,
+                response: result?.response || null,
+                stack: result?.stack || null,
+            });
+
             return {
                 success: false,
                 error: result?.error || 'Failed to send OTP email',
