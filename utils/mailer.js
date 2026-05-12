@@ -1,9 +1,9 @@
 const nodemailer = require('nodemailer');
 
-const host = String(process.env.BREVO_SMTP_HOST || 'smtp-relay.brevo.com').trim();
-const port = Number(process.env.BREVO_SMTP_PORT || 587);
-const user = String(process.env.BREVO_SMTP_USER || '').trim();
-const pass = String(process.env.BREVO_SMTP_PASS || '').trim();
+const host = String(process.env.SMTP_HOST || 'smtp-relay.brevo.com').trim();
+const port = Number(process.env.SMTP_PORT || 587);
+const user = String(process.env.SMTP_USER || '').trim();
+const pass = String(process.env.SMTP_PASS || '').trim();
 const senderEmail = String(process.env.SMTP_FROM || user || 'no-reply@mydbox.local').trim();
 
 const isEmail = (value) => /.+@.+\..+/.test(String(value || '').trim());
