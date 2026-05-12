@@ -1,307 +1,198 @@
-const nodemailer = require('nodemailer');
-const { SESClient } = require('@aws-sdk/client-ses');
+const axios = require('axios');
+const crypto = require('crypto');
 
-// ENV variables
-const awsAccessKeyId = String(process.env.AWS_ACCESS_KEY_ID || '').trim();
-const awsSecretAccessKey = String(process.env.AWS_SECRET_ACCESS_KEY || '').trim();
-const awsRegion = String(process.env.AWS_REGION || '').trim();
-const smtpHost = String(process.env.SMTP_HOST || 'smtp-relay.brevo.com').trim();
-const smtpPort = Number(process.env.SMTP_PORT || 587);
-const smtpUser = String(process.env.SMTP_USER || '').trim();
-const smtpPass = String(process.env.SMTP_PASS || '').trim();
-const smtpFrom = String(process.env.SMTP_FROM || smtpUser || '').trim();
-const smtpSecureSetting = String(process.env.SMTP_SECURE || '').trim().toLowerCase();
-const smtpSecure = smtpSecureSetting ? smtpSecureSetting === 'true' : smtpPort === 465;
-const smtpConnectionTimeout = Number(process.env.SMTP_CONNECTION_TIMEOUT_MS || 30000);
-const smtpGreetingTimeout = Number(process.env.SMTP_GREETING_TIMEOUT_MS || 30000);
-const smtpSocketTimeout = Number(process.env.SMTP_SOCKET_TIMEOUT_MS || 30000);
-const smtpSendTimeoutMs = Number(process.env.SMTP_SEND_TIMEOUT_MS || 30000);
-const smtpMaxAttempts = Math.max(1, Number(process.env.SMTP_SEND_MAX_ATTEMPTS || 3));
-const smtpRetryDelayMs = Math.max(0, Number(process.env.SMTP_SEND_RETRY_DELAY_MS || 1000));
+// ENV variables (Railway se aayenge)
+const BREVO_API_KEY = String(process.env.BREVO_API_KEY || '').trim();
+const SENDER_EMAIL = String(process.env.SMTP_FROM || '').trim();
+const SENDER_NAME = String(process.env.SENDER_NAME || 'D-Box').trim();
+const FRONTEND_URL = String(process.env.FRONTEND_URL || '').trim();
 
-const summarizeSesError = (error) => ({
-  message: error?.message || 'SES send failed',
-  code: error?.name || error?.code || null,
-  requestId: error?.$metadata?.requestId || null,
-  httpStatusCode: error?.$metadata?.httpStatusCode || null,
-  stack: error?.stack || null,
-});
+// Rate limit
+let lastSendTime = 0;
+const MIN_DELAY_MS = 2000;
 
-const awsSesEnabled = process.env.ENABLE_AWS_SES === 'true';
-let sesClient = null;
-
-if (awsSesEnabled) {
-  sesClient = new SESClient({
-    region: awsRegion,
-    credentials: {
-      accessKeyId: awsAccessKeyId,
-      secretAccessKey: awsSecretAccessKey
-    }
-  });
-
-  console.log('AWS SES support configured (inactive sender)', {
-    region: awsRegion || '(missing)',
-    from: smtpFrom || '(missing)',
-    hasAccessKey: Boolean(awsAccessKeyId),
-    hasSecretKey: Boolean(awsSecretAccessKey),
-  });
-}
-
-const transporter = nodemailer.createTransport({
-  host: smtpHost,
-  port: smtpPort,
-  secure: smtpSecure,
-  requireTLS: !smtpSecure,
-  auth: {
-    user: smtpUser,
-    pass: smtpPass,
-  },
-  connectionTimeout: smtpConnectionTimeout,
-  greetingTimeout: smtpGreetingTimeout,
-  socketTimeout: smtpSocketTimeout,
-  tls: {
-    rejectUnauthorized: false,
-    minVersion: 'TLSv1.2',
-  },
-});
-
-console.log('Brevo SMTP email service initialized', {
-  host: smtpHost,
-  port: smtpPort,
-  hasUser: Boolean(smtpUser),
-  hasPass: Boolean(smtpPass),
-  from: smtpFrom || '(missing)',
-});
-
-transporter.verify()
-  .then(() => {
-    console.log('Brevo SMTP transporter verified successfully');
-  })
-  .catch((error) => {
-    console.error('Brevo SMTP transporter verify failed:', summarizeSesError(error));
-  });
-
-function withTimeout(promise, timeoutMs, timeoutMessage) {
-  let timer = null;
-  const timeoutPromise = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
-  });
-
-  return Promise.race([promise, timeoutPromise]).finally(() => {
-    if (timer) {
-      clearTimeout(timer);
-    }
-  });
-}
+// Stores
+const otpStore = new Map();
+const resetStore = new Map();
+const inviteStore = new Map();
 
 function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function isRetryableSmtpError(error) {
-  const code = String(error?.code || error?.name || '').toUpperCase();
-  const responseCode = Number(error?.responseCode || error?.response?.code || 0);
+function generateOTP() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
 
-  if (
-    code === 'ETIMEDOUT' ||
-    code === 'ESOCKET' ||
-    code === 'ECONNECTION' ||
-    code === 'ECONNRESET' ||
-    code === 'EPIPE' ||
-    code === 'EAI_AGAIN' ||
-    code === 'ENOTFOUND' ||
-    code === 'ECONNREFUSED'
-  ) {
-    return true;
+function generateToken(length = 32) {
+  return crypto.randomBytes(length).toString('hex');
+}
+
+// ==================== CORE EMAIL ====================
+
+async function sendEmail(to, subject, text, html = null) {
+  const recipient = String(to || '').trim().toLowerCase();
+
+  if (!recipient || !recipient.includes('@')) {
+    throw new Error('Invalid recipient email');
   }
 
-  return responseCode >= 400 && responseCode < 500;
-}
-
-function summarizeSendError(error, attempt, totalAttempts, recipient, subject, startedAt) {
-  return {
-    attempt,
-    totalAttempts,
-    recipient,
-    subject,
-    durationMs: Date.now() - startedAt,
-    retryable: isRetryableSmtpError(error),
-    message: error?.message || 'Failed to send email',
-    code: error?.code || error?.name || null,
-    response: error?.response || error?.responseCode || null,
-    stack: error?.stack || null,
-  };
-}
-
-function extractFirstUrl(text) {
-  const match = String(text || '').match(/https?:\/\/[^\s<>"')]+/i);
-  return match ? match[0] : '';
-}
-
-function buildHtmlBody(subject, text) {
-  const safeSubject = String(subject || '').trim();
-  const safeText = String(text || '').trim();
-  const verifyUrl = extractFirstUrl(safeText);
-
-  const escapedText = safeText
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\n/g, '<br/>');
-
-  if (!verifyUrl) {
-    return `
-      <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;color:#111827;line-height:1.6">
-        <h2 style="margin:0 0 16px 0">${safeSubject}</h2>
-        <div>${escapedText}</div>
-      </div>
-    `;
+  if (!BREVO_API_KEY) {
+    throw new Error('BREVO_API_KEY missing');
   }
 
-  return `
-    <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px;background:#ffffff;color:#111827;line-height:1.6">
-      <h2 style="margin:0 0 16px 0">${safeSubject}</h2>
-      <div style="margin:0 0 24px 0">${escapedText}</div>
-      <a href="${verifyUrl}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:700">Verify Account</a>
-      <div style="margin-top:20px;font-size:12px;color:#6b7280;word-break:break-all">
-        If the button does not work, copy and paste this link:<br/>
-        <a href="${verifyUrl}" style="color:#2563eb">${verifyUrl}</a>
+  // Rate limit delay
+  const now = Date.now();
+  const wait = Math.max(0, MIN_DELAY_MS - (now - lastSendTime));
+  if (wait > 0) await sleep(wait);
+
+  try {
+    const payload = {
+      sender: { name: SENDER_NAME, email: SENDER_EMAIL },
+      to: [{ email: recipient }],
+      subject: subject || 'D-Box Notification',
+      textContent: text || '',
+    };
+
+    if (html) payload.htmlContent = html;
+
+    const { data } = await axios.post(
+      'https://api.brevo.com/v3/smtp/email',
+      payload,
+      {
+        headers: {
+          'api-key': BREVO_API_KEY,
+          'Content-Type': 'application/json'
+        },
+        timeout: 15000
+      }
+    );
+
+    lastSendTime = Date.now();
+    console.log('✅ Email sent:', recipient, data.messageId);
+    return { success: true, messageId: data.messageId };
+
+  } catch (error) {
+    const errMsg = error.response?.data?.message || error.message;
+    console.error('❌ Email failed:', errMsg);
+    throw new Error('Failed to send email: ' + errMsg);
+  }
+}
+
+// ==================== OTP ====================
+
+async function sendVerificationOTP(email) {
+  const otp = generateOTP();
+  const expiresAt = Date.now() + 10 * 60 * 1000;
+
+  otpStore.set(email, { otp, expiresAt, attempts: 0 });
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:30px;">
+      <h2>Verify Your Account</h2>
+      <p>Your OTP code:</p>
+      <div style="background:#f3f4f6;padding:20px;border-radius:8px;text-align:center;margin:20px 0;">
+        <span style="font-size:36px;font-weight:bold;color:#2563eb;letter-spacing:8px;">${otp}</span>
       </div>
+      <p style="color:#ef4444;">Expires in 10 minutes</p>
     </div>
   `;
+
+  await sendEmail(email, '🔐 D-Box Verification Code', `Your OTP: ${otp}`, html);
+  return { success: true, message: 'OTP sent' };
 }
 
-// MAIN FUNCTION
-async function sendEmail(to, subject, text) {
-  const recipient = String(to || '').trim();
-  const mailSubject = String(subject || '').trim();
-  const bodyText = String(text || '').trim();
-
-  // Debug logs
-  console.log("FROM:", smtpFrom);
-  console.log("TO:", recipient);
-
-  // Validation
-  if (!recipient) {
-    return { success: false, error: 'Recipient email is required' };
+function verifyOTP(email, otp) {
+  const stored = otpStore.get(email);
+  if (!stored) return { success: false, message: 'OTP not found' };
+  
+  if (Date.now() > stored.expiresAt) {
+    otpStore.delete(email);
+    return { success: false, message: 'OTP expired' };
   }
 
-  if (!recipient.includes('@')) {
-    return { success: false, error: 'Invalid recipient email' };
-  }
-
-  if (!smtpFrom || !smtpFrom.includes('@')) {
-    return { success: false, error: 'Invalid SMTP_FROM email' };
-  }
-
-  if (!mailSubject) {
-    return { success: false, error: 'Email subject is required' };
-  }
-
-  if (!bodyText) {
-    return { success: false, error: 'Email text is required' };
-  }
-
-  // Check ENV config
-  const missingConfig = [
-    !smtpHost ? 'SMTP_HOST' : null,
-    !smtpPort ? 'SMTP_PORT' : null,
-    !smtpUser ? 'SMTP_USER' : null,
-    !smtpPass ? 'SMTP_PASS' : null,
-    !smtpFrom ? 'SMTP_FROM' : null
-  ].filter(Boolean);
-
-  if (missingConfig.length > 0) {
-    return {
-      success: false,
-      error: `Missing env variables: ${missingConfig.join(', ')}`
-    };
-  }
-
-  const totalAttempts = Math.max(1, smtpMaxAttempts);
-
-  for (let attempt = 1; attempt <= totalAttempts; attempt += 1) {
-    const startedAt = Date.now();
-
-    try {
-      console.log('SMTP send attempt started', {
-        attempt,
-        totalAttempts,
-        host: smtpHost,
-        port: smtpPort,
-        secure: smtpSecure,
-        from: smtpFrom,
-        to: recipient,
-        subject: mailSubject,
-        timeoutMs: smtpSendTimeoutMs,
-      });
-
-      const result = await withTimeout(
-        transporter.sendMail({
-          from: smtpFrom,
-          to: recipient,
-          subject: mailSubject,
-          text: bodyText,
-          html: buildHtmlBody(mailSubject, bodyText),
-        }),
-        smtpSendTimeoutMs,
-        `SMTP send timed out after ${smtpSendTimeoutMs}ms`
-      );
-
-      console.log('SMTP send attempt succeeded', {
-        attempt,
-        totalAttempts,
-        durationMs: Date.now() - startedAt,
-        recipient,
-        subject: mailSubject,
-        messageId: result?.messageId || null,
-      });
-
-      return {
-        success: true,
-        messageId: result.messageId || null,
-      };
-    } catch (error) {
-      const summary = summarizeSendError(error, attempt, totalAttempts, recipient, mailSubject, startedAt);
-      console.error('SMTP send attempt failed', summary);
-
-      const canRetry = attempt < totalAttempts && summary.retryable;
-      if (canRetry) {
-        const delayMs = smtpRetryDelayMs * attempt;
-        if (delayMs > 0) {
-          console.warn('SMTP send retry scheduled', {
-            attempt,
-            nextAttempt: attempt + 1,
-            delayMs,
-            recipient,
-            subject: mailSubject,
-          });
-          await sleep(delayMs);
-        }
-        continue;
-      }
-
-      return {
-        success: false,
-        message: summary.message,
-        error: summary.message,
-        code: summary.code,
-        response: summary.response,
-        stack: summary.stack,
-      };
+  if (stored.otp !== otp) {
+    stored.attempts++;
+    if (stored.attempts >= 3) {
+      otpStore.delete(email);
+      return { success: false, message: 'Max attempts exceeded' };
     }
+    return { success: false, message: 'Invalid OTP' };
   }
 
-  return {
-    success: false,
-    message: 'Failed to send email',
-    error: 'Failed to send email',
-    code: 'SMTP_RETRIES_EXHAUSTED',
-    response: null,
-    stack: null,
-  };
+  otpStore.delete(email);
+  return { success: true, message: 'Verified' };
+}
+
+// ==================== FORGOT PASSWORD ====================
+
+async function sendForgotPasswordLink(email) {
+  const token = generateToken();
+  const expiresAt = Date.now() + 30 * 60 * 1000;
+
+  resetStore.set(token, { email, expiresAt });
+
+  const resetUrl = `${FRONTEND_URL}/reset-password?token=${token}`;
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:30px;">
+      <h2>Reset Password</h2>
+      <a href="${resetUrl}" style="display:inline-block;padding:14px 28px;background:#2563eb;color:white;text-decoration:none;border-radius:8px;">Reset Password</a>
+      <p style="color:#ef4444;">Expires in 30 minutes</p>
+    </div>
+  `;
+
+  await sendEmail(email, '🔑 Reset Your Password', `Link: ${resetUrl}`, html);
+  return { success: true, message: 'Reset link sent' };
+}
+
+function verifyResetToken(token) {
+  const stored = resetStore.get(token);
+  if (!stored || Date.now() > stored.expiresAt) {
+    return { success: false, message: 'Invalid or expired token' };
+  }
+  resetStore.delete(token);
+  return { success: true, email: stored.email };
+}
+
+// ==================== INVITE ====================
+
+async function sendInviteLink(email, boxId, boxName, invitedBy) {
+  const token = generateToken();
+  const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+
+  inviteStore.set(token, { email, boxId, expiresAt });
+
+  const joinUrl = `${FRONTEND_URL}/join?token=${token}&box=${boxId}`;
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:30px;">
+      <h2>Box Invitation</h2>
+      <p><strong>${invitedBy}</strong> invited you to <strong>${boxName}</strong></p>
+      <a href="${joinUrl}" style="display:inline-block;padding:14px 28px;background:#10b981;color:white;text-decoration:none;border-radius:8px;">Accept Invitation</a>
+      <p style="color:#6b7280;">Expires in 7 days</p>
+    </div>
+  `;
+
+  await sendEmail(email, `📦 Invitation to ${boxName}`, `Join: ${joinUrl}`, html);
+  return { success: true, message: 'Invitation sent' };
+}
+
+function verifyInviteToken(token, boxId) {
+  const stored = inviteStore.get(token);
+  if (!stored || stored.boxId !== boxId || Date.now() > stored.expiresAt) {
+    return { success: false, message: 'Invalid or expired invitation' };
+  }
+  inviteStore.delete(token);
+  return { success: true, email: stored.email };
 }
 
 module.exports = {
-  sendEmail
+  sendEmail,
+  sendVerificationOTP,
+  verifyOTP,
+  sendForgotPasswordLink,
+  verifyResetToken,
+  sendInviteLink,
+  verifyInviteToken
 };
