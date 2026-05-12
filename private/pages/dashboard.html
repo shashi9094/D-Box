@@ -605,12 +605,81 @@ window.addEventListener('load', async () => {
 });
 
 // Profile verification: send OTP, show inputs, verify, resend
+let otpCooldownUntil = 0;
+let otpCooldownTimer = null;
+
+function getOtpCooldownSecondsLeft() {
+    return Math.max(0, Math.ceil((otpCooldownUntil - Date.now()) / 1000));
+}
+
+function startOtpCooldown(seconds, messageEl) {
+    const cooldownSeconds = Math.max(0, Number(seconds || 0));
+    if (!cooldownSeconds) {
+        return;
+    }
+
+    otpCooldownUntil = Date.now() + (cooldownSeconds * 1000);
+
+    if (otpCooldownTimer) {
+        clearInterval(otpCooldownTimer);
+    }
+
+    const updateButtons = () => {
+        const remaining = getOtpCooldownSecondsLeft();
+        const verifyBtn = document.getElementById('verifyProfileBtn');
+        const resendBtn = document.getElementById('pv-resendBtn');
+
+        if (verifyBtn) {
+            verifyBtn.disabled = remaining > 0;
+            verifyBtn.textContent = remaining > 0 ? `Wait ${remaining}s` : 'Verify Email';
+        }
+
+        if (resendBtn) {
+            resendBtn.disabled = remaining > 0;
+            resendBtn.textContent = remaining > 0 ? `Retry in ${remaining}s` : 'Resend OTP';
+        }
+
+        if (remaining <= 0) {
+            if (otpCooldownTimer) {
+                clearInterval(otpCooldownTimer);
+                otpCooldownTimer = null;
+            }
+
+            if (verifyBtn) {
+                verifyBtn.disabled = false;
+                verifyBtn.textContent = 'Verify Email';
+            }
+
+            if (resendBtn) {
+                resendBtn.disabled = false;
+                resendBtn.textContent = 'Resend OTP';
+            }
+
+            if (messageEl && messageEl.textContent === 'Too many requests') {
+                messageEl.classList.add('hidden');
+                messageEl.textContent = '';
+            }
+        }
+    };
+
+    updateButtons();
+    otpCooldownTimer = setInterval(updateButtons, 1000);
+}
+
 document.getElementById('verifyProfileBtn').addEventListener('click', async () => {
     const button = document.getElementById('verifyProfileBtn');
     const msgEl = document.getElementById('pvMessage');
     const otpSection = document.getElementById('profileOtpSection');
     const otpInputs = Array.from(document.querySelectorAll('#profileOtpInputs .otp-input'));
     const originalText = button.textContent;
+
+    if (getOtpCooldownSecondsLeft() > 0) {
+        const secondsLeft = getOtpCooldownSecondsLeft();
+        msgEl.textContent = `Please wait ${secondsLeft} seconds before requesting OTP again.`;
+        msgEl.classList.remove('hidden');
+        msgEl.classList.add('error');
+        return;
+    }
 
     function showMsg(text, isError) {
         msgEl.textContent = text || '';
@@ -695,6 +764,12 @@ document.getElementById('verifyProfileBtn').addEventListener('click', async () =
         const body = await res.json().catch(() => ({}));
 
         if (!res.ok || body.success === false) {
+            const retryAfterSeconds = Number(body.retryAfterSeconds || body.retryAfter || 0);
+            if (retryAfterSeconds > 0) {
+                startOtpCooldown(retryAfterSeconds, msgEl);
+                throw new Error(`Too many requests. Try again in ${retryAfterSeconds} seconds.`);
+            }
+
             throw new Error(body.message || 'Unable to send verification email');
         }
 
@@ -748,10 +823,30 @@ document.getElementById('pv-verifyBtn').addEventListener('click', async () => {
 document.getElementById('pv-resendBtn').addEventListener('click', async () => {
     const btn = document.getElementById('pv-resendBtn');
     const original = btn.textContent; btn.disabled = true; btn.textContent = 'Resending...';
+
+    if (getOtpCooldownSecondsLeft() > 0) {
+        const secondsLeft = getOtpCooldownSecondsLeft();
+        const msgEl = document.getElementById('pvMessage');
+        msgEl.textContent = `Please wait ${secondsLeft} seconds before retrying.`;
+        msgEl.classList.remove('hidden');
+        msgEl.classList.add('error');
+        btn.disabled = false;
+        btn.textContent = original;
+        return;
+    }
+
     try {
         const res = await fetch('/api/auth/send-verification-otp', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' } });
         const body = await res.json().catch(() => ({}));
-        if (!res.ok || body.success === false) throw new Error(body.message || 'Unable to resend OTP');
+        if (!res.ok || body.success === false) {
+            const retryAfterSeconds = Number(body.retryAfterSeconds || body.retryAfter || 0);
+            if (retryAfterSeconds > 0) {
+                startOtpCooldown(retryAfterSeconds, document.getElementById('pvMessage'));
+                throw new Error(`Too many requests. Try again in ${retryAfterSeconds} seconds.`);
+            }
+
+            throw new Error(body.message || 'Unable to resend OTP');
+        }
         alert('OTP sent successfully');
         document.getElementById('profileOtpSection').hidden = false;
     } catch (err) {
