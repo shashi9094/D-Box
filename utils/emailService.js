@@ -82,10 +82,13 @@ async function sendEmail(to, subject, text, html = null) {
 // ==================== OTP ====================
 
 async function sendVerificationOTP(email) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+
   const otp = generateOTP();
   const expiresAt = Date.now() + 10 * 60 * 1000; // 10 min
 
-  otpStore.set(email, { otp, expiresAt, attempts: 0 });
+  otpStore.set(normalizedEmail, { otp, expiresAt, attempts: 0 });
+  console.log('✅ OTP generated and stored', { email: normalizedEmail, otp, expiresAt: new Date(expiresAt).toISOString() });
 
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:30px;">
@@ -98,25 +101,38 @@ async function sendVerificationOTP(email) {
     </div>
   `;
 
-  await sendEmail(email, '🔐 D-Box Verification Code', `Your OTP: ${otp}`, html);
+  await sendEmail(normalizedEmail, '🔐 D-Box Verification Code', `Your OTP: ${otp}`, html);
   return { success: true, message: 'OTP sent' };
 }
 
 function verifyOTP(email, otp) {
-  const stored = otpStore.get(email);
-  if (!stored) return { success: false, message: 'OTP not found' };
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const normalizedOtp = String(otp || '').trim();
+
+  console.log('🔍 verifyOTP called', { email: normalizedEmail, otp: normalizedOtp, storedKeys: Array.from(otpStore.keys()) });
+
+  const stored = otpStore.get(normalizedEmail);
+  if (!stored) {
+    console.error('❌ OTP not found', { email: normalizedEmail, availableKeys: Array.from(otpStore.keys()) });
+    return { success: false, message: 'OTP not found' };
+  }
   
   if (Date.now() > stored.expiresAt) {
-    otpStore.delete(email);
+    otpStore.delete(normalizedEmail);
+    console.error('❌ OTP expired', { email: normalizedEmail, expiresAt: new Date(stored.expiresAt).toISOString() });
     return { success: false, message: 'OTP expired' };
   }
 
-  if (stored.otp !== otp) {
+  console.log('🔐 OTP comparison', { stored: stored.otp, provided: normalizedOtp, match: stored.otp === normalizedOtp });
+
+  if (stored.otp !== normalizedOtp) {
     stored.attempts++;
+    console.warn('⚠️ Invalid OTP attempt', { email: normalizedEmail, storedOtp: stored.otp, providedOtp: normalizedOtp, attempt: stored.attempts });
     return { success: false, message: 'Invalid OTP' };
   }
 
-  otpStore.delete(email);
+  otpStore.delete(normalizedEmail);
+  console.log('✅ OTP verified successfully', { email: normalizedEmail });
   return { success: true, message: 'Verified' };
 }
 
