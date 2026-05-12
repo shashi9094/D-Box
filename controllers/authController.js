@@ -305,6 +305,7 @@ exports.verifyEmail = async (_req, res) => {
 async function issueVerificationOtp(req, res) {
     try {
         const userId = Number(req.user?.id || req.session?.user?.id || 0);
+        const sessionEmail = String(req.user?.email || req.session?.user?.email || '').trim().toLowerCase();
         if (!Number.isFinite(userId) || userId <= 0) {
             return res.status(401).json({ message: 'Not authenticated' });
         }
@@ -317,6 +318,11 @@ async function issueVerificationOtp(req, res) {
         const user = rows[0] || null;
         if (!user) return res.status(404).json({ message: 'User not found' });
         if (user.is_verified) return res.status(400).json({ message: 'Already verified' });
+
+        const recipientEmail = sessionEmail || String(user.email || '').trim().toLowerCase();
+        if (!recipientEmail) {
+            return res.status(500).json({ message: 'Unable to determine verification email' });
+        }
 
         const cooldownSeconds = getRemainingCooldown(user.verification_otp_sent_at);
         if (cooldownSeconds > 0) {
@@ -340,7 +346,7 @@ async function issueVerificationOtp(req, res) {
         );
 
         // Send email
-        const emailResult = await sendOTP(user.email, otp);
+        const emailResult = await sendOTP(recipientEmail, otp);
 
         if (!emailResult.success) {
             console.error('sendOtp: email send failed', emailResult);

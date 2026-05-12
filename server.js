@@ -30,7 +30,7 @@ const authRoutes = require('./routes/authRoutes');
 const boxRoutes = require('./routes/boxRoutes');
 const fileRoutes = require('./routes/fileRoutes');
 const boxController = require('./controllers/boxController');
-const { signup } = require('./controllers/authController');
+const { signup, sendOtp } = require('./controllers/authController');
 const { sendEmail } = require('./emailService');
 const otpRoutes = require('./routes/otpRoutes');
 const passwordResetRoutes = require('./routes/passwordResetRoutes');
@@ -108,6 +108,17 @@ function setNoStore(res) {
 
 function hasInviteQuery(req) {
     return Boolean(req.query && (req.query.invite || req.query.email || req.query.token));
+}
+
+function requireLoggedInSession(req, res, next) {
+    if (req.session?.user?.id) {
+        return next();
+    }
+
+    return res.status(401).json({
+        success: false,
+        message: 'Not authenticated',
+    });
 }
 
 function isProfileCompleteRow(row) {
@@ -254,6 +265,21 @@ app.get('/test-email', async (req, res) => {
                 error: result.error
             });
         }
+
+    app.post('/send-verification-otp', requireLoggedInSession, async (req, res) => {
+        console.log('POST /send-verification-otp hit');
+
+        try {
+            return await sendOtp(req, res);
+        } catch (error) {
+            console.error('POST /send-verification-otp unexpected error:', error.message || error);
+            return res.status(500).json({
+                success: false,
+                message: 'Unable to send verification OTP',
+                error: error.message || String(error),
+            });
+        }
+    });
 
         return res.json({
             success: true,

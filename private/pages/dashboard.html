@@ -48,7 +48,7 @@
                 <p id="profileVerificationMessage">Verify your profile to continue accessing uploads, boxes, and invite actions.</p>
                 <p><strong>Email:</strong> <span id="profileVerificationEmail">-</span></p>
             </div>
-            <button type="button" class="modal-submit-btn" id="verifyProfileBtn">Verify Profile</button>
+            <button type="button" class="modal-submit-btn" id="verifyProfileBtn">Verify Email</button>
         </div>
     </div>
 
@@ -586,8 +586,35 @@ window.addEventListener('load', async () => {
     }
 });
 
-document.getElementById('verifyProfileBtn').addEventListener('click', () => {
-    window.location.href = '/profile';
+document.getElementById('verifyProfileBtn').addEventListener('click', async () => {
+    const button = document.getElementById('verifyProfileBtn');
+    const originalText = button.textContent;
+
+    try {
+        button.disabled = true;
+        button.textContent = 'Sending...';
+
+        const response = await fetch('/send-verification-otp', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || 'Unable to send verification email');
+        }
+
+        alert(result.message || 'Verification email sent');
+    } catch (error) {
+        alert(error.message || 'Unable to send verification email');
+    } finally {
+        button.disabled = false;
+        button.textContent = originalText;
+    }
 });
 </script>
 
