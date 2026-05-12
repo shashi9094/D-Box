@@ -13,6 +13,7 @@ const {
   signup,
   login,
   sendOtp,
+  sendVerificationOtp,
   resendOtp,
   verifyOtp,
   forgotPassword,
@@ -237,6 +238,7 @@ router.get("/status", async (req, res) => {
 
 // Inline OTP endpoints for profile verification
 router.post('/send-otp', requireSessionUser, sendOtp);
+router.post('/send-verification-otp', requireSessionUser, sendVerificationOtp);
 router.post('/resend-otp', requireSessionUser, resendOtp);
 router.post('/verify-otp', requireSessionUser, requireSixDigitOtp('code'), verifyOtp);
 

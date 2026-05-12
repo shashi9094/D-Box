@@ -381,6 +381,9 @@ exports.sendOtp = async (req, res) => issueVerificationOtp(req, res);
 
 exports.resendOtp = async (req, res) => issueVerificationOtp(req, res);
 
+// Alias for route `/send-verification-otp` to keep naming explicit
+exports.sendVerificationOtp = async (req, res) => issueVerificationOtp(req, res);
+
 // Verify OTP submitted by authenticated user
 exports.verifyOtp = async (req, res) => {
     try {
