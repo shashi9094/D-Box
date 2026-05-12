@@ -113,10 +113,6 @@ function verifyOTP(email, otp) {
 
   if (stored.otp !== otp) {
     stored.attempts++;
-    if (stored.attempts >= 20) {
-      otpStore.delete(email);
-      return { success: false, message: 'Max attempts exceeded' };
-    }
     return { success: false, message: 'Invalid OTP' };
   }
 
