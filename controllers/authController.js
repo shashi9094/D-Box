@@ -304,11 +304,14 @@ exports.verifyEmail = async (_req, res) => {
 
 async function issueVerificationOtp(req, res) {
     try {
+        console.log('STEP 1 verification OTP request received');
         const userId = Number(req.user?.id || req.session?.user?.id || 0);
         const sessionEmail = String(req.user?.email || req.session?.user?.email || '').trim().toLowerCase();
         if (!Number.isFinite(userId) || userId <= 0) {
             return res.status(401).json({ message: 'Not authenticated' });
         }
+
+        console.log('STEP 2 resolved session user', { userId, sessionEmail });
 
         const sql = db.promise();
         const [rows] = await sql.query(
@@ -333,6 +336,12 @@ async function issueVerificationOtp(req, res) {
         // Generate 6-digit OTP
         const otp = generateSixDigitOtp();
         const otpExpiry = new Date(Date.now() + OTP_EXPIRY_MS);
+
+        console.log('STEP 3 sending email', {
+            userId,
+            recipientEmail,
+            otpLength: otp.length,
+        });
 
         // Save OTP and expiry
         await sql.query(
@@ -359,12 +368,17 @@ async function issueVerificationOtp(req, res) {
             });
         }
 
-        return res.json({
+        console.log('STEP 4 email result', emailResult);
+
+        const responsePayload = {
             success: true,
             message: 'OTP sent',
             cooldownSeconds: Math.ceil(OTP_RESEND_COOLDOWN_MS / 1000),
             expiresInSeconds: Math.floor(OTP_EXPIRY_MS / 1000),
-        });
+        };
+
+        console.log('STEP 5 response sent', responsePayload);
+        return res.json(responsePayload);
     } catch (error) {
         console.error('sendOtp failed:', error);
         return res.status(500).json({

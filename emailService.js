@@ -57,6 +57,27 @@ console.log('Brevo SMTP email service initialized', {
   from: smtpFrom || '(missing)',
 });
 
+transporter.verify()
+  .then(() => {
+    console.log('Brevo SMTP transporter verified successfully');
+  })
+  .catch((error) => {
+    console.error('Brevo SMTP transporter verify failed:', summarizeSesError(error));
+  });
+
+function withTimeout(promise, timeoutMs, timeoutMessage) {
+  let timer = null;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  });
+}
+
 function extractFirstUrl(text) {
   const match = String(text || '').match(/https?:\/\/[^\s<>"')]+/i);
   return match ? match[0] : '';
@@ -143,8 +164,13 @@ async function sendEmail(to, subject, text) {
   }
 
   try {
-
-    console.log("Sending email via Brevo SMTP...");
+    console.log('STEP 3 sending email', {
+      host: smtpHost,
+      port: smtpPort,
+      from: smtpFrom,
+      to: recipient,
+      subject: mailSubject,
+    });
     console.log({
       host: smtpHost,
       port: smtpPort,
@@ -152,15 +178,15 @@ async function sendEmail(to, subject, text) {
       to: recipient,
       subject: mailSubject
    });
-    const result = await transporter.sendMail({
+    const result = await withTimeout(transporter.sendMail({
       from: smtpFrom,
       to: recipient,
       subject: mailSubject,
       text: bodyText,
       html: buildHtmlBody(mailSubject, bodyText),
-    });
+    }), 15000, 'Brevo SMTP send timed out');
 
-    console.log("Email sent:", result);
+    console.log('STEP 4 email result', result);
 
     return {
       success: true,
@@ -168,11 +194,15 @@ async function sendEmail(to, subject, text) {
     };
 
   } catch (error) {
-    console.error("FULL SMTP ERROR:", error);
+    console.error('FULL SMTP ERROR:', error);
 
     return {
       success: false,
-      error: error?.message || 'Failed to send email'
+      message: error?.message || 'Failed to send email',
+      error: error?.message || 'Failed to send email',
+      code: error?.code || error?.name || null,
+      response: error?.response || error?.responseCode || null,
+      stack: error?.stack || null,
     };
   }
 }

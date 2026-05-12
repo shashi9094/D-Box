@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const { sendEmail } = require('../emailService');
 
 const host = String(process.env.SMTP_HOST || 'smtp-relay.brevo.com').trim();
 const port = Number(process.env.SMTP_PORT || 465);
@@ -34,13 +35,26 @@ console.log('OTP mailer initialized', {
     senderEmailValid: isEmail(senderEmail),
 });
 
-// transporter.verify()
-//     .then(() => {
-//         console.log('OTP mailer transporter verified successfully');
-//     })
-//     .catch((error) => {
-//         console.error('OTP mailer transporter verify failed:', summarizeMailerError(error));
-//     });
+transporter.verify()
+    .then(() => {
+        console.log('OTP mailer transporter verified successfully');
+    })
+    .catch((error) => {
+        console.error('OTP mailer transporter verify failed:', summarizeMailerError(error));
+    });
+
+function withTimeout(promise, timeoutMs, timeoutMessage) {
+    let timer = null;
+    const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+    });
+
+    return Promise.race([promise, timeoutPromise]).finally(() => {
+        if (timer) {
+            clearTimeout(timer);
+        }
+    });
+}
 
 async function sendOTP(email, otp) {
     const recipient = String(email || '').trim().toLowerCase();
@@ -59,23 +73,34 @@ async function sendOTP(email, otp) {
     }
 
     try {
-        const info = await transporter.sendMail({
-            from: `MyDbox <${senderEmail}>`,
-            to: recipient,
-            subject: 'Your OTP Code',
-            text: `Your D-Box verification OTP is: ${safeOtp}\n\nThis code is valid for 5 minutes.\n\nIf you did not request this OTP, please ignore this email.`,
-            html: `
-                <div style="font-family:Segoe UI,Arial,sans-serif;max-width:560px;margin:0 auto;padding:20px;border:1px solid #e5e7eb;border-radius:12px;line-height:1.6;color:#111827;">
-                    <h2 style="margin:0 0 10px;color:#0f172a;">Your OTP Code</h2>
-                    <p style="margin:0 0 14px;">Use the OTP below to continue:</p>
-                    <div style="margin:0 0 14px;padding:12px 16px;background:#f3f4f6;border-radius:8px;font-size:28px;font-weight:700;letter-spacing:6px;text-align:center;">${safeOtp}</div>
-                    <p style="margin:0 0 10px;">This code is valid for <strong>5 minutes</strong>.</p>
-                    <p style="margin:0;color:#6b7280;font-size:13px;">If you did not request this OTP, you can safely ignore this email.</p>
-                </div>
-            `,
-        });
+        console.log('STEP 1 sendOTP received request', { recipient, otpLength: safeOtp.length });
 
-        return { success: true, messageId: info.messageId };
+        const bodyText = `Your D-Box verification OTP is: ${safeOtp}\n\nThis code is valid for 5 minutes.\n\nIf you did not request this OTP, please ignore this email.`;
+
+        console.log('STEP 2 sendOTP delegating to sendEmail');
+        const result = await withTimeout(
+            sendEmail(
+                recipient,
+                'Your OTP Code',
+                bodyText
+            ),
+            15000,
+            'OTP email send timed out'
+        );
+
+        console.log('STEP 4 email result', result);
+
+        if (!result || !result.success) {
+            return {
+                success: false,
+                error: result?.error || 'Failed to send OTP email',
+                code: result?.code || null,
+                response: result?.response || null,
+                stack: result?.stack || null,
+            };
+        }
+
+        return { success: true, messageId: result.messageId || null };
     } catch (error) {
         console.error('OTP EMAIL ERROR:', summarizeMailerError(error));
 
