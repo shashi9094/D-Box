@@ -1,10 +1,15 @@
-const { SESClient, SendEmailCommand } = require('@aws-sdk/client-ses');
+const nodemailer = require('nodemailer');
+const { SESClient } = require('@aws-sdk/client-ses');
 
 // ENV variables
 const awsAccessKeyId = String(process.env.AWS_ACCESS_KEY_ID || '').trim();
 const awsSecretAccessKey = String(process.env.AWS_SECRET_ACCESS_KEY || '').trim();
 const awsRegion = String(process.env.AWS_REGION || '').trim();
-const smtpFrom = String(process.env.SMTP_FROM || '').trim();
+const smtpHost = String(process.env.SMTP_HOST || 'smtp-relay.brevo.com').trim();
+const smtpPort = Number(process.env.SMTP_PORT || 465);
+const smtpUser = String(process.env.SMTP_USER || '').trim();
+const smtpPass = String(process.env.SMTP_PASS || '').trim();
+const smtpFrom = String(process.env.SMTP_FROM || smtpUser || '').trim();
 
 const summarizeSesError = (error) => ({
   message: error?.message || 'SES send failed',
@@ -14,27 +19,43 @@ const summarizeSesError = (error) => ({
   stack: error?.stack || null,
 });
 
-//Disable kr rha temporay AWS
-if(process.env.ENABLE_AWS_SES === 'true'){
+const awsSesEnabled = process.env.ENABLE_AWS_SES === 'true';
+let sesClient = null;
 
-   // SES Client
-   const sesClient = new SESClient({
-      region: awsRegion,
-      credentials: {
-         accessKeyId: awsAccessKeyId,
-         secretAccessKey: awsSecretAccessKey
-      }
-   });
+if (awsSesEnabled) {
+  sesClient = new SESClient({
+    region: awsRegion,
+    credentials: {
+      accessKeyId: awsAccessKeyId,
+      secretAccessKey: awsSecretAccessKey
+    }
+  });
 
-   console.log('AWS SES email service initialized', {
-      region: awsRegion || '(missing)',
-      from: smtpFrom || '(missing)',
-      hasAccessKey: Boolean(awsAccessKeyId),
-      hasSecretKey: Boolean(awsSecretAccessKey),
-      senderIdentityLooksValid: Boolean(smtpFrom && smtpFrom.includes('@')),
-   });
-
+  console.log('AWS SES support configured (inactive sender)', {
+    region: awsRegion || '(missing)',
+    from: smtpFrom || '(missing)',
+    hasAccessKey: Boolean(awsAccessKeyId),
+    hasSecretKey: Boolean(awsSecretAccessKey),
+  });
 }
+
+const transporter = nodemailer.createTransport({
+  host: smtpHost,
+  port: smtpPort,
+  secure: true,
+  auth: {
+    user: smtpUser,
+    pass: smtpPass,
+  },
+});
+
+console.log('Brevo SMTP email service initialized', {
+  host: smtpHost,
+  port: smtpPort,
+  hasUser: Boolean(smtpUser),
+  hasPass: Boolean(smtpPass),
+  from: smtpFrom || '(missing)',
+});
 
 function extractFirstUrl(text) {
   const match = String(text || '').match(/https?:\/\/[^\s<>"')]+/i);
@@ -107,9 +128,10 @@ async function sendEmail(to, subject, text) {
 
   // Check ENV config
   const missingConfig = [
-    !awsAccessKeyId ? 'AWS_ACCESS_KEY_ID' : null,
-    !awsSecretAccessKey ? 'AWS_SECRET_ACCESS_KEY' : null,
-    !awsRegion ? 'AWS_REGION' : null,
+    !smtpHost ? 'SMTP_HOST' : null,
+    !smtpPort ? 'SMTP_PORT' : null,
+    !smtpUser ? 'SMTP_USER' : null,
+    !smtpPass ? 'SMTP_PASS' : null,
     !smtpFrom ? 'SMTP_FROM' : null
   ].filter(Boolean);
 
@@ -121,40 +143,23 @@ async function sendEmail(to, subject, text) {
   }
 
   try {
-    const command = new SendEmailCommand({
-      Source: smtpFrom,
-      Destination: {
-        ToAddresses: [recipient]
-      },
-      Message: {
-        Subject: {
-          Data: mailSubject,
-          Charset: 'UTF-8'
-        },
-        Body: {
-          Text: {
-            Data: bodyText,
-            Charset: 'UTF-8'
-          },
-          Html: {
-            Data: buildHtmlBody(mailSubject, bodyText),
-            Charset: 'UTF-8'
-          }
-        }
-      }
+    const result = await transporter.sendMail({
+      from: smtpFrom,
+      to: recipient,
+      subject: mailSubject,
+      text: bodyText,
+      html: buildHtmlBody(mailSubject, bodyText),
     });
-
-    const result = await sesClient.send(command);
 
     console.log("Email sent:", result);
 
     return {
       success: true,
-      messageId: result.MessageId
+      messageId: result.messageId || null
     };
 
   } catch (error) {
-    console.error("SES Error:", summarizeSesError(error));
+    console.error("SMTP Error:", summarizeSesError(error));
 
     return {
       success: false,
