@@ -170,6 +170,7 @@ exports.signup = async (req, res) => {
             redirectUrl,
             authReady: true,
             profilePending: true,
+            profileStatus: 'pending',
             otpSent: true,
             otpExpiresInSeconds: Math.floor(OTP_EXPIRY_MS / 1000),
         });

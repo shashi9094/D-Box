@@ -30,6 +30,7 @@ const authRoutes = require('./routes/authRoutes');
 const boxRoutes = require('./routes/boxRoutes');
 const fileRoutes = require('./routes/fileRoutes');
 const boxController = require('./controllers/boxController');
+const { signup } = require('./controllers/authController');
 const { sendEmail } = require('./emailService');
 const otpRoutes = require('./routes/otpRoutes');
 const passwordResetRoutes = require('./routes/passwordResetRoutes');
@@ -85,6 +86,21 @@ app.use(session(sessionOptions));
 // ⭐ VERY IMPORTANT (Google Login ke liye)
 app.use(passport.initialize());
 app.use(passport.session());
+
+app.post('/signup', async (req, res) => {
+    console.log('POST /signup hit');
+
+    try {
+        return await signup(req, res);
+    } catch (error) {
+        console.error('POST /signup unexpected error:', error.message || error);
+        return res.status(500).json({
+            success: false,
+            message: 'Signup failed',
+            error: error.message || String(error)
+        });
+    }
+});
 
 function setNoStore(res) {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
