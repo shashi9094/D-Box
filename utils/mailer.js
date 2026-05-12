@@ -19,7 +19,7 @@ const summarizeMailerError = (error) => ({
 const transporter = nodemailer.createTransport({
     host,
     port,
-    secure: false,
+    secure: true, 
     auth: {
         user,
         pass,
