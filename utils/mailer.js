@@ -19,12 +19,15 @@ const summarizeMailerError = (error) => ({
 
 const transporter = nodemailer.createTransport({
     host,
-    port,
-    secure: true, 
+    port:587,
+    secure: false, 
     auth: {
         user,
         pass,
     },
+    tls: {
+        rejectUnauthorized: false
+    }
 });
 
 console.log('OTP mailer initialized', {
