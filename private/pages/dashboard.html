@@ -782,40 +782,140 @@ document.getElementById('verifyProfileBtn').addEventListener('click', async () =
     }
 });
 
-// Verify OTP flow
+// Helper: Auto-detect OTP input elements with fallback methods
+function getOtpInputElements() {
+    console.log('🔍 [OTP] Attempting to find OTP input elements...');
+    
+    // Method 1: Try profileOtpInputs container with otp-input class
+    let otpInputs = Array.from(document.querySelectorAll('#profileOtpInputs .otp-input'));
+    console.log(`  ✓ Method 1 (#profileOtpInputs .otp-input): Found ${otpInputs.length} elements`);
+    
+    // Method 2: Fallback to direct ID lookup if Method 1 fails
+    if (otpInputs.length === 0) {
+        console.log('  ⚠️  Method 1 failed, trying direct ID lookup...');
+        otpInputs = ['pv-d1', 'pv-d2', 'pv-d3', 'pv-d4', 'pv-d5', 'pv-d6']
+            .map(id => document.getElementById(id))
+            .filter(el => el !== null);
+        console.log(`  ✓ Method 2 (direct IDs): Found ${otpInputs.length} elements`);
+    }
+    
+    // Method 3: Fallback to any inputs in profileOtpInputs container
+    if (otpInputs.length === 0) {
+        console.log('  ⚠️  Method 2 failed, trying all inputs in container...');
+        const container = document.getElementById('profileOtpInputs');
+        if (container) {
+            otpInputs = Array.from(container.querySelectorAll('input'));
+            console.log(`  ✓ Method 3 (all inputs in container): Found ${otpInputs.length} elements`);
+        }
+    }
+    
+    // Method 4: Fallback to any otp-input class elements on page
+    if (otpInputs.length === 0) {
+        console.log('  ⚠️  Method 3 failed, trying all otp-input elements on page...');
+        otpInputs = Array.from(document.querySelectorAll('.otp-input'));
+        console.log(`  ✓ Method 4 (all .otp-input on page): Found ${otpInputs.length} elements`);
+    }
+    
+    // Debug: List all found elements
+    if (otpInputs.length > 0) {
+        console.log(`✅ Found ${otpInputs.length} OTP input elements:`);
+        otpInputs.forEach((el, i) => {
+            console.log(`  [${i+1}] id="${el.id}" class="${el.className}" value="${el.value}"`);
+        });
+    } else {
+        console.error('❌ [OTP] ERROR: No OTP input elements found! Check HTML structure.');
+        console.log('  Available elements with "otp" in name:', document.querySelectorAll('[id*="otp"], [class*="otp"]').length);
+    }
+    
+    return otpInputs;
+}
+
+// Verify OTP flow - with robust element detection
 document.getElementById('pv-verifyBtn').addEventListener('click', async () => {
+    console.log('🚀 [OTP] Verify button clicked');
+    
     const msgEl = document.getElementById('pvMessage');
-    const otpInputs = Array.from(document.querySelectorAll('#profileOtpInputs .otp-input'));
+    if (!msgEl) {
+        console.error('❌ [OTP] Message element not found');
+        alert('UI Error: Cannot find message element');
+        return;
+    }
+    
+    const otpInputs = getOtpInputElements();
+    
+    if (otpInputs.length === 0) {
+        console.error('❌ [OTP] No OTP input elements found');
+        msgEl.textContent = 'Error: OTP input boxes not found';
+        msgEl.classList.remove('hidden');
+        msgEl.classList.add('error');
+        return;
+    }
+    
+    if (otpInputs.length !== 6) {
+        console.warn(`⚠️  [OTP] Expected 6 boxes but found ${otpInputs.length}`);
+    }
+    
     function showMsg(text, isError) {
         msgEl.textContent = text || '';
         msgEl.classList.toggle('hidden', !text);
         msgEl.classList.toggle('error', !!isError);
     }
 
-    const otp = otpInputs.map(i => i.value.trim()).join('');
-    if (!/^[0-9]{6}$/.test(otp)) { showMsg('Please enter the 6-digit code.', true); return; }
+    // Collect OTP with debug logging
+    const values = otpInputs.map((i, idx) => {
+        const val = (i.value || '').trim();
+        console.log(`  Box ${idx+1}: "${i.value}" → "${val}"`);
+        return val;
+    });
+    
+    const otp = values.join('');
+    console.log(`📝 [OTP] Collected OTP: "${otp}" (length: ${otp.length})`);
+    
+    if (!/^[0-9]{6}$/.test(otp)) {
+        console.warn(`⚠️  [OTP] Invalid format: "${otp}" (expected 6 digits)`);
+        showMsg('Please enter the 6-digit code.', true);
+        return;
+    }
 
     const btn = document.getElementById('pv-verifyBtn');
-    const prev = btn.textContent; btn.disabled = true; btn.textContent = 'Verifying...';
+    if (!btn) {
+        console.error('❌ [OTP] Verify button element not found');
+        return;
+    }
+    
+    const prev = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Verifying...';
+    
     try {
+        console.log(`📤 [OTP] Sending verification request with code: "${otp}"`);
         const response = await fetch('/api/auth/verify-otp', {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ otp })
+            body: JSON.stringify({ code: otp })
         });
+        
+        console.log(`📥 [OTP] Response status: ${response.status}`);
         const body = await response.json().catch(() => ({}));
+        console.log(`📥 [OTP] Response body:`, body);
+        
         if (response.ok && body.success) {
+            console.log('✅ [OTP] Verification successful!');
             showMsg('Email verified. Reloading...', false);
             setTimeout(() => window.location.reload(), 800);
         } else {
+            console.log(`⚠️  [OTP] Verification failed: ${body.message}`);
             showMsg(body.message || 'Verification failed', true);
-            otpInputs.forEach(i => i.value = ''); otpInputs[0].focus();
+            otpInputs.forEach(i => i.value = '');
+            otpInputs[0]?.focus();
         }
     } catch (err) {
+        console.error('❌ [OTP] Network error:', err);
         showMsg('Network error while verifying OTP', true);
     } finally {
-        btn.disabled = false; btn.textContent = prev;
+        btn.disabled = false;
+        btn.textContent = prev;
     }
 });
 

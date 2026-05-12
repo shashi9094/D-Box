@@ -402,12 +402,24 @@ exports.sendVerificationOtp = async (req, res) => issueVerificationOtp(req, res)
 exports.verifyOtp = async (req, res) => {
     try {
         const userId = Number(req.user?.id || req.session?.user?.id || 0);
+        console.log(`🔐 [BACKEND-OTP] Verify OTP request - userId: ${userId}`);
+        
         if (!Number.isFinite(userId) || userId <= 0) {
+            console.log(`❌ [BACKEND-OTP] Invalid or missing userId: ${userId}`);
             return res.status(401).json({ message: 'Not authenticated' });
         }
 
         const code = String(req.body?.code || '').trim();
-        if (!/^[0-9]{6}$/.test(code)) {
+        console.log(`📥 [BACKEND-OTP] Received code: "${code}" (length: ${code.length})`);
+        console.log(`   Raw req.body:`, req.body);
+        console.log(`   Code type: ${typeof code}, value: "${code}", length: ${code.length}`);
+        
+        // Check format
+        const isValidFormat = /^[0-9]{6}$/.test(code);
+        console.log(`   Format check /^[0-9]{6}$/: ${isValidFormat}`);
+        
+        if (!isValidFormat) {
+            console.log(`❌ [BACKEND-OTP] Invalid code format: "${code}"`);
             return res.status(400).json({ message: 'Invalid code format' });
         }
 
@@ -417,16 +429,36 @@ exports.verifyOtp = async (req, res) => {
             [userId]
         );
         const user = rows[0] || null;
-        if (!user) return res.status(404).json({ message: 'User not found' });
-        if (!user.verification_otp || !user.otp_expires) return res.status(400).json({ message: 'No OTP requested' });
+        console.log(`📋 [BACKEND-OTP] User lookup - found: ${!!user}`);
+        
+        if (!user) {
+            console.log(`❌ [BACKEND-OTP] User not found for id: ${userId}`);
+            return res.status(404).json({ message: 'User not found' });
+        }
+        
+        console.log(`   User email: ${user.email}`);
+        console.log(`   Stored OTP: "${user.verification_otp}" (type: ${typeof user.verification_otp})`);
+        console.log(`   OTP expires: ${user.otp_expires}`);
+        console.log(`   Attempts: ${user.verification_otp_attempts}`);
+        
+        if (!user.verification_otp || !user.otp_expires) {
+            console.log(`⚠️  [BACKEND-OTP] No OTP or expiry stored for user`);
+            return res.status(400).json({ message: 'No OTP requested' });
+        }
 
+        const OTP_MAX_ATTEMPTS = 10;
         if (Number(user.verification_otp_attempts || 0) >= OTP_MAX_ATTEMPTS) {
+            console.log(`❌ [BACKEND-OTP] Max attempts exceeded: ${user.verification_otp_attempts}`);
             return res.status(429).json({ message: 'Maximum OTP attempts exceeded. Request a new OTP.' });
         }
 
+        // Check expiry
         const now = Date.now();
         const expiry = user.otp_expires ? new Date(user.otp_expires).getTime() : 0;
+        console.log(`   Expiry check - now: ${now}, expiry: ${expiry}, expired: ${now > expiry}`);
+        
         if (!expiry || now > expiry) {
+            console.log(`❌ [BACKEND-OTP] OTP expired`);
             await sql.query(
                 'UPDATE users SET verification_otp = NULL, otp_expires = NULL, verification_otp_attempts = 0, verification_otp_sent_at = NULL WHERE id = ?',
                 [userId]
@@ -434,15 +466,26 @@ exports.verifyOtp = async (req, res) => {
             return res.status(400).json({ message: 'OTP expired' });
         }
 
-        if (String(user.verification_otp || '').trim() !== code) {
+        // Compare OTP
+        const storedOtp = String(user.verification_otp || '').trim();
+        console.log(`⚖️  [BACKEND-OTP] Comparing OTPs:`);
+        console.log(`   Stored: "${storedOtp}" (length: ${storedOtp.length})`);
+        console.log(`   Provided: "${code}" (length: ${code.length})`);
+        console.log(`   Match: ${storedOtp === code}`);
+        
+        if (storedOtp !== code) {
+            console.log(`❌ [BACKEND-OTP] OTP mismatch`);
+            const newAttempts = Number(user.verification_otp_attempts || 0) + 1;
             await sql.query(
-                'UPDATE users SET verification_otp_attempts = COALESCE(verification_otp_attempts, 0) + 1 WHERE id = ?',
-                [userId]
+                'UPDATE users SET verification_otp_attempts = ? WHERE id = ?',
+                [newAttempts, userId]
             );
+            console.log(`   Attempts updated to: ${newAttempts}`);
             return res.status(400).json({ message: 'Invalid code' });
         }
 
         // Success: clear OTP and mark verified
+        console.log(`✅ [BACKEND-OTP] OTP verified successfully! Marking user as verified...`);
         await sql.query(
             `UPDATE users
              SET is_verified = TRUE,
@@ -465,14 +508,20 @@ exports.verifyOtp = async (req, res) => {
                 profilePending: false,
             };
             if (typeof req.session.save === 'function') {
-                await saveSession(req);
+                await new Promise((resolve, reject) => {
+                    req.session.save((err) => {
+                        if (err) reject(err);
+                        else resolve();
+                    });
+                });
             }
         }
 
-        return res.json({ success: true, message: 'Profile verified successfully', profilePending: false });
+        console.log(`✅ [BACKEND-OTP] Session updated, returning success`);
+        res.json({ success: true, message: 'Email verified successfully' });
     } catch (error) {
-        console.error('verifyOtp failed:', error);
-        return res.status(500).json({ message: 'Unable to verify OTP', error: error.message });
+        console.error(`❌ [BACKEND-OTP] Error:`, error);
+        res.status(500).json({ message: 'Verification error' });
     }
 };
 
