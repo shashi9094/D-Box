@@ -31,6 +31,8 @@ const boxRoutes = require('./routes/boxRoutes');
 const fileRoutes = require('./routes/fileRoutes');
 const boxController = require('./controllers/boxController');
 const { sendEmail } = require('./emailService');
+const otpRoutes = require('./routes/otpRoutes');
+const passwordResetRoutes = require('./routes/passwordResetRoutes');
 
 // CORS
 app.use(cors({
@@ -205,6 +207,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/box', boxRoutes);
 app.use('/api/files', fileRoutes);
 app.use('/api/images', require('./routes/imageRoutes'));
+app.use('/api/otp', otpRoutes);
+app.use('/api/password-reset', passwordResetRoutes);
 app.get('/api/uploads', isAuth, boxController.getUploadsByQuery);
 
 app.get('/test-email', async (req, res) => {
