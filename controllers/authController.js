@@ -132,18 +132,6 @@ exports.signup = async (req, res) => {
             console.error('Pending invite sync failed after signup:', inviteErr.message);
         }
 
-        const sent = await sendOTP(normalizedEmail, verificationOtp);
-        if (!sent.success) {
-            await sql.query('DELETE FROM users WHERE id = ?', [createdUser.id]);
-            return res.status(500).json({
-                message: 'Unable to send OTP email',
-                error: sent.error,
-                code: sent.code || null,
-                response: sent.response || null,
-                stack: sent.stack || null,
-            });
-        }
-
         const authState = buildSessionUser({
             ...createdUser,
             email: normalizedEmail,
@@ -171,8 +159,6 @@ exports.signup = async (req, res) => {
             authReady: true,
             profilePending: true,
             profileStatus: 'pending',
-            otpSent: true,
-            otpExpiresInSeconds: Math.floor(OTP_EXPIRY_MS / 1000),
         });
     } catch (err) {
         console.error('Signup failed:', {
