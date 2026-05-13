@@ -32,7 +32,7 @@ const boxRoutes = require('./routes/boxRoutes');
 const fileRoutes = require('./routes/fileRoutes');
 const boxController = require('./controllers/boxController');
 const { signup } = require('./controllers/authController');
-const { sendEmail, verifyInviteToken, peekInviteToken } = require('./emailService');
+const { sendEmail, verifyInviteToken, consumeInviteToken, peekInviteToken } = require('./utils/emailService');
 const { preparePasswordForStorage, comparePassword, getPasswordMode } = require('./utils/passwordAuth');
 const otpRoutes = require('./routes/otpRoutes');
 const passwordResetRoutes = require('./routes/passwordResetRoutes');
@@ -722,18 +722,11 @@ app.post('/api/join', async (req, res) => {
         );
 
         if (existingMembership.length > 0) {
-            verifyInviteToken(token, boxId);
+            consumeInviteToken(token, boxId);
             return res.json({
                 success: true,
                 message: 'You are already a member of this box',
                 redirectUrl: '/dashboard'
-            });
-        }
-
-        const tokenVerification = verifyInviteToken(token, boxId);
-        if (!tokenVerification?.success) {
-            return res.status(400).json({
-                message: tokenVerification?.message || 'Invalid or expired invitation'
             });
         }
 
@@ -766,6 +759,13 @@ app.post('/api/join', async (req, res) => {
                  WHERE id = ?`,
                 [authSession.userId, inviteRow.id]
             );
+        }
+
+        const consumeResult = consumeInviteToken(token, boxId);
+        if (!consumeResult?.success) {
+            return res.status(400).json({
+                message: consumeResult?.message || 'Invalid or expired invitation'
+            });
         }
 
         return res.json({

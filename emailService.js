@@ -183,6 +183,15 @@ function verifyInviteToken(token, boxId) {
   if (!stored || stored.boxId !== boxId || Date.now() > stored.expiresAt) {
     return { success: false, message: 'Invalid or expired invitation' };
   }
+  return { success: true, email: stored.email };
+}
+
+function consumeInviteToken(token, boxId) {
+  const stored = inviteStore.get(token);
+  if (!stored || stored.boxId !== boxId || Date.now() > stored.expiresAt) {
+    return { success: false, message: 'Invalid or expired invitation' };
+  }
+
   inviteStore.delete(token);
   return { success: true, email: stored.email };
 }
@@ -209,5 +218,6 @@ module.exports = {
   verifyResetToken,
   sendInviteLink,
   verifyInviteToken,
+  consumeInviteToken,
   peekInviteToken
 };

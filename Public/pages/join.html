@@ -157,8 +157,9 @@
 
     <section class="status-box">
       <div id="spinner" class="spinner"></div>
-      <p id="statusText" class="status-text">Checking invite details...</p>
-      <p id="statusHint" class="hint">Please keep this tab open.</p>
+      <p id="statusText" class="status-text">Ready to process your invitation.</p>
+      <p id="statusHint" class="hint">Click Accept and Join to continue.</p>
+      <button id="acceptBtn" type="button">Accept and Join</button>
     </section>
 
     <section id="loginCard" class="card hidden">
@@ -370,11 +371,13 @@
       }
     }
 
-    async function init() {
-      setFormsVisible(null);
+    async function handleAcceptClick() {
+      const acceptBtn = document.getElementById('acceptBtn');
+      acceptBtn.disabled = true;
 
       if (!inviteToken || !Number.isFinite(boxId) || boxId <= 0) {
         showError('Invite link is missing token or box id.', 'Ask admin for a fresh invite link.');
+        acceptBtn.disabled = false;
         return;
       }
 
@@ -401,9 +404,27 @@
         }
       } catch (error) {
         showError(error.message || 'Unable to validate invite', 'The invitation may have expired.');
+      } finally {
+        acceptBtn.disabled = false;
       }
     }
 
+    function init() {
+      setFormsVisible(null);
+
+      if (!inviteToken || !Number.isFinite(boxId) || boxId <= 0) {
+        showError('Invite link is missing token or box id.', 'Ask admin for a fresh invite link.');
+        document.getElementById('acceptBtn').disabled = true;
+        return;
+      }
+
+      spinner.classList.add('hidden');
+      statusText.classList.remove('ok', 'err');
+      statusText.textContent = 'Ready to process your invitation.';
+      statusHint.textContent = 'Click Accept and Join to continue.';
+    }
+
+    document.getElementById('acceptBtn').addEventListener('click', handleAcceptClick);
     document.getElementById('loginForm').addEventListener('submit', handleLoginSubmit);
     document.getElementById('signupForm').addEventListener('submit', handleSignupSubmit);
     init();
