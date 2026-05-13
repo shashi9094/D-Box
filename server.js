@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const app = express();
 const path = require('path');
+const crypto = require('crypto');
 
 // db connection will be required after session store setup
 const {
@@ -31,9 +32,78 @@ const boxRoutes = require('./routes/boxRoutes');
 const fileRoutes = require('./routes/fileRoutes');
 const boxController = require('./controllers/boxController');
 const { signup } = require('./controllers/authController');
-const { sendEmail } = require('./emailService');
+const { sendEmail, verifyInviteToken, peekInviteToken } = require('./emailService');
+const { preparePasswordForStorage, comparePassword, getPasswordMode } = require('./utils/passwordAuth');
 const otpRoutes = require('./routes/otpRoutes');
 const passwordResetRoutes = require('./routes/passwordResetRoutes');
+
+const apiSessionTokens = new Map();
+
+function cleanupApiSessionTokens() {
+    const now = Date.now();
+    for (const [token, value] of apiSessionTokens.entries()) {
+        if (!value || now >= Number(value.expiresAt || 0)) {
+            apiSessionTokens.delete(token);
+        }
+    }
+}
+
+function issueApiSessionToken(sessionUser) {
+    cleanupApiSessionTokens();
+    const token = crypto.randomBytes(32).toString('hex');
+    apiSessionTokens.set(token, {
+        userId: Number(sessionUser.id),
+        email: String(sessionUser.email || '').trim().toLowerCase(),
+        expiresAt: Date.now() + SESSION_MAX_AGE_MS
+    });
+    return token;
+}
+
+function getApiSessionFromBearer(req) {
+    const authHeader = String(req.headers.authorization || '').trim();
+    if (!authHeader.toLowerCase().startsWith('bearer ')) {
+        return null;
+    }
+
+    const token = authHeader.slice(7).trim();
+    if (!token) {
+        return null;
+    }
+
+    const sessionToken = apiSessionTokens.get(token);
+    if (!sessionToken) {
+        return null;
+    }
+
+    if (Date.now() >= Number(sessionToken.expiresAt || 0)) {
+        apiSessionTokens.delete(token);
+        return null;
+    }
+
+    return {
+        token,
+        userId: Number(sessionToken.userId),
+        email: String(sessionToken.email || '').trim().toLowerCase()
+    };
+}
+
+function saveSession(req) {
+    return new Promise((resolve, reject) => {
+        if (!req.session || typeof req.session.save !== 'function') {
+            resolve();
+            return;
+        }
+
+        req.session.save((err) => {
+            if (err) {
+                reject(err);
+                return;
+            }
+
+            resolve();
+        });
+    });
+}
 
 // CORS
 app.use(cors({
@@ -180,6 +250,11 @@ app.get('/signup.html', (req, res) => {
 
     setNoStore(res);
     return res.sendFile(path.join(__dirname, 'Public', 'pages', 'signup.html'));
+});
+
+app.get('/join', (req, res) => {
+    setNoStore(res);
+    return res.sendFile(path.join(__dirname, 'Public', 'pages', 'join.html'));
 });
 
 app.get('/complete-profile', (req, res) => {
@@ -424,7 +499,293 @@ app.post('/api/complete-profile', async (req, res) => {
     }
 });
 
-app.get('/api/uploads', isAuth, boxController.getUploadsByQuery);
+app.get('/api/check-invite', async (req, res) => {
+    const token = String(req.query?.token || '').trim();
+    const boxId = Number(req.query?.box);
+
+    if (!token || !Number.isFinite(boxId) || boxId <= 0) {
+        return res.status(400).json({ message: 'Token and box are required' });
+    }
+
+    const invitePreview = peekInviteToken(token, boxId);
+    if (!invitePreview?.success) {
+        return res.status(400).json({
+            message: invitePreview?.message || 'Invalid or expired invitation'
+        });
+    }
+
+    const inviteEmail = String(invitePreview.email || '').trim().toLowerCase();
+
+    try {
+        const [rows] = await db.promise().query(
+            'SELECT id FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1',
+            [inviteEmail]
+        );
+
+        return res.json({
+            success: true,
+            email: inviteEmail,
+            hasAccount: rows.length > 0
+        });
+    } catch (error) {
+        return res.status(500).json({
+            message: 'Unable to check invite',
+            error: error.message
+        });
+    }
+});
+
+app.post('/api/signup', async (req, res) => {
+    const token = String(req.body?.token || '').trim();
+    const boxId = Number(req.body?.boxId);
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const fullName = String(req.body?.fullName || '').trim();
+    const password = String(req.body?.password || '');
+
+    if (!token || !Number.isFinite(boxId) || boxId <= 0) {
+        return res.status(400).json({ message: 'Invalid invite context' });
+    }
+
+    if (!email || !fullName || !password) {
+        return res.status(400).json({ message: 'Email, full name, and password are required' });
+    }
+
+    if (password.length < 8) {
+        return res.status(400).json({ message: 'Password must be at least 8 characters' });
+    }
+
+    const invitePreview = peekInviteToken(token, boxId);
+    if (!invitePreview?.success) {
+        return res.status(400).json({
+            message: invitePreview?.message || 'Invalid or expired invitation'
+        });
+    }
+
+    const inviteEmail = String(invitePreview.email || '').trim().toLowerCase();
+    if (inviteEmail !== email) {
+        return res.status(403).json({ message: 'Invite email mismatch' });
+    }
+
+    try {
+        const sql = db.promise();
+
+        const [existing] = await sql.query(
+            'SELECT id FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1',
+            [email]
+        );
+
+        if (existing.length > 0) {
+            return res.status(409).json({ message: 'Account already exists for this email' });
+        }
+
+        const hashedPassword = await preparePasswordForStorage(password);
+        const [insertResult] = await sql.query(
+            `INSERT INTO users (fullname, email, password, role, is_verified, isprofilecomplete)
+             VALUES (?, ?, ?, 'User', FALSE, FALSE)
+             RETURNING id, fullname AS "fullName", email, is_verified, isprofilecomplete`,
+            [fullName, email, hashedPassword]
+        );
+
+        const createdUser = Array.isArray(insertResult?.rows) ? insertResult.rows[0] : insertResult;
+        if (!createdUser?.id) {
+            return res.status(500).json({ message: 'Unable to create account' });
+        }
+
+        req.session.user = {
+            id: Number(createdUser.id),
+            email: String(createdUser.email || email).trim().toLowerCase(),
+            fullName: String(createdUser.fullName || fullName).trim(),
+            loginAt: Date.now(),
+            isVerified: Boolean(createdUser.is_verified),
+            isProfileComplete: Boolean(createdUser.isprofilecomplete),
+            profilePending: !Boolean(createdUser.is_verified),
+        };
+        req.session.cookie.maxAge = SESSION_MAX_AGE_MS;
+        await saveSession(req);
+
+        const sessionToken = issueApiSessionToken(req.session.user);
+
+        return res.status(201).json({
+            success: true,
+            sessionToken,
+            user: {
+                id: req.session.user.id,
+                email: req.session.user.email,
+                fullName: req.session.user.fullName
+            }
+        });
+    } catch (error) {
+        return res.status(500).json({
+            message: 'Unable to create account',
+            error: error.message
+        });
+    }
+});
+
+app.post('/api/login', async (req, res) => {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const password = String(req.body?.password || '');
+
+    if (!email || !password) {
+        return res.status(400).json({ message: 'Email and password are required' });
+    }
+
+    try {
+        const [rows] = await db.promise().query(
+            'SELECT id, fullname AS "fullName", email, password, is_verified, isprofilecomplete FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1',
+            [email]
+        );
+
+        if (!rows.length) {
+            return res.status(400).json({ message: 'User not found' });
+        }
+
+        const user = rows[0];
+        const passwordMode = getPasswordMode(user.password);
+        if (passwordMode !== 'bcrypt') {
+            return res.status(403).json({ message: 'Please continue with Google login' });
+        }
+
+        const isMatch = await comparePassword(password, user.password);
+        if (!isMatch) {
+            return res.status(400).json({ message: 'Invalid password' });
+        }
+
+        req.session.user = {
+            id: Number(user.id),
+            email: String(user.email || '').trim().toLowerCase(),
+            fullName: String(user.fullName || '').trim(),
+            loginAt: Date.now(),
+            isVerified: Boolean(user.is_verified),
+            isProfileComplete: Boolean(user.isprofilecomplete),
+            profilePending: !Boolean(user.is_verified),
+        };
+        req.session.cookie.maxAge = SESSION_MAX_AGE_MS;
+        await saveSession(req);
+
+        const sessionToken = issueApiSessionToken(req.session.user);
+
+        return res.json({
+            success: true,
+            sessionToken,
+            user: {
+                id: req.session.user.id,
+                email: req.session.user.email,
+                fullName: req.session.user.fullName
+            }
+        });
+    } catch (error) {
+        return res.status(500).json({
+            message: 'Unable to login',
+            error: error.message
+        });
+    }
+});
+
+app.post('/api/join', async (req, res) => {
+    const token = String(req.body?.token || '').trim();
+    const boxId = Number(req.body?.boxId);
+
+    if (!token || !Number.isFinite(boxId) || boxId <= 0) {
+        return res.status(400).json({ message: 'Invalid invite request' });
+    }
+
+    const authSession = getApiSessionFromBearer(req);
+    if (!authSession?.userId || !authSession?.email) {
+        return res.status(401).json({
+            message: 'Unauthorized. Missing or invalid auth token.'
+        });
+    }
+
+    const invitePreview = peekInviteToken(token, boxId);
+    if (!invitePreview?.success) {
+        return res.status(400).json({
+            message: invitePreview?.message || 'Invalid or expired invitation'
+        });
+    }
+
+    const sessionEmail = String(authSession.email || '').trim().toLowerCase();
+    const inviteEmail = String(invitePreview.email || '').trim().toLowerCase();
+
+    if (!inviteEmail || inviteEmail !== sessionEmail) {
+        return res.status(403).json({
+            message: 'This invitation belongs to a different email account'
+        });
+    }
+
+    try {
+        const sql = db.promise();
+
+        const [existingMembership] = await sql.query(
+            'SELECT role FROM box_members WHERE box_id = ? AND user_id = ? LIMIT 1',
+            [boxId, authSession.userId]
+        );
+
+        if (existingMembership.length > 0) {
+            verifyInviteToken(token, boxId);
+            return res.json({
+                success: true,
+                message: 'You are already a member of this box',
+                redirectUrl: '/dashboard'
+            });
+        }
+
+        const tokenVerification = verifyInviteToken(token, boxId);
+        if (!tokenVerification?.success) {
+            return res.status(400).json({
+                message: tokenVerification?.message || 'Invalid or expired invitation'
+            });
+        }
+
+        const [inviteRows] = await sql.query(
+            `SELECT id, role, invited_by
+             FROM box_invites
+             WHERE box_id = ? AND LOWER(email) = LOWER(?) AND status = 'pending'
+             ORDER BY id DESC
+             LIMIT 1`,
+            [boxId, inviteEmail]
+        );
+
+        const inviteRow = inviteRows[0] || null;
+        const memberRole = inviteRow?.role === 'admin' ? 'admin' : 'member';
+        const addedBy = Number(inviteRow?.invited_by) || Number(authSession.userId);
+
+        await sql.query(
+            `INSERT INTO box_members AS bm (box_id, user_id, role, added_by)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT (box_id, user_id) DO UPDATE SET
+                role = CASE WHEN bm.role = 'admin' THEN 'admin' ELSE EXCLUDED.role END,
+                added_by = EXCLUDED.added_by`,
+            [boxId, authSession.userId, memberRole, addedBy]
+        );
+
+        if (inviteRow?.id) {
+            await sql.query(
+                `UPDATE box_invites
+                 SET status = 'accepted', accepted_by = ?, accepted_at = NOW()
+                 WHERE id = ?`,
+                [authSession.userId, inviteRow.id]
+            );
+        }
+
+        return res.json({
+            success: true,
+            message: 'Invitation accepted successfully',
+            redirectUrl: '/dashboard'
+        });
+    } catch (error) {
+        console.error('POST /api/join failed:', {
+            message: error?.message || String(error),
+            code: error?.code || null,
+            detail: error?.detail || null,
+        });
+
+        return res.status(500).json({
+            message: 'Unable to join box right now',
+            error: error?.message || String(error)
+        });
+    }
+});
 
 // Start
 const PORT = process.env.PORT || 5000;

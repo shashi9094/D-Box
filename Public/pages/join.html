@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Join Invite - D-Box</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    body.join-page {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at 12% 8%, rgba(0, 230, 255, 0.16), transparent 32%),
+        radial-gradient(circle at 88% 85%, rgba(123, 47, 247, 0.2), transparent 36%),
+        #03060d;
+      color: #e8f7ff;
+      font-family: 'Poppins', sans-serif;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+
+    .join-shell {
+      width: min(640px, 96vw);
+      background: linear-gradient(165deg, rgba(7, 13, 24, 0.97), rgba(5, 10, 20, 0.96));
+      border: 1px solid rgba(0, 230, 255, 0.26);
+      border-radius: 18px;
+      box-shadow: 0 24px 90px rgba(0, 0, 0, 0.55), 0 0 24px rgba(0, 230, 255, 0.1);
+      padding: 26px;
+    }
+
+    .title {
+      margin: 0 0 8px;
+      font-size: 1.5rem;
+      text-align: center;
+    }
+
+    .subtitle {
+      margin: 0 0 20px;
+      text-align: center;
+      color: #a6c3d2;
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }
+
+    .status-box {
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(11, 17, 28, 0.8);
+      border-radius: 12px;
+      padding: 16px;
+      text-align: center;
+      margin-bottom: 16px;
+    }
+
+    .spinner {
+      width: 44px;
+      height: 44px;
+      margin: 0 auto 12px;
+      border-radius: 50%;
+      border: 4px solid rgba(0, 230, 255, 0.24);
+      border-top-color: #00e6ff;
+      animation: spin 0.85s linear infinite;
+    }
+
+    .status-text {
+      margin: 0;
+      font-size: 0.98rem;
+    }
+
+    .status-text.ok {
+      color: #4ade80;
+      font-weight: 600;
+    }
+
+    .status-text.err {
+      color: #fda4af;
+      font-weight: 600;
+    }
+
+    .hint {
+      margin-top: 8px;
+      color: #9eb5c2;
+      font-size: 0.88rem;
+    }
+
+    .card {
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      background: rgba(8, 13, 22, 0.72);
+      padding: 16px;
+    }
+
+    .card h3 {
+      margin: 0 0 10px;
+      font-size: 1rem;
+      color: #d3f2ff;
+    }
+
+    form {
+      display: grid;
+      gap: 10px;
+    }
+
+    label {
+      font-size: 0.86rem;
+      color: #c1d9e4;
+      text-align: left;
+    }
+
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(74, 222, 255, 0.22);
+      background: rgba(8, 15, 26, 0.85);
+      color: #ecfaff;
+      outline: none;
+    }
+
+    input[readonly] {
+      opacity: 0.85;
+      cursor: not-allowed;
+    }
+
+    button {
+      margin-top: 4px;
+      border: 0;
+      border-radius: 999px;
+      padding: 11px 14px;
+      background: linear-gradient(90deg, #00aee2, #3f6bff);
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: wait;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body class="join-page">
+  <main class="join-shell" aria-live="polite">
+    <h1 class="title">D-Box Invitation</h1>
+    <p class="subtitle">We will auto-complete your invite as soon as account access is confirmed.</p>
+
+    <section class="status-box">
+      <div id="spinner" class="spinner"></div>
+      <p id="statusText" class="status-text">Checking invite details...</p>
+      <p id="statusHint" class="hint">Please keep this tab open.</p>
+    </section>
+
+    <section id="loginCard" class="card hidden">
+      <h3>Login to accept invite</h3>
+      <form id="loginForm">
+        <label for="loginEmail">Email</label>
+        <input id="loginEmail" type="email" readonly required>
+        <label for="loginPassword">Password</label>
+        <input id="loginPassword" type="password" required>
+        <button id="loginBtn" type="submit">Login and Join</button>
+      </form>
+    </section>
+
+    <section id="signupCard" class="card hidden">
+      <h3>Create account to accept invite</h3>
+      <form id="signupForm">
+        <label for="signupEmail">Email</label>
+        <input id="signupEmail" type="email" readonly required>
+        <label for="signupFullName">Full Name</label>
+        <input id="signupFullName" type="text" required>
+        <label for="signupPassword">Password</label>
+        <input id="signupPassword" type="password" minlength="8" required>
+        <button id="signupBtn" type="submit">Create Account and Join</button>
+      </form>
+    </section>
+  </main>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const inviteToken = String(params.get('token') || '').trim();
+    const boxFromBox = Number(params.get('box'));
+    const boxFromInvite = Number(params.get('invite'));
+    const boxId = Number.isFinite(boxFromBox) && boxFromBox > 0
+      ? boxFromBox
+      : (Number.isFinite(boxFromInvite) && boxFromInvite > 0 ? boxFromInvite : NaN);
+
+    const spinner = document.getElementById('spinner');
+    const statusText = document.getElementById('statusText');
+    const statusHint = document.getElementById('statusHint');
+
+    const loginCard = document.getElementById('loginCard');
+    const signupCard = document.getElementById('signupCard');
+    const loginEmail = document.getElementById('loginEmail');
+    const signupEmail = document.getElementById('signupEmail');
+
+    let inviteEmail = '';
+
+    function showSpinner(message, hint) {
+      spinner.classList.remove('hidden');
+      statusText.classList.remove('ok', 'err');
+      statusText.textContent = message || 'Processing...';
+      statusHint.textContent = hint || 'Please wait.';
+    }
+
+    function showSuccess(message, hint) {
+      spinner.classList.add('hidden');
+      statusText.classList.remove('err');
+      statusText.classList.add('ok');
+      statusText.textContent = message || 'Success';
+      statusHint.textContent = hint || '';
+    }
+
+    function showError(message, hint) {
+      spinner.classList.add('hidden');
+      statusText.classList.remove('ok');
+      statusText.classList.add('err');
+      statusText.textContent = message || 'Something went wrong';
+      statusHint.textContent = hint || 'Please try again later.';
+    }
+
+    function setFormsVisible(target) {
+      loginCard.classList.toggle('hidden', target !== 'login');
+      signupCard.classList.toggle('hidden', target !== 'signup');
+    }
+
+    async function apiJoin(sessionToken) {
+      const response = await fetch('/api/join', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionToken}`
+        },
+        body: JSON.stringify({ token: inviteToken, boxId })
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || payload.error || 'Unable to join this invitation');
+      }
+
+      return payload;
+    }
+
+    async function tryAutoJoinWithStoredSession() {
+      const sessionToken = String(localStorage.getItem('sessionToken') || '').trim();
+      if (!sessionToken) {
+        return false;
+      }
+
+      showSpinner('Existing session found. Joining box...', 'One moment please.');
+
+      try {
+        await apiJoin(sessionToken);
+        showSuccess('Invitation accepted. Redirecting to dashboard...', 'Your verification modal will appear there if needed.');
+        setTimeout(() => {
+          window.location.replace('/dashboard');
+        }, 900);
+        return true;
+      } catch (error) {
+        localStorage.removeItem('sessionToken');
+        return false;
+      }
+    }
+
+    async function checkInvite() {
+      const response = await fetch(`/api/check-invite?token=${encodeURIComponent(inviteToken)}&box=${encodeURIComponent(String(boxId))}`);
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload.message || payload.error || 'Invalid or expired invitation link');
+      }
+
+      return payload;
+    }
+
+    async function handleLoginSubmit(event) {
+      event.preventDefault();
+
+      const password = String(document.getElementById('loginPassword').value || '');
+      const loginBtn = document.getElementById('loginBtn');
+      loginBtn.disabled = true;
+
+      showSpinner('Signing in...', 'Verifying your account.');
+
+      try {
+        const loginRes = await fetch('/api/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            email: inviteEmail,
+            password
+          })
+        });
+
+        const loginPayload = await loginRes.json().catch(() => ({}));
+        if (!loginRes.ok || !loginPayload.sessionToken) {
+          throw new Error(loginPayload.message || 'Login failed');
+        }
+
+        localStorage.setItem('sessionToken', loginPayload.sessionToken);
+        await apiJoin(loginPayload.sessionToken);
+
+        showSuccess('Login successful and invite accepted.', 'Redirecting to dashboard...');
+        setTimeout(() => {
+          window.location.replace('/dashboard');
+        }, 900);
+      } catch (error) {
+        showError(error.message || 'Unable to login and join invite', 'Please check your password and try again.');
+        setFormsVisible('login');
+      } finally {
+        loginBtn.disabled = false;
+      }
+    }
+
+    async function handleSignupSubmit(event) {
+      event.preventDefault();
+
+      const fullName = String(document.getElementById('signupFullName').value || '').trim();
+      const password = String(document.getElementById('signupPassword').value || '');
+      const signupBtn = document.getElementById('signupBtn');
+      signupBtn.disabled = true;
+
+      showSpinner('Creating account...', 'Please wait while we set up your account.');
+
+      try {
+        const signupRes = await fetch('/api/signup', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            token: inviteToken,
+            boxId,
+            email: inviteEmail,
+            fullName,
+            password
+          })
+        });
+
+        const signupPayload = await signupRes.json().catch(() => ({}));
+        if (!signupRes.ok || !signupPayload.sessionToken) {
+          throw new Error(signupPayload.message || 'Signup failed');
+        }
+
+        localStorage.setItem('sessionToken', signupPayload.sessionToken);
+        await apiJoin(signupPayload.sessionToken);
+
+        showSuccess('Account created and invite accepted.', 'Redirecting to dashboard...');
+        setTimeout(() => {
+          window.location.replace('/dashboard');
+        }, 900);
+      } catch (error) {
+        showError(error.message || 'Unable to create account and join', 'Please review your details and try again.');
+        setFormsVisible('signup');
+      } finally {
+        signupBtn.disabled = false;
+      }
+    }
+
+    async function init() {
+      setFormsVisible(null);
+
+      if (!inviteToken || !Number.isFinite(boxId) || boxId <= 0) {
+        showError('Invite link is missing token or box id.', 'Ask admin for a fresh invite link.');
+        return;
+      }
+
+      const autoJoined = await tryAutoJoinWithStoredSession();
+      if (autoJoined) {
+        return;
+      }
+
+      showSpinner('Checking invitation details...', 'Preparing account flow.');
+
+      try {
+        const inviteInfo = await checkInvite();
+        inviteEmail = String(inviteInfo.email || '').trim().toLowerCase();
+
+        loginEmail.value = inviteEmail;
+        signupEmail.value = inviteEmail;
+
+        if (inviteInfo.hasAccount) {
+          showError('Account found for invited email.', 'Please login to continue.');
+          setFormsVisible('login');
+        } else {
+          showError('No account found for invited email.', 'Create your account to continue.');
+          setFormsVisible('signup');
+        }
+      } catch (error) {
+        showError(error.message || 'Unable to validate invite', 'The invitation may have expired.');
+      }
+    }
+
+    document.getElementById('loginForm').addEventListener('submit', handleLoginSubmit);
+    document.getElementById('signupForm').addEventListener('submit', handleSignupSubmit);
+    init();
+  </script>
+</body>
+</html>

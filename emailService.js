@@ -187,6 +187,20 @@ function verifyInviteToken(token, boxId) {
   return { success: true, email: stored.email };
 }
 
+function peekInviteToken(token, boxId) {
+  const stored = inviteStore.get(token);
+  if (!stored || stored.boxId !== boxId || Date.now() > stored.expiresAt) {
+    return { success: false, message: 'Invalid or expired invitation' };
+  }
+
+  return {
+    success: true,
+    email: stored.email,
+    boxId: stored.boxId,
+    expiresAt: stored.expiresAt
+  };
+}
+
 module.exports = {
   sendEmail,
   sendVerificationOTP,
@@ -194,5 +208,6 @@ module.exports = {
   sendForgotPasswordLink,
   verifyResetToken,
   sendInviteLink,
-  verifyInviteToken
+  verifyInviteToken,
+  peekInviteToken
 };
