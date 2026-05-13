@@ -6,7 +6,7 @@ const sharp = require('sharp');
 const s3Client = require('../config/s3');
 const { PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const fs = require('fs');
-const { sendInvitationEmail } = require('../utils/emailService');
+const { sendInviteLink } = require('../utils/emailService');
 const { createNotificationsForUsers } = require('../utils/notifications');
 const compressImage = require('../utils/compressImage');
 const { getSignedFileUrl } = require('../utils/fileUrlService');
@@ -1017,7 +1017,14 @@ exports.addMemberByEmail = async (req, res) => {
                 emailNotifications.map(async (notification) => {
                     emailQueuedCount += 1;
 
-                    const emailResult = await sendInvitationEmail(notification.email, boxTitle, senderName, notification.url);
+                    console.log('Sending invite email', {
+                        to: notification.email,
+                        boxId,
+                        boxName: boxTitle,
+                        invitedBy: senderName
+                    });
+
+                    const emailResult = await sendInviteLink(notification.email, boxId, boxTitle, senderName);
                     if (!emailResult.success) {
                         console.warn(
                             `Invitation email failed for ${notification.email}:`,
