@@ -9,7 +9,8 @@ const { SESClient, SendEmailCommand } = require("@aws-sdk/client-ses");
 const AWS_REGION = String(process.env.AWS_REGION || "us-east-1").trim();
 const AWS_ACCESS_KEY_ID = String(process.env.AWS_ACCESS_KEY_ID || "").trim();
 const AWS_SECRET_ACCESS_KEY = String(process.env.AWS_SECRET_ACCESS_KEY || "").trim();
-const AWS_SES_FROM_EMAIL = String(process.env.AWS_SES_FROM_EMAIL || "no-reply@mydbox.local").trim();
+const EMAIL_FROM = String(process.env.EMAIL_FROM || "no-reply@mydbox.local").trim();
+const SENDER_NAME = String(process.env.SENDER_NAME || "D-Box").trim();
 
 // Initialize SES Client
 const sesClient = new SESClient({
@@ -45,7 +46,7 @@ async function sendEmail(toEmail, subject, htmlBody, textBody = null) {
 
     // Prepare email command
     const params = {
-      Source: AWS_SES_FROM_EMAIL,
+      Source: `${SENDER_NAME} <${EMAIL_FROM}>`,
       Destination: {
         ToAddresses: [toEmail.toLowerCase().trim()],
       },

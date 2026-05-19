@@ -1,23 +1,16 @@
-const axios = require('axios');
 const crypto = require('crypto');
+const sesEmailService = require('../services/sesEmailService');
 
-// ENV variables
-const BREVO_API_KEY = String(process.env.BREVO_API_KEY || '').trim();
-const SENDER_EMAIL = String(process.env.SMTP_FROM || 'shashikumarsingh9094@gmail.com').trim();
-const SENDER_NAME = String(process.env.SENDER_NAME || 'D-Box').trim();
 const FRONTEND_URL = String(process.env.FRONTEND_URL || 'https://mydbox.co.in').trim();
-
-// Rate limit
-let lastSendTime = 0;
 const MIN_DELAY_MS = 2000;
 
-// Stores
+let lastSendTime = 0;
 const otpStore = new Map();
 const resetStore = new Map();
 const inviteStore = new Map();
 
 function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function generateOTP() {
@@ -28,8 +21,6 @@ function generateToken(length = 32) {
   return crypto.randomBytes(length).toString('hex');
 }
 
-// ==================== CORE EMAIL ====================
-
 async function sendEmail(to, subject, text, html = null) {
   const recipient = String(to || '').trim().toLowerCase();
 
@@ -37,115 +28,58 @@ async function sendEmail(to, subject, text, html = null) {
     throw new Error('Invalid recipient email');
   }
 
-  if (!BREVO_API_KEY) {
-    throw new Error('BREVO_API_KEY missing in .env');
+  const wait = Math.max(0, MIN_DELAY_MS - (Date.now() - lastSendTime));
+  if (wait > 0) {
+    await sleep(wait);
   }
 
-  // Rate limit delay
-  const now = Date.now();
-  const wait = Math.max(0, MIN_DELAY_MS - (now - lastSendTime));
-  if (wait > 0) await sleep(wait);
-
-  try {
-    const payload = {
-      sender: { name: SENDER_NAME, email: SENDER_EMAIL },
-      to: [{ email: recipient }],
-      subject: subject || 'D-Box Notification',
-      textContent: text || '',
-    };
-
-    if (html) payload.htmlContent = html;
-
-    const { data } = await axios.post(
-      'https://api.brevo.com/v3/smtp/email',
-      payload,
-      {
-        headers: {
-          'api-key': BREVO_API_KEY,
-          'Content-Type': 'application/json'
-        },
-        timeout: 15000
-      }
-    );
-
-    lastSendTime = Date.now();
-    console.log('✅ Email sent:', recipient, data.messageId);
-    return { success: true, messageId: data.messageId };
-
-  } catch (error) {
-    const errMsg = error.response?.data?.message || error.message;
-    console.error('❌ Email failed:', errMsg);
-    throw new Error('Failed to send email: ' + errMsg);
-  }
+  const result = await sesEmailService.sendEmail(recipient, subject, html || '', text || '');
+  lastSendTime = Date.now();
+  return result;
 }
-
-// ==================== OTP ====================
 
 async function sendVerificationOTP(email) {
   const normalizedEmail = String(email || '').trim().toLowerCase();
-
   const otp = generateOTP();
-  const expiresAt = Date.now() + 10 * 60 * 1000; // 10 min
+  const expiresAt = Date.now() + 10 * 60 * 1000;
 
   otpStore.set(normalizedEmail, { otp, expiresAt, attempts: 0 });
-  console.log('✅ OTP generated and stored', { email: normalizedEmail, otp, expiresAt: new Date(expiresAt).toISOString() });
 
-  const html = `
-    <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:30px;">
-      <h2>Verify Your Account</h2>
-      <p>Your OTP code:</p>
-      <div style="background:#f3f4f6;padding:20px;border-radius:8px;text-align:center;margin:20px 0;">
-        <span style="font-size:36px;font-weight:bold;color:#2563eb;letter-spacing:8px;">${otp}</span>
-      </div>
-      <p style="color:#ef4444;">Expires in 10 minutes</p>
-    </div>
-  `;
-
+  const html = sesEmailService.getOTPEmailTemplate(otp, 'signup');
   await sendEmail(normalizedEmail, '🔐 D-Box Verification Code', `Your OTP: ${otp}`, html);
+
   return { success: true, message: 'OTP sent' };
 }
 
 function verifyOTP(email, otp) {
   const normalizedEmail = String(email || '').trim().toLowerCase();
   const normalizedOtp = String(otp || '').trim();
-
-  console.log('🔍 verifyOTP called', { email: normalizedEmail, otp: normalizedOtp, storedKeys: Array.from(otpStore.keys()) });
-
   const stored = otpStore.get(normalizedEmail);
+
   if (!stored) {
-    console.error('❌ OTP not found', { email: normalizedEmail, availableKeys: Array.from(otpStore.keys()) });
     return { success: false, message: 'OTP not found' };
   }
-  
+
   if (Date.now() > stored.expiresAt) {
     otpStore.delete(normalizedEmail);
-    console.error('❌ OTP expired', { email: normalizedEmail, expiresAt: new Date(stored.expiresAt).toISOString() });
     return { success: false, message: 'OTP expired' };
   }
 
-  console.log('🔐 OTP comparison', { stored: stored.otp, provided: normalizedOtp, match: stored.otp === normalizedOtp });
-
   if (stored.otp !== normalizedOtp) {
-    stored.attempts++;
-    console.warn('⚠️ Invalid OTP attempt', { email: normalizedEmail, storedOtp: stored.otp, providedOtp: normalizedOtp, attempt: stored.attempts });
+    stored.attempts += 1;
     return { success: false, message: 'Invalid OTP' };
   }
 
   otpStore.delete(normalizedEmail);
-  console.log('✅ OTP verified successfully', { email: normalizedEmail });
   return { success: true, message: 'Verified' };
 }
 
-// ==================== FORGOT PASSWORD ====================
-
 async function sendForgotPasswordLink(email) {
   const token = generateToken();
-  const expiresAt = Date.now() + 30 * 60 * 1000; // 30 min
-
+  const expiresAt = Date.now() + 30 * 60 * 1000;
   resetStore.set(token, { email, expiresAt });
 
   const resetUrl = `${FRONTEND_URL}/reset-password?token=${token}`;
-
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:30px;">
       <h2>Reset Password</h2>
@@ -167,24 +101,13 @@ function verifyResetToken(token) {
   return { success: true, email: stored.email };
 }
 
-// ==================== INVITE ====================
-
 async function sendInviteLink(email, boxId, boxName, invitedBy) {
   const token = generateToken();
-  const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
-
+  const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
   inviteStore.set(token, { email, boxId, expiresAt });
 
   const joinUrl = `${FRONTEND_URL}/join?token=${token}&box=${boxId}`;
-
-  const html = `
-    <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:30px;">
-      <h2>Box Invitation</h2>
-      <p><strong>${invitedBy}</strong> invited you to <strong>${boxName}</strong></p>
-      <a href="${joinUrl}" style="display:inline-block;padding:14px 28px;background:#10b981;color:white;text-decoration:none;border-radius:8px;">Accept Invitation</a>
-      <p style="color:#6b7280;">Expires in 7 days</p>
-    </div>
-  `;
+  const html = sesEmailService.getInviteEmailTemplate(joinUrl, invitedBy);
 
   await sendEmail(email, `📦 Invitation to ${boxName}`, `Join: ${joinUrl}`, html);
   return { success: true, message: 'Invitation sent' };
@@ -218,11 +141,9 @@ function peekInviteToken(token, boxId) {
     success: true,
     email: stored.email,
     boxId: stored.boxId,
-    expiresAt: stored.expiresAt
+    expiresAt: stored.expiresAt,
   };
 }
-
-// ==================== EXPORTS ====================
 
 module.exports = {
   sendEmail,
@@ -233,5 +154,5 @@ module.exports = {
   sendInviteLink,
   verifyInviteToken,
   consumeInviteToken,
-  peekInviteToken
+  peekInviteToken,
 };

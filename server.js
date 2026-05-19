@@ -309,13 +309,13 @@ app.use('/admin/invite', adminInviteRoutes);
 app.get('/api/uploads', isAuth, boxController.getUploadsByQuery);
 
 app.get('/test-email', async (req, res) => {
-    const to = String(req.query?.to || process.env.TEST_EMAIL_TO || process.env.SMTP_USER || '').trim();
+    const to = String(req.query?.to || process.env.TEST_EMAIL_TO || process.env.EMAIL_FROM || '').trim();
 
     if (!to) {
         console.error('GET /test-email failed: no recipient provided');
         return res.status(400).json({
             success: false,
-            error: 'Recipient is required. Set TEST_EMAIL_TO/SMTP_USER or pass ?to=email@example.com'
+            error: 'Recipient is required. Set TEST_EMAIL_TO or pass ?to=email@example.com'
         });
     }
 
@@ -324,7 +324,7 @@ app.get('/test-email', async (req, res) => {
 
         const result = await sendEmail(
             to,
-            'D-Box SES SMTP Test Email',
+            'D-Box SES Test Email',
             'Working'
         );
 
