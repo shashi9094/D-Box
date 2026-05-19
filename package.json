@@ -10,6 +10,8 @@
     "backfill:uploads:dry": "node scripts/backfillBoxContents.js",
     "backfill:uploads": "node scripts/backfillBoxContents.js --apply",
     "migrate:mysql-to-postgres": "node scripts/migrateMysqlToPostgres.js",
+    "migrate:otp-invite": "node scripts/migrate-otp-invite-tables.js",
+    "migrate:admin-invites": "node scripts/migrate-admin-invites.js",
     "sync:boxfiles": "node scripts/syncBoxFilesFromContents.js",
     "cleanup:uploads:dry": "node scripts/cleanupStaleUploads.js",
     "cleanup:uploads": "node scripts/cleanupStaleUploads.js --apply"
@@ -48,7 +50,6 @@
     "multer": "^2.1.1",
     "multer-s3": "^3.0.1",
     "node-fetch": "^3.3.2",
-    "nodemailer": "^6.10.1",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "pg": "^8.20.0",

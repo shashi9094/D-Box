@@ -1,0 +1,245 @@
+{
+  "info": {
+    "_postman_id": "d-box-aws-ses-email",
+    "name": "D-Box AWS SES Email System",
+    "description": "Complete API collection for AWS SES email integration, OTP verification, password reset, and invite system",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Email Verification (Signup)",
+      "item": [
+        {
+          "name": "1. Send Verification OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/send-verification-otp",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "send-verification-otp"]
+            }
+          }
+        },
+        {
+          "name": "2. Verify Email OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"otp\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/verify-email-otp",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "verify-email-otp"]
+            }
+          }
+        },
+        {
+          "name": "3. Resend Verification OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/resend-verification-otp",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "resend-verification-otp"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Password Reset (Forgot Password)",
+      "item": [
+        {
+          "name": "1. Send Forgot Password OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"existing@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/forgot-password",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "forgot-password"]
+            }
+          }
+        },
+        {
+          "name": "2. Verify Forgot Password OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"existing@example.com\",\n  \"otp\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/verify-forgot-otp",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "verify-forgot-otp"]
+            }
+          }
+        },
+        {
+          "name": "3. Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"existing@example.com\",\n  \"resetToken\": \"returned-from-verify-forgot-otp\",\n  \"newPassword\": \"NewPassword123!\",\n  \"confirmPassword\": \"NewPassword123!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/reset-password",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "reset-password"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Invite System",
+      "item": [
+        {
+          "name": "1. Send Invite (Authenticated)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"newuser@example.com\",\n  \"boxId\": 123\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/invite/send",
+              "host": ["{{base_url}}"],
+              "path": ["api", "invite", "send"]
+            }
+          }
+        },
+        {
+          "name": "2. Get Invite Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/invite/abc123def456ghi789jkl012mno345pqr678stu901vwx234yz",
+              "host": ["{{base_url}}"],
+              "path": ["api", "invite", "abc123def456ghi789jkl012mno345pqr678stu901vwx234yz"]
+            }
+          }
+        },
+        {
+          "name": "3. Accept Invite (New User)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"abc123def456ghi789jkl012mno345pqr678stu901vwx234yz\",\n  \"email\": \"newuser@example.com\",\n  \"fullname\": \"John Smith\",\n  \"password\": \"SecurePassword123!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/invite/accept",
+              "host": ["{{base_url}}"],
+              "path": ["api", "invite", "accept"]
+            }
+          }
+        },
+        {
+          "name": "4. Accept Invite (Existing User)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"abc123def456ghi789jkl012mno345pqr678stu901vwx234yz\",\n  \"email\": \"existing@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/invite/accept",
+              "host": ["{{base_url}}"],
+              "path": ["api", "invite", "accept"]
+            }
+          }
+        },
+        {
+          "name": "5. Get Pending Invites",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/invite/list/pending",
+              "host": ["{{base_url}}"],
+              "path": ["api", "invite", "list", "pending"]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000",
+      "type": "string"
+    }
+  ]
+}

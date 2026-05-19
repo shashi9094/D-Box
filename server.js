@@ -36,6 +36,9 @@ const { sendEmail, verifyInviteToken, consumeInviteToken, peekInviteToken } = re
 const { preparePasswordForStorage, comparePassword, getPasswordMode } = require('./utils/passwordAuth');
 const otpRoutes = require('./routes/otpRoutes');
 const passwordResetRoutes = require('./routes/passwordResetRoutes');
+const emailVerificationRoutes = require('./routes/emailVerificationRoutes');
+const inviteRoutes = require('./routes/inviteRoutes');
+const adminInviteRoutes = require('./routes/adminInviteRoutes');
 
 const apiSessionTokens = new Map();
 
@@ -295,11 +298,14 @@ app.use(express.static(path.join(__dirname, 'Public')));
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/auth', emailVerificationRoutes);
 app.use('/api/box', boxRoutes);
 app.use('/api/files', fileRoutes);
 app.use('/api/images', require('./routes/imageRoutes'));
 app.use('/api/otp', otpRoutes);
 app.use('/api/password-reset', passwordResetRoutes);
+app.use('/api/invite', inviteRoutes);
+app.use('/admin/invite', adminInviteRoutes);
 app.get('/api/uploads', isAuth, boxController.getUploadsByQuery);
 
 app.get('/test-email', async (req, res) => {
