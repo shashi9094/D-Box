@@ -1887,17 +1887,28 @@ textarea:focus {
   position: fixed;
   inset: 0;
   background: rgba(2, 4, 14, 0.7);
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: center;
   z-index: 2000;
   padding: 20px;
   overflow-y: auto;
   overscroll-behavior: contain;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 180ms ease, visibility 180ms ease;
 }
 
 .dashboard-modal[aria-hidden="false"] {
-  display: flex;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.dashboard-modal.is-closing {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .dashboard-modal-card {
@@ -1911,6 +1922,19 @@ textarea:focus {
   background: linear-gradient(160deg, rgba(20, 22, 40, 0.98), rgba(14, 10, 34, 0.98));
   border: 1px solid rgba(135, 156, 255, 0.2);
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  transform: translateY(12px) scale(0.98);
+  opacity: 0.98;
+  transition: transform 180ms ease, opacity 180ms ease;
+}
+
+.dashboard-modal[aria-hidden="false"] .dashboard-modal-card {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+.dashboard-modal.is-closing .dashboard-modal-card {
+  transform: translateY(12px) scale(0.98);
+  opacity: 0;
 }
 
 body.modal-open {

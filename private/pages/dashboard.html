@@ -184,6 +184,7 @@ let reqUserId = null;
 let currentSessionUser = null;
 const CAPACITY_MIN = 1;
 const CAPACITY_MAX = 200;
+let modalCloseTimer = null;
 
 function showToast(message, type = 'success') {
     const container = document.getElementById('toastContainer');
@@ -547,9 +548,20 @@ async function removeMember(boxId) {
 }
 
 function closeModal() {
-    document.getElementById('dashboardModal').setAttribute('aria-hidden', 'true');
+    const modal = document.getElementById('dashboardModal');
+    if (!modal) {
+        return;
+    }
+
+    window.clearTimeout(modalCloseTimer);
+    modal.classList.add('is-closing');
     document.getElementById('modalErrorText').textContent = '';
     setModalSection('none');
+
+    modalCloseTimer = window.setTimeout(() => {
+        modal.setAttribute('aria-hidden', 'true');
+        modal.classList.remove('is-closing');
+    }, 180);
 }
 
 function setModalSection(section) {
@@ -566,6 +578,8 @@ function setModalSection(section) {
 function openModal(type) {
     const modal = document.getElementById('dashboardModal');
     const title = document.getElementById('modalTitle');
+    window.clearTimeout(modalCloseTimer);
+    modal.classList.remove('is-closing');
     setModalSection('none');
     document.getElementById('modalErrorText').textContent = '';
 
@@ -713,9 +727,9 @@ document.getElementById('addMemberForm').addEventListener('submit', async (event
         modalErrorText.textContent = '';
         if (emailInput) {
             emailInput.value = '';
-            emailInput.focus();
         }
         showToast('Invitation sent successfully');
+        closeModal();
     } catch (error) {
         const modalErrorText = document.getElementById('modalErrorText');
         modalErrorText.classList.remove('warning', 'success');
