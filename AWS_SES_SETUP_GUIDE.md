@@ -19,7 +19,7 @@ Complete setup guide for migrating from Brevo/SMTP to AWS SES with OTP verificat
 2. Select your region (e.g., us-east-1)
 3. Go to "Email Addresses" or "Identities"
 4. Click "Verify New Email Address"
-5. Enter your from email (e.g., noreply@mydbox.local)
+5. Enter your from email (e.g., no-reply@mydbox.co.in)
 6. Check your email and click verification link
 7. Email will show "verified" status
 

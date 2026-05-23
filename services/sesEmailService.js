@@ -9,8 +9,11 @@ const { SESClient, SendEmailCommand } = require("@aws-sdk/client-ses");
 const AWS_REGION = String(process.env.AWS_REGION || "us-east-1").trim();
 const AWS_ACCESS_KEY_ID = String(process.env.AWS_ACCESS_KEY_ID || "").trim();
 const AWS_SECRET_ACCESS_KEY = String(process.env.AWS_SECRET_ACCESS_KEY || "").trim();
-const EMAIL_FROM = String(process.env.EMAIL_FROM || "no-reply@mydbox.local").trim();
+const EMAIL_FROM = String(process.env.EMAIL_FROM || "").trim();
 const SENDER_NAME = String(process.env.SENDER_NAME || "D-Box").trim();
+const EMAIL_DOMAIN = getEmailDomain(EMAIL_FROM);
+const WEBSITE_URL = `https://${EMAIL_DOMAIN}`;
+const SUPPORT_EMAIL = `support@${EMAIL_DOMAIN}`;
 
 // Initialize SES Client
 const sesClient = new SESClient({
@@ -31,6 +34,8 @@ const sesClient = new SESClient({
  */
 async function sendEmail(toEmail, subject, htmlBody, textBody = null) {
   try {
+    const source = getSenderSource();
+
     // Validate inputs
     if (!toEmail || !toEmail.includes("@")) {
       throw new Error("Invalid recipient email address");
@@ -46,7 +51,7 @@ async function sendEmail(toEmail, subject, htmlBody, textBody = null) {
 
     // Prepare email command
     const params = {
-      Source: `${SENDER_NAME} <${EMAIL_FROM}>`,
+      Source: source,
       Destination: {
         ToAddresses: [toEmail.toLowerCase().trim()],
       },
@@ -92,6 +97,25 @@ async function sendEmail(toEmail, subject, htmlBody, textBody = null) {
 
     throw new Error(`Email send failed: ${error.message}`);
   }
+}
+
+function getSenderSource() {
+  if (!EMAIL_FROM) {
+    throw new Error("EMAIL_FROM environment variable is required for SES email delivery");
+  }
+
+  return `${SENDER_NAME || "D-Box"} <${EMAIL_FROM}>`;
+}
+
+function getEmailDomain(emailAddress) {
+  const fallbackDomain = "mydbox.co.in";
+
+  if (!emailAddress || !emailAddress.includes("@")) {
+    return fallbackDomain;
+  }
+
+  const domain = emailAddress.split("@").pop().trim();
+  return domain || fallbackDomain;
 }
 
 /**
@@ -194,7 +218,7 @@ function getOTPEmailTemplate(otp, purpose = "signup") {
     </div>
     <div class="email-footer">
       <p style="margin: 0;">© 2024 D-Box. All rights reserved.</p>
-      <p style="margin: 5px 0 0 0;">Need help? Contact us at support@mydbox.local</p>
+      <p style="margin: 5px 0 0 0;">Need help? Contact us at ${SUPPORT_EMAIL}</p>
     </div>
   </div>
 </body>
@@ -251,7 +275,7 @@ function getInviteEmailTemplate(inviteLink, invitedByName) {
     </div>
     <div class="email-footer">
       <p style="margin: 0;">© 2024 D-Box. All rights reserved.</p>
-      <p style="margin: 5px 0 0 0;">Questions? Reply to this email or visit support@mydbox.local</p>
+      <p style="margin: 5px 0 0 0;">Questions? Reply to this email or visit ${SUPPORT_EMAIL}</p>
     </div>
   </div>
 </body>
@@ -348,9 +372,9 @@ function getAdminInviteEmailTemplate(inviteLink, invitedByName, role = 'employee
       <p style="margin: 0; font-weight: 600;">D-Box Admin Team</p>
       <p style="margin: 5px 0 0 0;">© 2024 D-Box. All rights reserved.</p>
       <div class="footer-links">
-        <a href="https://mydbox.local">Website</a>
-        <a href="https://mydbox.local/support">Support</a>
-        <a href="https://mydbox.local/privacy">Privacy</a>
+        <a href="${WEBSITE_URL}">Website</a>
+        <a href="${WEBSITE_URL}/support">Support</a>
+        <a href="${WEBSITE_URL}/privacy">Privacy</a>
       </div>
     </div>
   </div>
