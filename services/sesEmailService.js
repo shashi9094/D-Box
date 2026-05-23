@@ -244,11 +244,16 @@ function getInviteEmailTemplate(inviteLink, invitedByName) {
     .email-header h1 { margin: 0; font-size: 28px; font-weight: 600; }
     .email-body { padding: 40px 30px; }
     .email-body p { margin: 15px 0; font-size: 16px; line-height: 1.6; color: #333333; }
-    .invite-message { background-color: #f0f4ff; border-left: 4px solid #667eea; padding: 20px; margin: 25px 0; border-radius: 4px; }
-    .cta-button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 14px 40px; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 25px 0; }
-    .cta-button:hover { opacity: 0.9; }
+    .invite-message { background: #F4F7FF; border-left: 4px solid #4F46E5; padding: 20px; margin: 25px 0; border-radius: 6px; color: #1F2937; }
+    .cta-button { background: #4F46E5; color: #FFFFFF !important; padding: 14px 28px; border-radius: 8px; font-size: 16px; font-weight: 600; text-decoration: none; display: inline-block; line-height: 1.2; text-align: center; border: 1px solid #4F46E5; }
+    .cta-button:hover { background: #4338CA; border-color: #4338CA; }
     .link-text { word-break: break-all; color: #667eea; font-size: 12px; margin-top: 15px; }
     .email-footer { background-color: #f8f9fa; padding: 30px; text-align: center; border-top: 1px solid #e0e0e0; font-size: 12px; color: #999999; }
+
+    @media only screen and (max-width: 600px) {
+      .email-body { padding: 30px 20px; }
+      .cta-button { width: 100%; max-width: 320px; box-sizing: border-box; }
+    }
   </style>
 </head>
 <body>
@@ -263,7 +268,7 @@ function getInviteEmailTemplate(inviteLink, invitedByName) {
       </div>
       <p>Start collaborating with your team and manage your files securely in the cloud.</p>
       <div style="text-align: center;">
-        <a href="${inviteLink}" class="cta-button">Accept Invite</a>
+        <a href="${inviteLink}" class="cta-button" style="background: #4F46E5; color: #FFFFFF; padding: 14px 28px; border-radius: 8px; font-size: 16px; font-weight: 600; text-decoration: none; display: inline-block; line-height: 1.2; text-align: center; border: 1px solid #4F46E5;">Accept Invite</a>
       </div>
       <p style="text-align: center; color: #666666; font-size: 14px;">
         or copy this link: <br>
