@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sign up - D-Box</title>
   <link rel="stylesheet" href="style.css">
+  <script src="/scripts/ui-feedback.js" defer></script>
 </head>
 <body class="allow-scroll">
   <div class="container login-container">
@@ -268,7 +269,7 @@
       const confirmPassword = document.getElementById("confirmPassword").value;
 
       if (password !== confirmPassword) {
-        alert("Passwords do not match!");
+        window.dboxToast('Passwords do not match!', { error: true });
         return;
       }
 
@@ -312,7 +313,7 @@
           console.log('Signup response data:', result);
         } catch (jsonErr) {
           console.error('Failed to parse signup response JSON:', jsonErr);
-          alert('Server response invalid. Please try again.');
+          window.dboxToast('Server response invalid. Please try again.', { error: true });
           submitButton.disabled = false;
           submitButton.textContent = originalButtonText;
           return;
@@ -322,7 +323,7 @@
         if (!response.ok || !result.success) {
           const errorMsg = result.message || 'Signup failed. Please try again.';
           console.error('Signup failed:', errorMsg);
-          alert(errorMsg);
+          window.dboxToast(errorMsg, { error: true });
           submitButton.disabled = false;
           submitButton.textContent = originalButtonText;
           return;
@@ -335,6 +336,7 @@
         });
 
         // Show success feedback
+        window.dboxToast('Account created successfully');
         submitButton.textContent = 'Account created successfully!';
         
         // Optional: verify session
@@ -362,7 +364,7 @@
           message: err.message,
           stack: err.stack
         });
-        alert('An unexpected error occurred. Please try again.');
+        window.dboxToast('An unexpected error occurred. Please try again.', { error: true });
         submitButton.disabled = false;
         submitButton.textContent = originalButtonText;
       }

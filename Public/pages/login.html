@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Login - D-Box</title>
   <link rel="stylesheet" href="style.css">
+  <script src="/scripts/ui-feedback.js" defer></script>
 </head>
 <body>
   <div class="container login-container">
@@ -182,7 +183,7 @@
 
       window.location.replace(data.redirectUrl || '/dashboard');
     } catch (error) {
-      alert(error.message || 'Unable to process invite. Please login again with invited account.');
+      window.dboxToast(error.message || 'Unable to process invite. Please login again with invited account.', { error: true });
       window.location.replace('/home');
     }
   }
@@ -282,6 +283,9 @@
 
     const email = document.getElementById('email').value;
     const password = document.getElementById('password').value;
+    const submitButton = this.querySelector('button[type="submit"]');
+
+    window.dboxSetLoading(submitButton, true, { loading: 'Signing in...', normal: 'Sign In' });
 
     try {
       const res = await fetch('/api/auth/login', {
@@ -309,9 +313,9 @@
 
       if (!res.ok) {
         if (data.message === 'User not found' && inviteEmail) {
-          alert('No account found for this invite email. Please sign up first.');
+          window.dboxToast('No account found for this invite email. Please sign up first.', { error: true });
         } else {
-          alert(data.message || 'Invalid login');
+          window.dboxToast(data.message || 'Invalid login', { error: true });
         }
         return;
       }
@@ -325,7 +329,9 @@
       window.location.replace(data.redirectUrl || '/home');
     } catch (error) {
       console.error('Login failed:', error);
-      alert('server error: could not login');
+      window.dboxToast('server error: could not login', { error: true });
+    } finally {
+      window.dboxSetLoading(submitButton, false, { normal: 'Sign In' });
     }
   });
 </script>

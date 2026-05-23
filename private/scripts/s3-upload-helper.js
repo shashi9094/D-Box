@@ -88,7 +88,7 @@ function handleSimpleUpload() {
     const file = fileInput.files[0];
 
     if (!file) {
-        alert('Please select a file');
+        if (window.dboxToast) window.dboxToast('Please select a file', { error: true });
         return;
     }
 
@@ -140,7 +140,7 @@ function handleUploadWithProgress() {
     const file = fileInput.files[0];
 
     if (!file) {
-        alert('Please select a file');
+        if (window.dboxToast) window.dboxToast('Please select a file', { error: true });
         return;
     }
 
@@ -169,15 +169,15 @@ function handleUploadWithProgress() {
     xhr.addEventListener('load', () => {
         if (xhr.status === 200) {
             const data = JSON.parse(xhr.responseText);
-            alert(`Upload successful!\nURL: ${data.fileUrl}`);
+            if (window.dboxToast) window.dboxToast('Upload successful');
             progressContainer.style.display = 'none';
         } else {
-            alert('Upload failed');
+            if (window.dboxToast) window.dboxToast('Upload failed', { error: true });
         }
     });
 
     xhr.addEventListener('error', () => {
-        alert('Upload error occurred');
+        if (window.dboxToast) window.dboxToast('Upload error occurred', { error: true });
         progressContainer.style.display = 'none';
     });
 
@@ -278,7 +278,7 @@ async function handleMultipleUpload() {
     const files = Array.from(fileInput.files);
 
     if (files.length === 0) {
-        alert('Please select files');
+        if (window.dboxToast) window.dboxToast('Please select files', { error: true });
         return;
     }
 
@@ -323,7 +323,7 @@ async function uploadImageToS3() {
         const file = e.target.files[0];
 
         if (!file.type.startsWith('image/')) {
-            alert('Please select an image file');
+            if (window.dboxToast) window.dboxToast('Please select an image file', { error: true });
             return;
         }
 

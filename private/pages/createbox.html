@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Create D-Box</title>
   <link rel="stylesheet" href="style.css">
+  <script src="/scripts/ui-feedback.js" defer></script>
   <script src="/scripts/auth-guard.js" defer></script>
   <script src="/scripts/back-nav.js" defer></script>
 </head>
@@ -38,16 +39,19 @@
       const title = document.getElementById('text').value.trim();
       const description = document.getElementById('user_paragraph').value.trim();
       const capacity = Number(document.getElementById('icapacity').value);
+      const submitButton = this.querySelector('button[type="submit"]');
 
       if (!title || !description) {
-        alert('Please enter both box name and description.');
+        window.dboxToast('Please enter both box name and description.', { error: true });
         return;
       }
 
       if (!Number.isFinite(capacity) || capacity < 1) {
-        alert('Please choose a valid capacity of at least 1.');
+        window.dboxToast('Please choose a valid capacity of at least 1.', { error: true });
         return;
       }
+
+      window.dboxSetLoading(submitButton, true, { loading: 'Creating box...', normal: 'Create Box' });
 
       try {
         const res = await fetch('/api/box/create', {
@@ -70,9 +74,12 @@
           throw new Error(data.message || data.error || 'Unable to create box');
         }
 
-        window.location.href = '/dashboard#dashboard';
+        window.dboxToast('Box created successfully');
+        window.location.replace('/dashboard#dashboard');
       } catch (error) {
-        alert(error.message || 'Something went wrong while creating box.');
+        window.dboxToast(error.message || 'Something went wrong while creating box.', { error: true });
+      } finally {
+        window.dboxSetLoading(submitButton, false, { normal: 'Create Box' });
       }
     });
   </script>

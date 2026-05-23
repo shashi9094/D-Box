@@ -4,12 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Verify Email Widget</title>
+  <script src="/scripts/ui-feedback.js" defer></script>
   <style>
     .btn{background:#2563eb;color:#fff;border:0;padding:8px 14px;border-radius:8px;cursor:pointer;font-weight:600}
     .link{background:none;border:0;color:#2563eb;text-decoration:underline;cursor:pointer;padding:6px}
     .hidden{display:none!important}
     .otp-box{width:48px;height:56px;font-size:20px;text-align:center;border-radius:8px;border:1px solid #e5e7eb}
-    #otpAlert{padding:10px;border-radius:8px;background:#ecfeff;color:#065f46;border:1px solid #2dd4bf}
     #otpError{padding:10px;border-radius:8px;background:#fff1f2;color:#991b1b;border:1px solid #fca5a5}
     @media (max-width:480px){ .otp-box{width:40px;height:48px;font-size:18px} }
   </style>
@@ -45,15 +45,12 @@
   const container = document.getElementById('step1');
   const sendBtn = document.getElementById('sendOtpBtn');
   const otpArea = document.getElementById('otpArea');
-  const otpAlert = document.getElementById('otpAlert');
   const otpError = document.getElementById('otpError');
   const resendBtn = document.getElementById('resendOtpBtn');
   const verifyBtn = document.getElementById('verifyOtpBtn');
   const inputs = Array.from(document.querySelectorAll('#otpInputs .otp-box'));
   const email = (container && container.dataset && container.dataset.email) ? container.dataset.email : null;
 
-  function showAlert(msg){ otpAlert.textContent = msg; otpAlert.classList.remove('hidden'); }
-  function hideAlert(){ otpAlert.textContent = ''; otpAlert.classList.add('hidden'); }
   function showError(msg){ otpError.textContent = msg; otpError.classList.remove('hidden'); }
   function hideError(){ otpError.textContent = ''; otpError.classList.add('hidden'); }
 
@@ -64,7 +61,7 @@
 
   // Send OTP request
   async function sendOTP(){
-    hideAlert(); hideError();
+    hideError();
     setLoading(sendBtn, true, 'Verify Email');
     try {
       const res = await fetch('/api/auth/send-verification-otp', {
@@ -76,10 +73,9 @@
       if(!res.ok || body.success===false){
         throw new Error(body.message || 'Unable to send OTP');
       }
-      // show alert then reveal inputs
-      showAlert('OTP sent successfully');
-      // reveal after short delay so user sees alert first
-      setTimeout(()=>{ otpArea.classList.remove('hidden'); inputs[0].focus(); }, 600);
+      window.dboxToast('OTP sent successfully');
+      otpArea.classList.remove('hidden');
+      inputs[0].focus();
     } catch(err){
       showError(err.message || 'Network error sending OTP');
     } finally {
@@ -102,8 +98,10 @@
       });
       const body = await res.json().catch(()=>({}));
       if(res.ok && body.success){
-        showAlert('Verification successful — reloading...');
-        setTimeout(()=> window.location.reload(), 700);
+        window.dboxToast('Verification successful');
+        otpArea.classList.add('hidden');
+        sendBtn.textContent = 'Verified';
+        sendBtn.disabled = true;
       } else {
         throw new Error(body.message || 'Verification failed');
       }
@@ -119,7 +117,7 @@
 
   // Resend OTP
   async function resendOTP(){
-    hideError(); hideAlert();
+    hideError();
     setLoading(resendBtn, true, 'Resending...');
     try { await sendOTP(); } finally { setLoading(resendBtn, false, 'Resend OTP'); }
   }
@@ -159,7 +157,7 @@
 
   // hide OTP area initially
   otpArea.classList.add('hidden');
-  hideAlert(); hideError();
+  hideError();
 
   // expose global for compatibility with existing onclicks
   window.sendOTP = sendOTP;

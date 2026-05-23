@@ -6,9 +6,18 @@
   <title>Box Uploads</title>
   <link rel="stylesheet" href="/style.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+  <script src="/scripts/ui-feedback.js" defer></script>
   <script src="/scripts/auth-guard.js" defer></script>
   <script src="/scripts/back-nav.js" defer></script>
   <script src="/scripts/fileUrlService.js?v=20260511" defer></script>
+  <style>
+    .uploads-grid-section.is-drag-over {
+      outline: 2px dashed #4F46E5;
+      outline-offset: 8px;
+      border-radius: 16px;
+      background: rgba(79, 70, 229, 0.04);
+    }
+  </style>
 </head>
 <body class="dashboard-page">
   <div class="main-layout uploads-page-layout">
@@ -168,6 +177,7 @@
     };
     let previewObserver = null;
     const fileOpenLock = new Set();
+    let uploadsBusy = false;
 
     function isAdminUser() {
       return myRole === 'admin';
@@ -199,6 +209,24 @@
 
     function canEditUploadImportantNotes() {
       return isMainAdminUser();
+    }
+
+    function setUploadsBusy(isBusy, label) {
+      uploadsBusy = Boolean(isBusy);
+      const fab = document.getElementById('uploadsFab');
+      const fileInput = document.getElementById('fileInput');
+      const folderInput = document.getElementById('folderInput');
+      const deleteBtn = document.getElementById('deleteSelectedUploadsBtn');
+
+      [fab, fileInput, folderInput, deleteBtn].forEach((el) => {
+        if (!el) return;
+        el.disabled = Boolean(isBusy);
+        el.setAttribute('aria-busy', String(Boolean(isBusy)));
+      });
+
+      if (label) {
+        setBatchStatus(label, Boolean(isBusy));
+      }
     }
 
     function hasFabAccess() {
@@ -1426,7 +1454,7 @@
             await updateImportantNote(contentId, nextValue);
             await loadGroupData();
           } catch (error) {
-            alert(error.message || 'Unable to update important note');
+            window.dboxToast(error.message || 'Unable to update important note', { error: true });
           }
           return;
         }
@@ -1440,7 +1468,7 @@
             await deleteUpload(contentId);
             await loadGroupData();
           } catch (error) {
-            alert(error.message || 'Delete failed');
+            window.dboxToast(error.message || 'Delete failed', { error: true });
           }
           return;
         }
@@ -1543,7 +1571,7 @@
 
       const selectedIds = Array.from(selectedUploadIds);
       if (!selectedIds.length) {
-        alert('Please select at least one file to delete.');
+        window.dboxToast('Please select at least one file to delete.', { error: true });
         return;
       }
 
@@ -1554,6 +1582,8 @@
 
       let deletedCount = 0;
       const failedDeletes = [];
+
+      setUploadsBusy(true, 'Deleting selected files...');
 
       for (const contentId of selectedIds) {
         try {
@@ -1572,10 +1602,13 @@
 
       if (failedDeletes.length) {
         setBatchStatus(`Deleted ${deletedCount}, failed ${failedDeletes.length}`, true);
-        alert(`Deleted ${deletedCount} file(s). ${failedDeletes.length} failed.\n\n${failedDeletes.join('\n')}`);
+        window.dboxToast(`Deleted ${deletedCount} file(s). ${failedDeletes.length} failed.`, { error: true });
       } else {
         setBatchStatus(`Deleted ${deletedCount} selected file(s)`);
+        window.dboxToast(`Deleted ${deletedCount} selected file(s)`);
       }
+
+      setUploadsBusy(false);
     });
 
     document.addEventListener('click', (event) => {
@@ -1605,7 +1638,7 @@
         closeRenameModal();
         await loadGroupData();
       } catch (error) {
-        alert(error.message || 'Rename failed');
+        window.dboxToast(error.message || 'Rename failed', { error: true });
       }
     });
 
@@ -1620,12 +1653,13 @@
 
       if (files.length > MAX_UPLOAD_FILES_PER_BATCH) {
         setBatchStatus(`You cannot upload more than ${MAX_UPLOAD_FILES_PER_BATCH} files at one time.`, true);
-        alert(`You cannot upload more than ${MAX_UPLOAD_FILES_PER_BATCH} files at one time.`);
+        window.dboxToast(`You cannot upload more than ${MAX_UPLOAD_FILES_PER_BATCH} files at one time.`, { error: true });
         event.target.value = '';
         return;
       }
 
       try {
+        setUploadsBusy(true, `Uploading ${files.length} file(s)...`);
         setBatchStatus(`Uploaded 0 of ${files.length}`);
         const adminNote = canEditUploadImportantNotes()
           ? ((window.prompt('Important note for selected uploads (optional):', '') ?? ''))
@@ -1643,14 +1677,16 @@
 
         if (failedFiles.length) {
           setBatchStatus(`${successCount} uploaded, ${failedFiles.length} failed`, true);
-          alert(`${successCount} file(s) uploaded. ${failedFiles.length} failed.\n\n${failedFiles.join('\n')}`);
+          window.dboxToast(`${successCount} file(s) uploaded. ${failedFiles.length} failed.`, { error: true });
         } else {
           setBatchStatus('All selected files uploaded successfully');
+          window.dboxToast('Files uploaded successfully');
         }
       } catch (error) {
         setBatchStatus('Upload failed. Please try again.', true);
-        alert(error.message || 'Upload failed');
+        window.dboxToast(error.message || 'Upload failed', { error: true });
       } finally {
+        setUploadsBusy(false);
         event.target.value = '';
       }
     });
@@ -1666,12 +1702,13 @@
 
       if (files.length > MAX_UPLOAD_FILES_PER_BATCH) {
         setBatchStatus(`You cannot upload more than ${MAX_UPLOAD_FILES_PER_BATCH} files at one time.`, true);
-        alert(`You cannot upload more than ${MAX_UPLOAD_FILES_PER_BATCH} files at one time.`);
+        window.dboxToast(`You cannot upload more than ${MAX_UPLOAD_FILES_PER_BATCH} files at one time.`, { error: true });
         event.target.value = '';
         return;
       }
 
       try {
+        setUploadsBusy(true, `Uploading ${files.length} file(s)...`);
         setBatchStatus(`Uploaded 0 of ${files.length}`);
         const adminNote = canEditUploadImportantNotes()
           ? ((window.prompt('Important note for selected uploads (optional):', '') ?? ''))
@@ -1688,17 +1725,51 @@
 
         if (failedFiles.length) {
           setBatchStatus(`${successCount} uploaded, ${failedFiles.length} failed`, true);
-          alert(`${successCount} file(s) uploaded. ${failedFiles.length} failed.\n\n${failedFiles.join('\n')}`);
+          window.dboxToast(`${successCount} file(s) uploaded. ${failedFiles.length} failed.`, { error: true });
         } else {
           setBatchStatus('All selected files uploaded successfully');
+          window.dboxToast('Folder uploaded successfully');
         }
       } catch (error) {
         setBatchStatus('Folder upload failed. Please try again.', true);
-        alert(error.message || 'Folder upload failed');
+        window.dboxToast(error.message || 'Folder upload failed', { error: true });
       } finally {
+        setUploadsBusy(false);
         event.target.value = '';
       }
     });
+
+    const uploadsGridSection = document.querySelector('.uploads-grid-section');
+    if (uploadsGridSection) {
+      ['dragenter', 'dragover'].forEach((eventName) => {
+        uploadsGridSection.addEventListener(eventName, (event) => {
+          if (!canUploadContent()) return;
+          event.preventDefault();
+          uploadsGridSection.classList.add('is-drag-over');
+        });
+      });
+
+      ['dragleave', 'drop'].forEach((eventName) => {
+        uploadsGridSection.addEventListener(eventName, (event) => {
+          event.preventDefault();
+          uploadsGridSection.classList.remove('is-drag-over');
+        });
+      });
+
+      uploadsGridSection.addEventListener('drop', (event) => {
+        if (!canUploadContent()) return;
+        const files = Array.from(event.dataTransfer?.files || []);
+        if (!files.length) return;
+
+        const dataTransfer = new DataTransfer();
+        files.forEach((file) => dataTransfer.items.add(file));
+        const fileInput = document.getElementById('fileInput');
+        if (fileInput) {
+          fileInput.files = dataTransfer.files;
+          fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      });
+    }
 
     document.getElementById('addMemberBtn').addEventListener('click', () => {
       if (!canManageMembers()) return;
@@ -1726,7 +1797,7 @@
         .filter((value) => Number.isFinite(value));
 
       if (!selected.length) {
-        alert('Please select at least one user to remove.');
+        window.dboxToast('Please select at least one user to remove.', { error: true });
         return;
       }
 
@@ -1743,7 +1814,7 @@
         setRemoveDropdownOpen(false);
         await loadGroupData();
       } catch (error) {
-        alert(error.message || 'Unable to remove selected users');
+        window.dboxToast(error.message || 'Unable to remove selected users', { error: true });
       }
     });
 
@@ -1775,7 +1846,7 @@
           await apiRequest(`/api/box/${boxId}/members/${memberUserId}/role`, { method: 'PATCH' });
           await loadGroupData();
         } catch (error) {
-          alert(error.message || 'Unable to promote member');
+          window.dboxToast(error.message || 'Unable to promote member', { error: true });
         }
         return;
       }
@@ -1789,7 +1860,7 @@
           await apiRequest(`/api/box/${boxId}/members/${memberUserId}/role`, { method: 'DELETE' });
           await loadGroupData();
         } catch (error) {
-          alert(error.message || 'Unable to remove admin access');
+          window.dboxToast(error.message || 'Unable to remove admin access', { error: true });
         }
       }
     });
@@ -1816,7 +1887,7 @@
           await loadGroupData();
           return;
         } else {
-          alert(result.message || 'Invite processed. Invitation email queued.');
+          window.dboxToast(result.message || 'Invitation sent successfully');
           modalError.textContent = '';
         }
 
@@ -1877,8 +1948,8 @@
       boxId = getBoxIdFromQuery();
       syncDeleteModeButtonLabel();
       if (!boxId) {
-        alert('Box not selected. Redirecting to dashboard.');
-        window.location.href = '/dashboard#dashboard';
+        window.dboxToast('Box not selected. Redirecting to dashboard.', { error: true });
+        window.location.replace('/dashboard#dashboard');
         return;
       }
 
@@ -1895,8 +1966,8 @@
         await loadGroupData();
         updateStickyHeaderHeight();
       } catch (error) {
-        alert(error.message || 'Unable to open this group uploads');
-        window.location.href = '/dashboard#dashboard';
+        window.dboxToast(error.message || 'Unable to open this group uploads', { error: true });
+        window.location.replace('/dashboard#dashboard');
       }
     });
   </script>

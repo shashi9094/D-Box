@@ -6,6 +6,72 @@
   <title>Exist Box</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        .toast-container {
+            position: fixed;
+            right: 16px;
+            bottom: 16px;
+            z-index: 1200;
+            display: grid;
+            gap: 10px;
+            pointer-events: none;
+            width: min(92vw, 360px);
+        }
+
+        .toast {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #ffffff;
+            color: #1f2937;
+            border: 1px solid #e5e7eb;
+            border-left: 4px solid #16a34a;
+            border-radius: 10px;
+            padding: 12px 14px;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.14);
+            font-size: 14px;
+            line-height: 1.4;
+            opacity: 0;
+            transform: translateY(8px);
+            animation: toast-in 160ms ease-out forwards;
+        }
+
+        .toast.error {
+            border-left-color: #dc2626;
+        }
+
+        .toast i {
+            color: #16a34a;
+            font-size: 15px;
+        }
+
+        .toast.error i {
+            color: #dc2626;
+        }
+
+        @keyframes toast-in {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes toast-out {
+            to {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+        }
+
+        @media (max-width: 600px) {
+            .toast-container {
+                right: 10px;
+                left: 10px;
+                width: auto;
+                bottom: 10px;
+            }
+        }
+    </style>
         <script src="/scripts/auth-guard.js" defer></script>
         <script src="/scripts/back-nav.js" defer></script>
 </head>
@@ -90,7 +156,7 @@
             <label for="memberEmailInput">User Email(s)</label>
             <input id="memberEmailInput" type="text" placeholder="user1@example.com, user2@example.com" required>
             <small class="modal-help-text">You can add multiple email addresses, separated by commas or line breaks.</small>
-            <button type="submit" class="modal-submit-btn">
+            <button type="submit" class="modal-submit-btn" id="addMemberSubmitBtn">
                 <i class="fa-solid fa-user-plus"></i> Add User
             </button>
         </form>
@@ -108,6 +174,8 @@
     </div>
 </div>
 
+<div class="toast-container" id="toastContainer" aria-live="polite" aria-atomic="true"></div>
+
 <script>
 let boxes = [];
 let selectedBoxId = null;
@@ -116,6 +184,88 @@ let reqUserId = null;
 let currentSessionUser = null;
 const CAPACITY_MIN = 1;
 const CAPACITY_MAX = 200;
+
+function showToast(message, type = 'success') {
+    const container = document.getElementById('toastContainer');
+    if (!container || !message) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast ${type === 'error' ? 'error' : ''}`;
+    const iconClass = type === 'error' ? 'fa-circle-exclamation' : 'fa-circle-check';
+    toast.innerHTML = `<i class="fa-solid ${iconClass}" aria-hidden="true"></i><span>${message}</span>`;
+    container.appendChild(toast);
+
+    window.setTimeout(() => {
+        toast.style.animation = 'toast-out 180ms ease-in forwards';
+        window.setTimeout(() => toast.remove(), 200);
+    }, 2600);
+}
+
+function countSubmittedEmails(rawEmailInput) {
+    const parts = String(rawEmailInput || '')
+        .split(/[\n,]+/)
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+    return parts.length;
+}
+
+function inferInviteSuccessCount(result, fallbackCount) {
+    const candidates = [
+        result?.successCount,
+        result?.inviteCount,
+        result?.createdCount,
+        result?.invitedCount,
+        result?.addedCount,
+    ];
+
+    for (const value of candidates) {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed) && parsed > 0) {
+            return parsed;
+        }
+    }
+
+    return Math.max(1, Number(fallbackCount) || 1);
+}
+
+function updateCapacityPill(boxId) {
+    const box = boxes.find((entry) => Number(entry.id) === Number(boxId));
+    const pill = document.querySelector(`[data-capacity-pill="${boxId}"]`);
+    if (!box || !pill) return;
+
+    const usedCount = Number(box.reservedCount || box.memberCount || 0);
+    const capacityValue = Number(box.capacity || 1);
+    pill.textContent = `${usedCount}/${capacityValue}`;
+}
+
+function applyInviteResultToLocalState(boxId, incrementBy) {
+    const box = boxes.find((entry) => Number(entry.id) === Number(boxId));
+    if (!box) return;
+
+    const currentReserved = Number(box.reservedCount || box.memberCount || 0);
+    const safeIncrement = Math.max(0, Number(incrementBy) || 0);
+    const nextReserved = currentReserved + safeIncrement;
+
+    box.reservedCount = nextReserved;
+    if (box.memberCount !== undefined) {
+        box.memberCount = nextReserved;
+    }
+
+    updateCapacityPill(boxId);
+}
+
+function setAddMemberSubmitting(isSubmitting) {
+    const submitBtn = document.getElementById('addMemberSubmitBtn');
+    if (!submitBtn) return;
+
+    submitBtn.disabled = isSubmitting;
+    if (isSubmitting) {
+        submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Sending...';
+        return;
+    }
+
+    submitBtn.innerHTML = '<i class="fa-solid fa-user-plus"></i> Add User';
+}
 
 function showProfileVerificationOverlay(sessionUser) {
     const modal = document.getElementById('profileVerificationModal');
@@ -210,17 +360,17 @@ async function editCapacity(boxId) {
 
     const parsed = Math.floor(Number(String(nextValue).trim()));
     if (!Number.isFinite(parsed) || parsed < 1) {
-        alert('Please enter a valid capacity of at least 1');
+        showToast('Please enter a valid capacity of at least 1', 'error');
         return;
     }
 
     if (parsed < reservedCount) {
-        alert(`Capacity cannot be lower than current members (${reservedCount})`);
+        showToast(`Capacity cannot be lower than current members (${reservedCount})`, 'error');
         return;
     }
 
     if (parsed > 200) {
-        alert('Capacity cannot exceed 200');
+        showToast('Capacity cannot exceed 200', 'error');
         return;
     }
 
@@ -498,7 +648,7 @@ document.querySelector('.box-list').addEventListener('click', async (event) => {
             return;
         }
     } catch (error) {
-        alert(error.message || 'Action failed');
+        showToast(error.message || 'Action failed', 'error');
     }
 });
 
@@ -532,6 +682,19 @@ document.getElementById('dashboardModal').addEventListener('click', (event) => {
 document.getElementById('addMemberForm').addEventListener('submit', async (event) => {
     event.preventDefault();
     const boxId = Number(document.getElementById('addMemberBoxId').value);
+    const emailInput = document.getElementById('memberEmailInput');
+    const emailInputValue = emailInput?.value || '';
+    const requestedInviteCount = countSubmittedEmails(emailInputValue);
+
+    if (!requestedInviteCount) {
+        const modalErrorText = document.getElementById('modalErrorText');
+        modalErrorText.classList.remove('warning', 'success');
+        modalErrorText.textContent = 'Please enter at least one email address';
+        return;
+    }
+
+    setAddMemberSubmitting(true);
+
     try {
         const result = await addMember(boxId);
         const modalErrorText = document.getElementById('modalErrorText');
@@ -541,19 +704,25 @@ document.getElementById('addMemberForm').addEventListener('submit', async (event
             modalErrorText.textContent = result.message || 'Invite created, but email delivery failed.';
             modalErrorText.classList.add('warning');
             await loadBoxes();
+            showToast('Invitation created, but some emails failed to send', 'error');
             return;
         }
 
-        if (result?.message) {
-            alert(result.message);
+        const addedCount = inferInviteSuccessCount(result, requestedInviteCount);
+        applyInviteResultToLocalState(boxId, addedCount);
+        modalErrorText.textContent = '';
+        if (emailInput) {
+            emailInput.value = '';
+            emailInput.focus();
         }
-
-        closeModal();
-        await loadBoxes();
+        showToast('Invitation sent successfully');
     } catch (error) {
         const modalErrorText = document.getElementById('modalErrorText');
         modalErrorText.classList.remove('warning', 'success');
         modalErrorText.textContent = error.message || 'Unable to add user';
+        showToast(error.message || 'Unable to add user', 'error');
+    } finally {
+        setAddMemberSubmitting(false);
     }
 });
 
@@ -600,7 +769,7 @@ window.addEventListener('load', async () => {
             await loadBoxes();
         }
     } catch (error) {
-        alert(error.message || 'Unable to load dashboard data');
+        showToast(error.message || 'Unable to load dashboard data', 'error');
     }
 });
 
@@ -773,7 +942,7 @@ document.getElementById('verifyProfileBtn').addEventListener('click', async () =
             throw new Error(body.message || 'Unable to send verification email');
         }
 
-        alert('OTP sent successfully');
+        showToast('OTP sent successfully');
         showOtpSection();
     } catch (err) {
         showMsg(err.message || 'Unable to send verification email', true);
@@ -837,7 +1006,7 @@ document.getElementById('pv-verifyBtn').addEventListener('click', async () => {
     const msgEl = document.getElementById('pvMessage');
     if (!msgEl) {
         console.error('❌ [OTP] Message element not found');
-        alert('UI Error: Cannot find message element');
+        showToast('UI Error: Cannot find message element', 'error');
         return;
     }
     
@@ -902,8 +1071,11 @@ document.getElementById('pv-verifyBtn').addEventListener('click', async () => {
         
         if (response.ok && body.success) {
             console.log('✅ [OTP] Verification successful!');
-            showMsg('Email verified. Reloading...', false);
-            setTimeout(() => window.location.reload(), 800);
+            showMsg('Email verified successfully', false);
+            if (typeof hideProfileVerificationOverlay === 'function') {
+                hideProfileVerificationOverlay();
+            }
+            showToast('Email verified successfully');
         } else {
             console.log(`⚠️  [OTP] Verification failed: ${body.message}`);
             showMsg(body.message || 'Verification failed', true);
@@ -947,7 +1119,7 @@ document.getElementById('pv-resendBtn').addEventListener('click', async () => {
 
             throw new Error(body.message || 'Unable to resend OTP');
         }
-        alert('OTP sent successfully');
+        showToast('OTP sent successfully');
         document.getElementById('profileOtpSection').hidden = false;
     } catch (err) {
         const msgEl = document.getElementById('pvMessage'); msgEl.textContent = err.message || 'Unable to resend OTP'; msgEl.classList.remove('hidden'); msgEl.classList.add('error');
