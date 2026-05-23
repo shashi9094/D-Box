@@ -1948,7 +1948,7 @@
       boxId = getBoxIdFromQuery();
       syncDeleteModeButtonLabel();
       if (!boxId) {
-        window.dboxToast('Box not selected. Redirecting to dashboard.', { error: true });
+        window.dboxToast('Box not selected. Redirecting to dashboard.', { type: 'info' });
         window.location.replace('/dashboard#dashboard');
         return;
       }

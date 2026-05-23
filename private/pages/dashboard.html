@@ -6,71 +6,8 @@
   <title>Exist Box</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <script src="/scripts/ui-feedback.js" defer></script>
     <style>
-        .toast-container {
-            position: fixed;
-            right: 16px;
-            bottom: 16px;
-            z-index: 1200;
-            display: grid;
-            gap: 10px;
-            pointer-events: none;
-            width: min(92vw, 360px);
-        }
-
-        .toast {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            background: #ffffff;
-            color: #1f2937;
-            border: 1px solid #e5e7eb;
-            border-left: 4px solid #16a34a;
-            border-radius: 10px;
-            padding: 12px 14px;
-            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.14);
-            font-size: 14px;
-            line-height: 1.4;
-            opacity: 0;
-            transform: translateY(8px);
-            animation: toast-in 160ms ease-out forwards;
-        }
-
-        .toast.error {
-            border-left-color: #dc2626;
-        }
-
-        .toast i {
-            color: #16a34a;
-            font-size: 15px;
-        }
-
-        .toast.error i {
-            color: #dc2626;
-        }
-
-        @keyframes toast-in {
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        @keyframes toast-out {
-            to {
-                opacity: 0;
-                transform: translateY(8px);
-            }
-        }
-
-        @media (max-width: 600px) {
-            .toast-container {
-                right: 10px;
-                left: 10px;
-                width: auto;
-                bottom: 10px;
-            }
-        }
     </style>
         <script src="/scripts/auth-guard.js" defer></script>
         <script src="/scripts/back-nav.js" defer></script>
@@ -187,19 +124,12 @@ const CAPACITY_MAX = 200;
 let modalCloseTimer = null;
 
 function showToast(message, type = 'success') {
-    const container = document.getElementById('toastContainer');
-    if (!container || !message) return;
+    if (window.dboxToast) {
+        const resolvedType = ['success', 'error', 'warning', 'info'].includes(String(type)) ? type : 'info';
+        return window.dboxToast(message, { type: resolvedType });
+    }
 
-    const toast = document.createElement('div');
-    toast.className = `toast ${type === 'error' ? 'error' : ''}`;
-    const iconClass = type === 'error' ? 'fa-circle-exclamation' : 'fa-circle-check';
-    toast.innerHTML = `<i class="fa-solid ${iconClass}" aria-hidden="true"></i><span>${message}</span>`;
-    container.appendChild(toast);
-
-    window.setTimeout(() => {
-        toast.style.animation = 'toast-out 180ms ease-in forwards';
-        window.setTimeout(() => toast.remove(), 200);
-    }, 2600);
+    return null;
 }
 
 function countSubmittedEmails(rawEmailInput) {
@@ -718,7 +648,7 @@ document.getElementById('addMemberForm').addEventListener('submit', async (event
             modalErrorText.textContent = result.message || 'Invite created, but email delivery failed.';
             modalErrorText.classList.add('warning');
             await loadBoxes();
-            showToast('Invitation created, but some emails failed to send', 'error');
+            showToast('Invitation created, but some emails failed to send', 'warning');
             return;
         }
 
