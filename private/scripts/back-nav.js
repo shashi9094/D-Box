@@ -36,6 +36,11 @@
         window.history.back();
         return;
       }
+      if (window.dboxNavigate) {
+        window.dboxNavigate(getFallbackPath());
+        return;
+      }
+
       window.location.href = getFallbackPath();
     });
   }

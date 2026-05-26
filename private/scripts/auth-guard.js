@@ -1,4 +1,11 @@
-document.documentElement.style.visibility = 'hidden';
+let isInternalNavTransition = false;
+try {
+  isInternalNavTransition = sessionStorage.getItem('dbox.nav.pending') === '1';
+} catch (_) {
+  isInternalNavTransition = false;
+}
+
+document.documentElement.style.visibility = isInternalNavTransition ? 'visible' : 'hidden';
 
 function applySavedTheme() {
   try {
@@ -44,6 +51,11 @@ async function ensureAuthenticated() {
     }
 
     document.documentElement.style.visibility = 'visible';
+    try {
+      sessionStorage.removeItem('dbox.nav.pending');
+    } catch (_) {
+      // ignore storage failures
+    }
   } catch (error) {
     window.location.replace('/login.html');
   }

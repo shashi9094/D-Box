@@ -75,7 +75,7 @@
         }
 
         window.dboxToast('Box created successfully');
-        window.location.replace('/dashboard#dashboard');
+        window.dboxNavigate('/dashboard#dashboard', { replace: true });
       } catch (error) {
         window.dboxToast(error.message || 'Something went wrong while creating box.', { error: true });
       } finally {

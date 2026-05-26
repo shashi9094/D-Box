@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>D-Box - Home</title>
   <link rel="stylesheet" href="/style.css" />
+  <script src="/scripts/ui-feedback.js" defer></script>
   <script src="/scripts/auth-guard.js" defer></script>
   <script src="/scripts/back-nav.js" defer></script>
 </head>
@@ -320,7 +321,7 @@
       if (modalId === 'settingsModal' && settingsReturnTarget) {
         const target = settingsReturnTarget;
         settingsReturnTarget = null;
-        window.location.href = target;
+        window.dboxNavigate(target);
       }
     }
 
@@ -396,7 +397,12 @@
       document.body.classList.add(`theme-${theme}`);
     }
 
-    function showAppToast(message) {
+    function showAppToast(message, type = 'info') {
+      if (window.dboxToast) {
+        window.dboxToast(message, { type });
+        return;
+      }
+
       const existing = document.querySelector('.app-toast');
       if (existing) {
         existing.remove();
@@ -1060,11 +1066,17 @@
 
       document.getElementById('openProfileAction')?.addEventListener('click', openProfileModal);
 
-      document.getElementById('showChangePasswordBtn')?.addEventListener('click', () => {
+      document.getElementById('showChangePasswordBtn')?.addEventListener('click', async () => {
         const passwordForm = document.getElementById('changePasswordForm');
         const messageEl = document.getElementById('profileModalMessage');
 
-        const shouldOpen = window.confirm('If you want change password?');
+        const shouldOpen = await window.dboxConfirm({
+          title: 'Change Password',
+          message: 'Do you want to open the change password form?',
+          confirmText: 'Continue',
+          cancelText: 'Cancel',
+          tone: 'warning'
+        });
         if (!shouldOpen) {
           return;
         }

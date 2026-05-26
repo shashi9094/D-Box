@@ -446,15 +446,35 @@ async function render() {
     }
 }
 
-async function deleteBox(id) {
-    if (!confirm('Delete this box and all its data?')) return;
-    await apiRequest(`/api/box/delete/${id}`, { method: 'DELETE' });
+async function deleteBox(id, triggerButton = null) {
+    const shouldDelete = await window.dboxConfirm({
+        title: 'Delete Box',
+        message: 'Delete this box and all its data? This action cannot be undone.',
+        confirmText: 'Delete',
+        cancelText: 'Cancel',
+        tone: 'danger'
+    });
 
-    if (selectedBoxId === id) {
-        selectedBoxId = null;
+    if (!shouldDelete) return;
+
+    if (window.dboxSetLoading && triggerButton) {
+        window.dboxSetLoading(triggerButton, true, { loading: 'Deleting...', normal: triggerButton.textContent?.trim() || 'Delete' });
     }
 
-    await loadBoxes();
+    try {
+        await apiRequest(`/api/box/delete/${id}`, { method: 'DELETE' });
+
+        if (selectedBoxId === id) {
+            selectedBoxId = null;
+        }
+
+        await loadBoxes();
+        showToast('Box deleted successfully');
+    } finally {
+        if (window.dboxSetLoading && triggerButton) {
+            window.dboxSetLoading(triggerButton, false);
+        }
+    }
 }
 
 async function addMember(boxId) {
@@ -563,7 +583,7 @@ document.querySelector('.box-list').addEventListener('click', async (event) => {
         const boxId = Number(card.dataset.id);
         if (!Number.isFinite(boxId)) return;
 
-        window.location.href = `/uploads?boxId=${boxId}`;
+        window.dboxNavigate(`/uploads?boxId=${boxId}`);
         return;
     }
 
@@ -577,7 +597,7 @@ document.querySelector('.box-list').addEventListener('click', async (event) => {
         }
 
         if (action === 'delete') {
-            await deleteBox(boxId);
+            await deleteBox(boxId, button);
             return;
         }
 
@@ -597,23 +617,23 @@ document.querySelector('.box-list').addEventListener('click', async (event) => {
 });
 
 document.getElementById('menudashboard').onclick = function() {
-    window.location.href = '/dashboard#dashboard';
+    window.dboxNavigate('/dashboard#dashboard');
 };
 
 document.getElementById('menuHome').onclick = function() {
-    window.location.href = '/home';
+    window.dboxNavigate('/home');
 };
 
 document.getElementById('newMenu').onclick = function() {
-    window.location.href = '/createbox';
+    window.dboxNavigate('/createbox');
 };
 
 document.getElementById('newBoxCornerBtn').onclick = function() {
-    window.location.href = '/createbox';
+    window.dboxNavigate('/createbox');
 };
 
 document.getElementById('menuSettings').onclick = function() {
-    window.location.href = '/home?open=settings&return=%2Fdashboard%23dashboard';
+    window.dboxNavigate('/home?open=settings&return=%2Fdashboard%23dashboard');
 };
 
 document.getElementById('modalCloseBtn').addEventListener('click', closeModal);
