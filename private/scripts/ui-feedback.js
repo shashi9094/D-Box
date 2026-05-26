@@ -377,6 +377,51 @@
     return curtain;
   }
 
+  function cleanupUI() {
+    try {
+      // remove route curtain if present
+      const curtain = document.getElementById('dbox-route-curtain');
+      if (curtain && curtain.parentNode) {
+        curtain.parentNode.removeChild(curtain);
+      }
+
+      // remove any confirm modal open state
+      const confirm = document.getElementById(CONFIRM_ID);
+      if (confirm) {
+        confirm.classList.remove('is-open', 'is-danger');
+        confirm.setAttribute('aria-hidden', 'true');
+      }
+
+      // close any dashboard-modal instances left open
+      document.querySelectorAll('.dashboard-modal[aria-hidden="false"]').forEach((m) => {
+        try { m.setAttribute('aria-hidden', 'true'); } catch (_) {}
+      });
+
+      // remove body modal state/scroll locks
+      document.body.classList.remove('modal-open');
+      document.body.style.overflow = '';
+
+      // remove any lingering visual filters applied to common containers
+      document.querySelectorAll('body, main, .dashboard, .page, .content, #app').forEach((el) => {
+        try {
+          el.style.filter = '';
+          el.style.backdropFilter = '';
+          el.style.webkitBackdropFilter = '';
+          el.style.opacity = '';
+        } catch (_) {}
+      });
+
+      // clear route transition classes on root
+      document.documentElement.classList.remove('dbox-route-entering', 'dbox-route-leaving');
+
+      // clear in-memory confirm state
+      confirmState = null;
+    } catch (err) {
+      // defensive: do not throw
+      console.error('dbox cleanupUI error', err);
+    }
+  }
+
   function ensureConfirmModal() {
     ensureStyles();
     let modal = document.getElementById(CONFIRM_ID);
@@ -494,6 +539,8 @@
       // ignore storage failures
     }
 
+    // ensure any leftover UI state is cleared before starting a route transition
+    cleanupUI();
     ensureRouteCurtain();
     document.documentElement.classList.add('dbox-route-leaving');
 
@@ -519,9 +566,13 @@
     }
 
     if (!hasPendingNav) {
+      // also perform a cleanup on regular loads to ensure no leftover overlays remain
+      cleanupUI();
       return;
     }
 
+    // cleanup any stale UI before applying enter transition
+    cleanupUI();
     const curtain = ensureRouteCurtain();
     document.documentElement.classList.add('dbox-route-entering');
     window.setTimeout(() => {
@@ -660,11 +711,13 @@
     toast: showToast,
     setLoading: setLoadingState,
     confirm: confirmAction,
-    navigate
+    navigate,
+    cleanup: cleanupUI
   };
 
   window.dboxToast = showToast;
   window.dboxSetLoading = setLoadingState;
   window.dboxConfirm = confirmAction;
   window.dboxNavigate = navigate;
+  window.dboxCleanupUI = cleanupUI;
 })();

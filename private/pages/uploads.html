@@ -1132,6 +1132,9 @@
       document.getElementById('addMemberForm').hidden = true;
       document.getElementById('removeMemberForm').hidden = true;
       document.getElementById('newFolderForm').hidden = true;
+      if (window.dboxCleanupUI) {
+        try { window.dboxCleanupUI(); } catch (_) {}
+      }
     }
 
     function openModal(type) {

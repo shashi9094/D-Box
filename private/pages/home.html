@@ -317,6 +317,9 @@
 
       modal.setAttribute('aria-hidden', 'true');
       updateModalOpenState();
+      if (window.dboxCleanupUI) {
+        try { window.dboxCleanupUI(); } catch (_) {}
+      }
 
       if (modalId === 'settingsModal' && settingsReturnTarget) {
         const target = settingsReturnTarget;

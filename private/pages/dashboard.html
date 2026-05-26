@@ -511,6 +511,9 @@ function closeModal() {
     modalCloseTimer = window.setTimeout(() => {
         modal.setAttribute('aria-hidden', 'true');
         modal.classList.remove('is-closing');
+        if (window.dboxCleanupUI) {
+            try { window.dboxCleanupUI(); } catch (_) {}
+        }
     }, 180);
 }
 
