@@ -5,7 +5,10 @@ try {
   isInternalNavTransition = false;
 }
 
-document.documentElement.style.visibility = isInternalNavTransition ? 'visible' : 'hidden';
+document.documentElement.style.visibility = 'visible';
+
+let authCheckInFlight = null;
+let lastAuthCheckAt = 0;
 
 function applySavedTheme() {
   try {
@@ -30,7 +33,20 @@ function applySavedTheme() {
   }
 }
 
-async function ensureAuthenticated() {
+async function ensureAuthenticated(options = {}) {
+  const force = Boolean(options.force);
+  const now = Date.now();
+
+  if (authCheckInFlight) {
+    return authCheckInFlight;
+  }
+
+  if (!force && now - lastAuthCheckAt < 1000) {
+    return null;
+  }
+
+  lastAuthCheckAt = now;
+  authCheckInFlight = (async () => {
   try {
     const res = await fetch('/api/auth/session', {
       credentials: 'same-origin',
@@ -50,7 +66,6 @@ async function ensureAuthenticated() {
       return;
     }
 
-    document.documentElement.style.visibility = 'visible';
     try {
       sessionStorage.removeItem('dbox.nav.pending');
     } catch (_) {
@@ -58,13 +73,18 @@ async function ensureAuthenticated() {
     }
   } catch (error) {
     window.location.replace('/login.html');
+  } finally {
+    authCheckInFlight = null;
   }
+  })();
+
+  return authCheckInFlight;
 }
 
 applySavedTheme();
 ensureAuthenticated();
-window.addEventListener('pageshow', ensureAuthenticated);
-window.addEventListener('focus', ensureAuthenticated);
+window.addEventListener('pageshow', () => ensureAuthenticated({ force: true }));
+window.addEventListener('focus', () => ensureAuthenticated());
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     applySavedTheme();
@@ -76,4 +96,4 @@ window.addEventListener('storage', (event) => {
     applySavedTheme();
   }
 });
-setInterval(ensureAuthenticated, 5000);
+setInterval(() => ensureAuthenticated(), 5000);

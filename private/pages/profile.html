@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Verify Profile - D-Box</title>
   <link rel="stylesheet" href="/style.css" />
+  <script src="/scripts/ui-feedback.js" defer></script>
   <style>
     body.verify-profile-page {
       min-height: 100vh;
@@ -440,7 +441,7 @@
         }
 
         uiState.redirectTimer = setTimeout(() => {
-          window.location.replace('/dashboard');
+          window.dboxNavigate('/dashboard', { replace: true });
         }, 900);
       } catch (error) {
         setStatus(error.message || 'Unable to verify OTP');
@@ -461,7 +462,7 @@
       }
 
       if (!sessionState.profilePending) {
-        window.location.replace('/dashboard');
+        window.dboxNavigate('/dashboard', { replace: true });
         return;
       }
 
